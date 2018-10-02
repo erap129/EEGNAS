@@ -1,0 +1,6 @@
+,date,keras_acc,keras_runtime,tpot_acc,tpot_runtime,auto-keras_acc,auto-keras_runtime
+0,2018-09-30 14-19-54.682109,0.5034722222222222,184.0177824497223,0,0,0,0
+,date,keras_acc,keras_runtime,tpot_acc,tpot_runtime,auto-keras_acc,auto-keras_runtime
+0,2018-10-01 14-49-47.804526,0.2847222222222222,155.60990595817566,0,0,0,0
+,date,keras_acc,keras_runtime,tpot_acc,tpot_runtime,auto-keras_acc,auto-keras_runtime
+0,2018-10-01 19-44-24.288654,0.5173611111111112,349.50049567222595,0,0,0,0
