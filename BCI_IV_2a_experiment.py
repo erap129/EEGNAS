@@ -4,6 +4,8 @@ import datetime
 import numpy as np
 import pandas as pd
 import keras_models
+import autosklearn.classification
+import sklearn.metrics
 from autokeras import ImageClassifier
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.utils import to_categorical
@@ -14,6 +16,7 @@ from braindecode.datautil.splitters import split_into_two_sets
 from datautil.signalproc import bandpass_cnt, exponential_running_standardize
 from datautil.trial_segment import create_signal_target_from_raw_mne
 from tpot import TPOTClassifier
+
 
 
 def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
@@ -90,28 +93,30 @@ def run_exp(train_set, test_set):
     row = np.append(row, now)
     for config in configs:
         if config == 'keras':
-            valid_set_fraction = 0.2
-            model = keras_models.deep_model(train_set.X.shape[1],
-                                            train_set.X.shape[2],
-                                            4)
-            train_set, valid_set = split_into_two_sets(
-                train_set, first_set_fraction=1 - valid_set_fraction)
-            X_train = train_set.X[:, :, :, np.newaxis]
-            X_valid = valid_set.X[:, :, :, np.newaxis]
-            X_test = test_set.X[:, :, :, np.newaxis]
-            y_train = to_categorical(train_set.y, num_classes=4)
-            y_valid = to_categorical(valid_set.y, num_classes=4)
-            y_test = to_categorical(test_set.y, num_classes=4)
-            start = time.time()
-            earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
-            mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
-            model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid),
-                      callbacks=[earlystopping, mcp])
-            model.load_weights('best_keras_model.hdf5')
-            end = time.time()
-            res = model.evaluate(X_test, y_test, verbose=1)
-            row = np.append(row, res[1])
-            row = np.append(row, str(end-start))
+            # valid_set_fraction = 0.2
+            # model = keras_models.deep_model(train_set.X.shape[1],
+            #                                 train_set.X.shape[2],
+            #                                 4)
+            # train_set, valid_set = split_into_two_sets(
+            #     train_set, first_set_fraction=1 - valid_set_fraction)
+            # X_train = train_set.X[:, :, :, np.newaxis]
+            # X_valid = valid_set.X[:, :, :, np.newaxis]
+            # X_test = test_set.X[:, :, :, np.newaxis]
+            # y_train = to_categorical(train_set.y, num_classes=4)
+            # y_valid = to_categorical(valid_set.y, num_classes=4)
+            # y_test = to_categorical(test_set.y, num_classes=4)
+            # start = time.time()
+            # earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
+            # mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
+            # model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid),
+            #           callbacks=[earlystopping, mcp])
+            # model.load_weights('best_keras_model.hdf5')
+            # end = time.time()
+            # res = model.evaluate(X_test, y_test, verbose=1)
+            # row = np.append(row, res[1])
+            # row = np.append(row, str(end-start))
+            row = np.append(row, 0)
+            row = np.append(row, 0)
         elif config == 'tpot':
             # tpot = TPOTClassifier(generations=5, population_size=20, verbosity=2)
             # start = time.time()
@@ -135,8 +140,26 @@ def run_exp(train_set, test_set):
             # print(y)
             row = np.append(row, 0)
             row = np.append(row, 0)
-
-
+        elif config == 'auto-sklearn':
+            automl = autosklearn.classification.AutoSklearnClassifier(
+                time_left_for_this_task=120,
+                per_run_time_limit=30,
+                tmp_folder='/tmp/autosklearn_cv_example_tmp',
+                output_folder='/tmp/autosklearn_cv_example_out',
+                delete_tmp_folder_after_terminate=False,
+                resampling_strategy='cv',
+                resampling_strategy_arguments={'folds': 5},
+            )
+            # fit() changes the data in place, but refit needs the original data. We
+            # therefore copy the data. In practice, one should reload the data
+            automl.fit(X_train.copy(), y_train.copy(), dataset_name='digits')
+            # During fit(), models are fit on individual cross-validation folds. To use
+            # all available data, we call refit() which trains all models in the
+            # final ensemble on the whole dataset.
+            automl.refit(X_train.copy(), y_train.copy())
+            print(automl.show_models())
+            predictions = automl.predict(X_test)
+            print("Accuracy score", sklearn.metrics.accuracy_score(y_test, predictions))
 
     results.loc[0] = row
     header = True
