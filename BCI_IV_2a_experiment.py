@@ -4,6 +4,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import keras_models
+import autokeras
 # import autosklearn.classification
 import sklearn.metrics
 from autokeras import ImageClassifier
@@ -85,7 +86,7 @@ def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
 
 def run_exp(train_set, test_set, subject):
     configs = ['keras', 'tpot', 'auto-keras', 'auto-sklearn']
-    disabled = {'keras': True, 'tpot': True, 'auto-keras': False, 'auto-sklearn': True}
+    disabled = {'keras': False, 'tpot': False, 'auto-keras': False, 'auto-sklearn': False}
     now = str(datetime.datetime.now()).replace(":", "-")
     row = np.array([])
     row = np.append(row, now)
@@ -101,13 +102,13 @@ def run_exp(train_set, test_set, subject):
             model = keras_models.deep_model(train_set.X.shape[1],
                                             train_set.X.shape[2],
                                             4)
-            train_set, valid_set = split_into_two_sets(
+            train_set_keras, valid_set_keras = split_into_two_sets(
                 train_set, first_set_fraction=1 - valid_set_fraction)
-            X_train = train_set.X[:, :, :, np.newaxis]
-            X_valid = valid_set.X[:, :, :, np.newaxis]
+            X_train = train_set_keras.X[:, :, :, np.newaxis]
+            X_valid = valid_set_keras.X[:, :, :, np.newaxis]
             X_test = test_set.X[:, :, :, np.newaxis]
-            y_train = to_categorical(train_set.y, num_classes=4)
-            y_valid = to_categorical(valid_set.y, num_classes=4)
+            y_train = to_categorical(train_set_keras.y, num_classes=4)
+            y_valid = to_categorical(valid_set_keras.y, num_classes=4)
             y_test = to_categorical(test_set.y, num_classes=4)
             start = time.time()
             earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
@@ -129,7 +130,7 @@ def run_exp(train_set, test_set, subject):
             print(train_set.X.shape)
             print(train_set.y.shape)
             train_set_reshpX = train_set.X.reshape(train_set.X.shape[0], -1)
-            test_set_reshpX = test_set.X.reshape(train_set.X.shape[0], -1)
+            test_set_reshpX = test_set.X.reshape(test_set.X.shape[0], -1)
             tpot.fit(train_set_reshpX, train_set.y)
             end = time.time()
             print('time: ', (end - start))
@@ -137,12 +138,18 @@ def run_exp(train_set, test_set, subject):
 
         elif config == 'auto-keras':
             print('--------------running auto-keras model--------------')
-            X = train_set.X[:,:,:,np.newaxis]
-            clf = ImageClassifier(verbose=True, searcher_args={'trainer_args':{'max_iter_num' : 25}})
-            clf.fit(X, train_set.y, time_limit=12 * 60 * 60)
-            clf.final_fit(X, train_set.y, test_set.X, test_set.y, retrain=False)
-            y = clf.evaluate(test_set.X[:,:,:,np.newaxis], test_set.y)
-            clf.load_searcher().load_best_model().produce_keras_model().save('autokeras_model.h5')
+            X_train = train_set.X[:,:,:,np.newaxis]
+            X_test = test_set.X[:,:,:,np.newaxis]
+            print("X_train.shape is: %s" % (str(X_train.shape)))
+            start = time.time()
+            clf = ImageClassifier(verbose=True, searcher_args={'trainer_args':{'max_iter_num' : 5}})
+            clf.fit(X_train, train_set.y, time_limit=12 * 60 * 60)
+            clf.final_fit(X_train, train_set.y, X_test, test_set.y, retrain=False)
+            end = time.time()
+            y = clf.evaluate(X_test, test_set.y)
+            row = np.append(row, str(y * 100))
+            row = np.append(row, str(end-start))
+            # clf.load_searcher().load_best_model().produce_keras_model().save('autokeras_model.h5')
             print(y)
 
         elif config == 'auto-sklearn':
@@ -173,6 +180,7 @@ def run_exp(train_set, test_set, subject):
 
 
 if __name__ == '__main__':
+    print("-------------\nsource code of auto-keras is in %s\n--------------" % (autokeras.__file__))
     data_folder = 'data/'
     subject_id = 3
     low_cut_hz = 0
