@@ -4,7 +4,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import keras_models
-import autosklearn.classification
+# import autosklearn.classification
 import sklearn.metrics
 from autokeras import ImageClassifier
 from keras.callbacks import EarlyStopping, ModelCheckpoint
@@ -20,15 +20,15 @@ from tpot import TPOTClassifier
 
 
 def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
-    ival = [-500, 4000]
+    ival = [-500, 4000]  # this is the window around the event from which we will take data to feed to the classifier
     input_time_length = 1000
-    max_epochs = 800
-    max_increase_epochs = 80
-    batch_size = 60
-    high_cut_hz = 38
-    factor_new = 1e-3
-    init_block_size = 1000
-    valid_set_fraction = 0.2
+    max_epochs = 800  # max runs of the NN
+    max_increase_epochs = 80  # ???
+    batch_size = 60  # 60 examples will be processed each run of the NN
+    high_cut_hz = 38  # cut off parts of signal higher than 38 hz
+    factor_new = 1e-3  # ??? has to do with exponential running standardize
+    init_block_size = 1000  # ???
+    valid_set_fraction = 0.2  # part of the training set which will be used as validation
 
     train_filename = 'A{:02d}T.gdf'.format(subject_id)
     test_filename = 'A{:02d}E.gdf'.format(subject_id)
@@ -48,11 +48,11 @@ def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
 
     # convert measurements to millivolt
     train_cnt = mne_apply(lambda a: a * 1e6, train_cnt)
-    train_cnt = mne_apply(
+    train_cnt = mne_apply(  # signal processing procedure that I don't understand
         lambda a: bandpass_cnt(a, low_cut_hz, high_cut_hz, train_cnt.info['sfreq'],
                                filt_order=3,
                                axis=1), train_cnt)
-    train_cnt = mne_apply(
+    train_cnt = mne_apply(  # signal processing procedure that I don't understand
         lambda a: exponential_running_standardize(a.T, factor_new=factor_new,
                                                   init_block_size=init_block_size,
                                                   eps=1e-4).T,
@@ -83,64 +83,72 @@ def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
 
 
 
-def run_exp(train_set, test_set):
-    results = pd.DataFrame(columns=['date', 'keras_acc', 'keras_runtime',
-                                    'tpot_acc', 'tpot_runtime',
-                                    'auto-keras_acc', 'auto-keras_runtime'])
-    configs = ['keras', 'tpot', 'auto-keras']
+def run_exp(train_set, test_set, subject):
+    configs = ['keras', 'tpot', 'auto-keras', 'auto-sklearn']
+    disabled = {'keras': True, 'tpot': True, 'auto-keras': False, 'auto-sklearn': True}
     now = str(datetime.datetime.now()).replace(":", "-")
     row = np.array([])
     row = np.append(row, now)
+    row = np.append(row, str(subject))
     for config in configs:
+        if disabled[config] is True:
+            row = np.append(row, 0)
+            row = np.append(row, 0)
+            continue
         if config == 'keras':
-            # valid_set_fraction = 0.2
-            # model = keras_models.deep_model(train_set.X.shape[1],
-            #                                 train_set.X.shape[2],
-            #                                 4)
-            # train_set, valid_set = split_into_two_sets(
-            #     train_set, first_set_fraction=1 - valid_set_fraction)
-            # X_train = train_set.X[:, :, :, np.newaxis]
-            # X_valid = valid_set.X[:, :, :, np.newaxis]
-            # X_test = test_set.X[:, :, :, np.newaxis]
-            # y_train = to_categorical(train_set.y, num_classes=4)
-            # y_valid = to_categorical(valid_set.y, num_classes=4)
-            # y_test = to_categorical(test_set.y, num_classes=4)
-            # start = time.time()
-            # earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
-            # mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
-            # model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid),
-            #           callbacks=[earlystopping, mcp])
-            # model.load_weights('best_keras_model.hdf5')
-            # end = time.time()
-            # res = model.evaluate(X_test, y_test, verbose=1)
-            # row = np.append(row, res[1])
-            # row = np.append(row, str(end-start))
-            row = np.append(row, 0)
-            row = np.append(row, 0)
+            print('--------------running keras model--------------')
+            valid_set_fraction = 0.2
+            model = keras_models.deep_model(train_set.X.shape[1],
+                                            train_set.X.shape[2],
+                                            4)
+            train_set, valid_set = split_into_two_sets(
+                train_set, first_set_fraction=1 - valid_set_fraction)
+            X_train = train_set.X[:, :, :, np.newaxis]
+            X_valid = valid_set.X[:, :, :, np.newaxis]
+            X_test = test_set.X[:, :, :, np.newaxis]
+            y_train = to_categorical(train_set.y, num_classes=4)
+            y_valid = to_categorical(valid_set.y, num_classes=4)
+            y_test = to_categorical(test_set.y, num_classes=4)
+            start = time.time()
+            earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
+            mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
+            model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid),
+                      callbacks=[earlystopping, mcp])
+            model.load_weights('best_keras_model.hdf5')
+            end = time.time()
+            res = model.evaluate(X_test, y_test, verbose=1)
+            print('accuracy for keras model:', res[1]*100)
+            print('runtime for keras model:', end-start)
+            row = np.append(row, res[1])
+            row = np.append(row, str(end-start))
+
         elif config == 'tpot':
-            # tpot = TPOTClassifier(generations=5, population_size=20, verbosity=2)
-            # start = time.time()
-            # print(train_set.X.shape)
-            # print(train_set.y.shape)
-            # train_set_reshpX = train_set.X.reshape(train_set.X.shape[0], -1)
-            # test_set_reshpX = test_set.X.reshape(train_set.X.shape[0], -1)
-            # tpot.fit(train_set_reshpX, train_set.y)
-            # end = time.time()
-            # print('time: ', (end - start))
-            # print('accuracy :', tpot.score(test_set_reshpX, test_set.y))
-            row = np.append(row, 0)
-            row = np.append(row, 0)
+            print('--------------running tpot model--------------')
+            tpot = TPOTClassifier(generations=5, population_size=20, verbosity=2)
+            start = time.time()
+            print(train_set.X.shape)
+            print(train_set.y.shape)
+            train_set_reshpX = train_set.X.reshape(train_set.X.shape[0], -1)
+            test_set_reshpX = test_set.X.reshape(train_set.X.shape[0], -1)
+            tpot.fit(train_set_reshpX, train_set.y)
+            end = time.time()
+            print('time: ', (end - start))
+            print('accuracy :', tpot.score(test_set_reshpX, test_set.y))
+
         elif config == 'auto-keras':
-            # X = train_set.X[:,:,:,np.newaxis]
-            # clf = ImageClassifier(verbose=True, searcher_args={'trainer_args':{'max_iter_num' : 25}})
-            # clf.fit(X, train_set.y, time_limit=12 * 60 * 60)
-            # clf.final_fit(X, train_set.y, test_set.X, test_set.y, retrain=False)
-            # y = clf.evaluate(test_set.X[:,:,:,np.newaxis], test_set.y)
-            # clf.load_searcher().load_best_model().produce_keras_model().save('autokeras_model.h5')
-            # print(y)
-            row = np.append(row, 0)
-            row = np.append(row, 0)
+            print('--------------running auto-keras model--------------')
+            X = train_set.X[:,:,:,np.newaxis]
+            clf = ImageClassifier(verbose=True, searcher_args={'trainer_args':{'max_iter_num' : 25}})
+            clf.fit(X, train_set.y, time_limit=12 * 60 * 60)
+            clf.final_fit(X, train_set.y, test_set.X, test_set.y, retrain=False)
+            y = clf.evaluate(test_set.X[:,:,:,np.newaxis], test_set.y)
+            clf.load_searcher().load_best_model().produce_keras_model().save('autokeras_model.h5')
+            print(y)
+
         elif config == 'auto-sklearn':
+            print('--------------running auto-sklearn model--------------')
+            train_set_reshpX = train_set.X.reshape(train_set.X.shape[0], -1)
+            test_set_reshpX = test_set.X.reshape(train_set.X.shape[0], -1)
             automl = autosklearn.classification.AutoSklearnClassifier(
                 time_left_for_this_task=120,
                 per_run_time_limit=30,
@@ -152,28 +160,34 @@ def run_exp(train_set, test_set):
             )
             # fit() changes the data in place, but refit needs the original data. We
             # therefore copy the data. In practice, one should reload the data
-            automl.fit(X_train.copy(), y_train.copy(), dataset_name='digits')
+            automl.fit(train_set_reshpX.copy(), train_set.y.copy(), dataset_name='digits')
             # During fit(), models are fit on individual cross-validation folds. To use
             # all available data, we call refit() which trains all models in the
             # final ensemble on the whole dataset.
-            automl.refit(X_train.copy(), y_train.copy())
+            automl.refit(train_set_reshpX.copy(), train_set.y.copy())
             print(automl.show_models())
-            predictions = automl.predict(X_test)
-            print("Accuracy score", sklearn.metrics.accuracy_score(y_test, predictions))
-
-    results.loc[0] = row
-    header = True
-    if os.path.isfile('results'):
-        header = False
-    results.to_csv('results.csv', mode='a', header = header)
+            predictions = automl.predict(test_set_reshpX)
+            print("Accuracy score", sklearn.metrics.accuracy_score(test_set.y, predictions))
+    return row
 
 
 
 if __name__ == '__main__':
     data_folder = 'data/'
-    subject_id = 1
+    subject_id = 3
     low_cut_hz = 0
 
     train_set, test_set = get_train_test(data_folder, subject_id, low_cut_hz)
+    results = pd.DataFrame(columns=['date', 'subject', 'keras_acc', 'keras_runtime',
+                                    'tpot_acc', 'tpot_runtime',
+                                    'auto-keras_acc', 'auto-keras_runtime',
+                                    'auto-sklearn_acc', 'auto-sklearn_runtime'])
+    for subject_id in range(1,10):
+        row = run_exp(train_set, test_set, subject_id)
+        results.loc[subject_id-1] = row
 
-    run_exp(train_set, test_set)
+    now = str(datetime.datetime.now()).replace(":", "-")
+    header = True
+    if os.path.isfile('results'+now+'.csv'):
+        header = False
+    results.to_csv('results'+now+'.csv', mode='a', header=header)
