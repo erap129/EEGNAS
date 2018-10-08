@@ -19,6 +19,8 @@ class BCI_IV_2a():
         raw_edf.load_data()
         data = raw_edf.get_data()
 
+        # this bit of code turns all of the minimum values in each channel to the mean value (w/o the minimum)
+        # why do they do this? I don't know
         for i_chan in range(data.shape[0] - 1):
             this_chan = data[i_chan]
             data[i_chan] = np.where(this_chan == np.min(this_chan),
