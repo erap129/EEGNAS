@@ -1,6 +1,5 @@
 from keras.models import Sequential
 from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout
-import tensorflow as tf
 
 def deep_model(n_chans, input_time_length, n_classes, n_filters_time=25, n_filters_spat=25, filter_time_length=10,
                   n_filters_2=50, filter_len_2=10, n_filters_3=100, filter_len_3=10, n_filters_4=200,
@@ -8,6 +7,14 @@ def deep_model(n_chans, input_time_length, n_classes, n_filters_time=25, n_filte
     model = Sequential()
     model.add(Conv2D(name='temporal_convolution', filters=n_filters_time, input_shape=(n_chans, input_time_length, 1),
                      kernel_size=(1, filter_time_length), strides=(1,1), activation='elu'))
+
+    # note that this is a different implementation from the paper!
+    # they didn't put an activation function between the first two convolutions
+
+    # Also, in the paper they implemented batch-norm before each non-linearity - which I didn't do!
+
+    # Also, they added dropout for each input the conv layers except the first! I dropped out only in the end
+
     model.add(Conv2D(name='spatial_filter', filters=n_filters_spat, kernel_size=(n_chans, 1), strides=(1,1), activation='elu'))
     model.add(MaxPool2D(pool_size=(1,3), strides=(1,3)))
 

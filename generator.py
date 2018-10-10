@@ -21,7 +21,6 @@ def cropped_predictor(model, X_test, crop_len, n_classes):
     predictions = np.zeros((len(X_test), n_classes))
     for i in range(len(X_test)):
         X_test_swapped = np.swapaxes(X_test[i], 0, 1)
-        print('X_test_swapped.shape is', X_test_swapped.shape)
         preds = np.zeros((1, 4))
         X_combined = np.zeros((len(X_test_swapped) - crop_len, 22, crop_len, 1))
         for j in range(len(X_test_swapped) - crop_len):
@@ -30,7 +29,6 @@ def cropped_predictor(model, X_test, crop_len, n_classes):
             X_combined[j] = X_check
         one_pred = np.mean(model.predict(X_combined), axis=0)
         predictions[i] = one_pred
-    print('predictions is:', predictions)
     return predictions
 
 
