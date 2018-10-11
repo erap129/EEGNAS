@@ -101,27 +101,33 @@ def show_spectrogram(data):
     # plt.xlabel('Time [sec]')
     # plt.show()
     fig = plt.figure(frameon=False)
-    fig.set_size_inches(256/96, 256/96)
+    fig.set_size_inches(246/96, 246/96)
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     ax.set_axis_off()
     fig.add_axes(ax)
     ax.specgram(data, NFFT=256, Fs=250)
-    buf = io.BytesIO()
-    fig.savefig('testfig.png', dpi = 96)
+    fig.canvas.draw()
+    plt.show()
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    print('data.shape is:', data.shape)
 
 
-def create_spectrograms_from_raw(train_set, test_set):
-    n_chans = len(train_set[0]
-    for trial in train_set.X:
-        for channel in trial:
+def create_spectrograms_from_raw(train_set, test_set, spect_size):
+    n_chans = len(train_set[0])
+    train_specs = np.zeros((train_set.X.shape[0], train_set.X.shape[1] * 3))
+    test_specs = np.zeros((test_set.X.shape[0], test_set.X.shape[1]))
+    for i, trial in enumerate(train_set.X):
+        for j, channel in enumerate(trial):
             fig = plt.figure(frameon=False)
             fig.set_size_inches(256 / 96, 256 / 96)
             ax = plt.Axes(fig, [0., 0., 1., 1.])
             ax.set_axis_off()
             fig.add_axes(ax)
-            ax.specgram(channel, NFFT=256, Fs=250)
-            buf = io.BytesIO()
-            fig.savefig('testfig.png', dpi=96)
+            fig.canvas.draw()
+            data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+            data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            train_specs[i, :, :, 3*j:3*(j+1)] = data
 
 
 def run_keras_deep_model(train_set, test_set, row, cropped=False):
