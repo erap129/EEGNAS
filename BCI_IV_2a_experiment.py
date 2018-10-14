@@ -7,11 +7,15 @@ import keras
 import keras_models
 import tensorflow as tf
 import platform
+from naiveNAS import NaiveNAS
 import io
+from scipy import signal
+import matplotlib.pyplot as plt
 from generator import cropped_generator, cropped_predictor
 # import autosklearn.classification
 import sklearn.metrics
 from autokeras import ImageClassifier
+# from autokeras import Image1DClassifier
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.utils import to_categorical
 from BCI_IV_2a_loader import BCI_IV_2a
@@ -89,9 +93,6 @@ def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
 
 
 def show_spectrogram(data):
-    from scipy import signal
-    import matplotlib.pyplot as plt
-
     # fs = 250
     # print('raw data is:', data)
     # print('length of raw data is:', len(data))
@@ -101,7 +102,7 @@ def show_spectrogram(data):
     # plt.xlabel('Time [sec]')
     # plt.show()
     fig = plt.figure(frameon=False)
-    fig.set_size_inches(246/96, 246/96)
+    fig.set_size_inches(256/96, 256/96)
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     ax.set_axis_off()
     fig.add_axes(ax)
@@ -113,14 +114,14 @@ def show_spectrogram(data):
     print('data.shape is:', data.shape)
 
 
-def create_spectrograms_from_raw(train_set, test_set, spect_size):
-    n_chans = len(train_set[0])
-    train_specs = np.zeros((train_set.X.shape[0], train_set.X.shape[1] * 3))
+def create_spectrograms_from_raw(train_set, test_set, im_size=256):
+    n_chans = len(train_set.X[1])
+    train_specs = np.zeros((train_set.X.shape[0], im_size, im_size, n_chans * 3))
     test_specs = np.zeros((test_set.X.shape[0], test_set.X.shape[1]))
     for i, trial in enumerate(train_set.X):
         for j, channel in enumerate(trial):
             fig = plt.figure(frameon=False)
-            fig.set_size_inches(256 / 96, 256 / 96)
+            fig.set_size_inches((im_size - 10) / 96, (im_size - 10) / 96)
             ax = plt.Axes(fig, [0., 0., 1., 1.])
             ax.set_axis_off()
             fig.add_axes(ax)
@@ -128,6 +129,8 @@ def create_spectrograms_from_raw(train_set, test_set, spect_size):
             data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
             data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
             train_specs[i, :, :, 3*j:3*(j+1)] = data
+            plt.close(fig)
+    return train_specs
 
 
 def run_keras_deep_model(train_set, test_set, row, cropped=False):
@@ -198,9 +201,9 @@ def run_tpot_model(train_set, test_set, row):
 def run_autokeras_model(train_set, test_set, row):
     print('--------------running auto-keras model--------------')
     X_train = train_set.X[:, :, :, np.newaxis]
-    X_train = np.swapaxes(X_train, 3, 1)
+    X_train = np.swapaxes(X_train, 3, 1)[:, :, :, :]
     X_test = test_set.X[:, :, :, np.newaxis]
-    X_test = np.swapaxes(X_test, 3, 1)
+    X_test = np.swapaxes(X_test, 3, 1)[:, :, :, :]
     print("X_train.shape is: %s" % (str(X_train.shape)))
     start = time.time()
     clf = ImageClassifier(verbose=True, searcher_args={'trainer_args': {'max_iter_num': 5}})
@@ -272,32 +275,51 @@ def run_exp(train_set, test_set, subject):
     return row
 
 
-
-if __name__ == '__main__':
-    # if platform.node() == 'nvidia':
-    #     os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-    #     config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 56})
-    #     sess = tf.Session(config=config)
-    #     keras.backend.set_session(sess)
-
+def automl_comparison():
     data_folder = 'data/'
     low_cut_hz = 0
 
-    spect_train, spect_test = get_train_test(data_folder, 1, 0)
-    show_spectrogram(spect_train.X[0][20])
+    results = pd.DataFrame(columns=['date', 'subject', 'keras_acc', 'keras_runtime',
+                                    'tpot_acc', 'tpot_runtime',
+                                    'auto-keras_acc', 'auto-keras_runtime',
+                                    'auto-sklearn_acc', 'auto-sklearn_runtime'])
 
-    # results = pd.DataFrame(columns=['date', 'subject', 'keras_acc', 'keras_runtime',
-    #                                 'tpot_acc', 'tpot_runtime',
-    #                                 'auto-keras_acc', 'auto-keras_runtime',
-    #                                 'auto-sklearn_acc', 'auto-sklearn_runtime'])
-    #
-    # for subject_id in range(1, 10):
-    #     train_set, test_set = get_train_test(data_folder, subject_id, low_cut_hz)
-    #     row = run_exp(train_set, test_set, subject_id)
-    #     results.loc[subject_id-1] = row
-    #
-    # now = str(datetime.datetime.now()).replace(":", "-")
-    # header = True
-    # if os.path.isfile('results'+now+'.csv'):
-    #     header = False
-    # results.to_csv('results'+now+'.csv', mode='a', header=header)
+    for subject_id in range(1, 10):
+        train_set, test_set = get_train_test(data_folder, subject_id, low_cut_hz)
+        row = run_exp(train_set, test_set, subject_id)
+        results.loc[subject_id - 1] = row
+
+    now = str(datetime.datetime.now()).replace(":", "-")
+    header = True
+    if os.path.isfile('results' + now + '.csv'):
+        header = False
+    results.to_csv('results' + now + '.csv', mode='a', header=header)
+
+
+if __name__ == '__main__':
+    if platform.node() == 'nvidia':
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 56})
+        sess = tf.Session(config=config)
+        keras.backend.set_session(sess)
+
+    data_folder = 'data/'
+    low_cut_hz = 0
+    valid_set_fraction = 0.2
+
+    train_set, test_set = get_train_test(data_folder, 1, 0)
+    train_set, valid_set= split_into_two_sets(
+        train_set, first_set_fraction=1 - valid_set_fraction)
+
+
+    X_train = train_set.X[:, :, :, np.newaxis]
+    X_valid = valid_set.X[:, :, :, np.newaxis]
+    X_test = test_set.X[:, :, :, np.newaxis]
+    y_train = to_categorical(train_set.y, num_classes=4)
+    y_valid = to_categorical(valid_set.y, num_classes=4)
+    y_test = to_categorical(test_set.y, num_classes=4)
+
+    naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
+                        X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
+                        X_test=X_test, y_test=y_test)
+    naiveNAS.find_best_model()
