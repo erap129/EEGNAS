@@ -10,6 +10,8 @@ import platform
 from naiveNAS import NaiveNAS
 import io
 from scipy import signal
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from generator import cropped_generator, cropped_predictor
 # import autosklearn.classification
@@ -114,23 +116,29 @@ def show_spectrogram(data):
     print('data.shape is:', data.shape)
 
 
-def create_spectrograms_from_raw(train_set, test_set, im_size=256):
-    n_chans = len(train_set.X[1])
-    train_specs = np.zeros((train_set.X.shape[0], im_size, im_size, n_chans * 3))
-    test_specs = np.zeros((test_set.X.shape[0], test_set.X.shape[1]))
-    for i, trial in enumerate(train_set.X):
+def create_all_spectrograms(dataset, im_size=256):
+    n_chans = len(dataset.X[1])
+    specs = np.zeros((dataset.X.shape[0], im_size, im_size, n_chans * 3))
+    for i, trial in enumerate(dataset.X):
         for j, channel in enumerate(trial):
             fig = plt.figure(frameon=False)
             fig.set_size_inches((im_size - 10) / 96, (im_size - 10) / 96)
             ax = plt.Axes(fig, [0., 0., 1., 1.])
             ax.set_axis_off()
             fig.add_axes(ax)
+            ax.specgram(channel, NFFT=256, Fs=250)
             fig.canvas.draw()
             data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
             data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-            train_specs[i, :, :, 3*j:3*(j+1)] = data
+            specs[i, :, :, 3 * j:3 * (j + 1)] = data
             plt.close(fig)
-    return train_specs
+        if i % 10 == 0:
+            print('finished trial:', i)
+    return specs
+
+
+def create_spectrograms_from_raw(train_set, test_set):
+    return create_all_spectrograms(train_set), create_all_spectrograms(test_set)
 
 
 def run_keras_deep_model(train_set, test_set, row, cropped=False):
@@ -198,24 +206,28 @@ def run_tpot_model(train_set, test_set, row):
     return row
 
 
-def run_autokeras_model(train_set, test_set, row):
+def run_autokeras_model(X_train, y_train, X_test, y_test, row=None):
     print('--------------running auto-keras model--------------')
-    X_train = train_set.X[:, :, :, np.newaxis]
-    X_train = np.swapaxes(X_train, 3, 1)[:, :, :, :]
-    X_test = test_set.X[:, :, :, np.newaxis]
-    X_test = np.swapaxes(X_test, 3, 1)[:, :, :, :]
+    # if len(train_set.shape) == 3 and len(test_set.shape) == 3:
+    #     X_train = train_set.X[:, :, :, np.newaxis]
+    #     X_test = test_set.X[:, :, :, np.newaxis]
+    # else:
+    #     X_train = train_set.X
+    #     X_test = test_set.X
+    # X_train = np.swapaxes(X_train, 3, 1)[:, :, :, :]
+    # X_test = np.swapaxes(X_test, 3, 1)[:, :, :, :]
     print("X_train.shape is: %s" % (str(X_train.shape)))
     start = time.time()
     clf = ImageClassifier(verbose=True, searcher_args={'trainer_args': {'max_iter_num': 5}})
-    clf.fit(X_train, train_set.y, time_limit=12 * 60 * 60)
-    clf.final_fit(X_train, train_set.y, X_test, test_set.y, retrain=False)
+    clf.fit(X_train, y_train, time_limit=12 * 60 * 60)
+    clf.final_fit(X_train, y_train, X_test, y_test, retrain=False)
     end = time.time()
-    y = clf.evaluate(X_test, test_set.y)
-    row = np.append(row, str(y * 100))
-    row = np.append(row, str(end - start))
-    # clf.load_searcher().load_best_model().produce_keras_model().save('autokeras_model.h5')
-    print(y)
-    return row
+    y = clf.evaluate(X_test, y_test)
+    print('autokeras result:', row * 100)
+    if row is not None:
+        row = np.append(row, str(y * 100))
+        row = np.append(row, str(end - start))
+        return row
 
 
 def run_auto_sklearn_model(train_set, test_set, row):
@@ -296,21 +308,23 @@ def automl_comparison():
     results.to_csv('results' + now + '.csv', mode='a', header=header)
 
 
-if __name__ == '__main__':
-    if platform.node() == 'nvidia':
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-        config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 56})
-        sess = tf.Session(config=config)
-        keras.backend.set_session(sess)
-
-    data_folder = 'data/'
-    low_cut_hz = 0
-    valid_set_fraction = 0.2
-
+def spectrogram_autokeras():
+    global data_folder
     train_set, test_set = get_train_test(data_folder, 1, 0)
-    train_set, valid_set= split_into_two_sets(
-        train_set, first_set_fraction=1 - valid_set_fraction)
+    train_specs, test_specs = create_spectrograms_from_raw(train_set=train_set, test_set=test_set)
+    print(train_specs.shape)
+    print(train_specs)
+    train_specs = train_specs[:, :, :, 0:10]
+    test_specs = test_specs[:, :, :, 0:10]
+    print('train_specs.shape is:', train_specs.shape)
+    run_autokeras_model(train_specs[:10], train_set.y[:10], test_specs[:10], test_set.y[:10])
 
+
+def run_naive_nas():
+    global data_folder, valid_set_fraction
+    train_set, test_set = get_train_test(data_folder, 1, 0)
+    train_set, valid_set = split_into_two_sets(
+        train_set, first_set_fraction=1 - valid_set_fraction)
 
     X_train = train_set.X[:, :, :, np.newaxis]
     X_valid = valid_set.X[:, :, :, np.newaxis]
@@ -323,3 +337,21 @@ if __name__ == '__main__':
                         X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
                         X_test=X_test, y_test=y_test)
     naiveNAS.find_best_model()
+
+
+if __name__ == '__main__':
+    global data_folder, valid_set_fraction
+
+    if platform.node() == 'nvidia':
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 56})
+        sess = tf.Session(config=config)
+        keras.backend.set_session(sess)
+
+    data_folder = 'data/'
+    low_cut_hz = 0
+    valid_set_fraction = 0.2
+    spectrogram_autokeras()
+
+
+
