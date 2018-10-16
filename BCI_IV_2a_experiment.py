@@ -8,6 +8,7 @@ import keras_models
 import tensorflow as tf
 import platform
 from naiveNAS import NaiveNAS
+import test_skip_connection
 import io
 from scipy import signal
 import matplotlib
@@ -339,6 +340,14 @@ def run_naive_nas():
     naiveNAS.find_best_model()
 
 
+def test_skip_connections():
+    train_set, test_set = get_train_test(data_folder, 1, 0)
+    train_set, valid_set = split_into_two_sets(
+        train_set, first_set_fraction=1 - valid_set_fraction)
+    skip_model = test_skip_connection.skip_model(train_set.X.shape[1], train_set.X.shape[2], 4)
+
+
+
 if __name__ == '__main__':
     global data_folder, valid_set_fraction
 
@@ -352,6 +361,6 @@ if __name__ == '__main__':
     low_cut_hz = 0
     valid_set_fraction = 0.2
     run_naive_nas()
-
+    # test_skip_connections()
 
 

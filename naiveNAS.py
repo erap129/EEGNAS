@@ -1,5 +1,5 @@
 from keras.models import Sequential, Model
-from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, Input
+from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, Input, Cropping2D, Concatenate
 from keras.utils import to_categorical
 import copy
 from simanneal import Annealer
@@ -9,21 +9,48 @@ from keras.callbacks import EarlyStopping
 
 import random
 
+class LayerDesc():
+    def __init__(self, name, ):
+        self
+
 class MyModel(Model):
     def __init__(self, structure=[], *args, **kwargs):
         super(MyModel, self).__init__(*args, **kwargs)
         self.structure = structure
 
     def new_model_from_structure(self, structure, naiveNAS):
-        new_model = naiveNAS.base_model()
-        x = new_model.layers[-1].output
-        for layer in structure[4:]:
+        # new_model = naiveNAS.base_model()
+        # x = new_model.layers[-1].output
+        # model_layers = [0, 0, 0, 0]
+        model_layers = []
+
+        for layer in structure:
             layer_desc = layer.split('-')
-            if layer_desc[0] == 'maxpool':
-                x = MaxPool2D(pool_size=(1, int(layer_desc[1])), strides=(1, 3))(x)
+            if layer_desc[0] == 'input':
+                x = Input(shape=(int(layer_desc[1]), int(layer_desc[2]), 1))
+            elif layer_desc[0] == 'maxpool':
+                x = MaxPool2D(pool_size=(1, int(layer_desc[1])), strides=(1, int(layer_desc[2])))(x)
             elif layer_desc[0] == 'convolution':
-                x = Conv2D(filters=int(layer_desc[1]), kernel_size=(1, int(layer_desc[2])),
+                x = Conv2D(filters=int(layer_desc[1]), kernel_size=(int(layer_desc[2]), int(layer_desc[3])),
                        strides=(1, 1), activation='elu', name='convolution')(x)
+            elif layer_desc[0] == 'cropping':
+                height_add = 0
+                width_add = 0
+                try:
+                    height_crop = int(layer_desc[1])
+                except ValueError:
+                    height_crop = int(float(layer_desc[1]) - 0.5)
+                    height_add = 1
+                try:
+                    width_crop = int(layer_desc[2])
+                except ValueError:
+                    width_crop = int(float(layer_desc[2]) - 0.5)
+                    width_add = 1
+                x = Cropping2D(((height_crop, height_crop + height_add),
+                               (width_crop, width_crop + width_add)))(x)
+            elif layer_desc[0] == 'concatenate':
+                x = Concatenate()([model_layers[int(layer_desc[1])], model_layers[int(layer_desc[2])]])(x)
+            model_layers.append(x)
         return MyModel(structure=structure, inputs=new_model.layers[0].input, output=x)
 
 
@@ -54,7 +81,8 @@ class NaiveNAS:
         while time.time()-start_time < time_limit and not self.finalize_flag:
             op_index = random.randint(0, len(operations) - 1)
             num_of_ops += 1
-            model = operations[op_index](curr_model, num_of_ops)
+            # model = operations[op_index](curr_model, num_of_ops)
+            model = self.add_skip_connection_concat(curr_model, num_of_ops)
             final_model = self.finalize_model(model)
             final_model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                       callbacks=[earlystopping])
@@ -92,10 +120,10 @@ class NaiveNAS:
         maxpool = MaxPool2D(pool_size=(1,3), strides=(1,3))(spatial_conv)
         model = MyModel(inputs=inputs, outputs=maxpool)
         model.structure.clear()
-        model.structure.append('inputs')
-        model.structure.append('convolution-'+str(n_filters_time)+'-?')
-        model.structure.append('convolution-'+str(n_filters_spat)+'-?')
-        model.structure.append('maxpool')
+        model.structure.append('input-'+str(self.n_chans)+'-'+str(self.input_time_len))
+        model.structure.append('convolution-'+str(n_filters_time)+'-1-'+str(filter_time_length))
+        model.structure.append('convolution-'+str(n_filters_spat)+'-'+str(self.n_chans)+'-1')
+        model.structure.append('maxpool-3-3')
         return model
 
     def finalize_model(self, model):
@@ -124,15 +152,33 @@ class NaiveNAS:
             print('finalizing network')
             self.finalize_flag = 1
 
-        model.structure.append('convolution-'+str(conv_filter_num)+'-'+str(conv_width))
-        model.structure.append('maxpool-'+str(maxpool_len))
+        model.structure.append('convolution-'+str(conv_filter_num)+'-1-'+str(conv_width))
+        model.structure.append('maxpool-'+str(maxpool_len)+'-'+str(maxpool_stride))
         return model
 
-    # def add_skip_connection(self, model):
-    #     conv_indices = [i for i, layer in enumerate(model.layers) if layer.get_config()['class_name']=='Conv2D']
-    #     if len(conv_indices) < 2:
-    #         return
-    #     else:
+    def add_skip_connection_concat(self, model, num_of_ops):
+        to_concat = random.sample(range(len(model.structure)), 2)
+        first_layer_index = np.min(to_concat)
+        second_layer_index = np.max(to_concat)
+        first_layer = model.layers[first_layer_index]
+        second_layer = model.layers[second_layer_index]
+        first_shape = first_layer.output_shape
+        second_shape = second_layer.output_shape
+        print('first layer shape is:', first_shape)
+        print('second layer shape is:', second_shape)
+        height_diff = first_shape[1] - second_shape[1]
+        width_diff = first_shape[2] - second_shape[2]
+        model.structure.insert(second_layer_index + 1, 'cropping-' + str(height_diff / 2) + '-' +
+                               str(width_diff / 2))
+        model.structure.insert(second_layer_index+2, 'concatenate-'+str(first_layer_index)+'-'+
+                                str(second_layer_index+1))
+        return model.new_model_from_structure(copy.deepcopy(model.structure), self)
+
+
+        # conv_indices = [i for i, layer in enumerate(model.layers) if layer.get_config()['class_name']=='Conv2D']
+        # if len(conv_indices) < 2:
+        #     return
+        # else:
 
     # def add_filters(self, model):
     #     conv_indices = [i for i, layer in enumerate(model.layers) if 'convolution' in layer.get_config()['name']]
@@ -152,7 +198,7 @@ class NaiveNAS:
             return model
         print('layer to widen is:', str(random_conv_index))
         factor = 2
-        convolution, depth, width = model.structure[conv_indices[random_conv_index]].split('-')
-        model.structure[conv_indices[random_conv_index]] = convolution+'-'+str(int(depth)*factor)+'-'+width
+        convolution, depth, height, width = model.structure[conv_indices[random_conv_index]].split('-')
+        model.structure[conv_indices[random_conv_index]] = convolution+'-'+str(int(depth)*factor)+'-'+height+'-'+width
         return model.new_model_from_structure(copy.deepcopy(model.structure), self)
 

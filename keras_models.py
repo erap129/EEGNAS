@@ -1,5 +1,6 @@
 from keras.models import Sequential
-from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout
+from keras.layers import Input, Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout
+
 
 def deep_model(n_chans, input_time_length, n_classes, n_filters_time=25, n_filters_spat=25, filter_time_length=10,
                   n_filters_2=50, filter_len_2=10, n_filters_3=100, filter_len_3=10, n_filters_4=200,
