@@ -3,6 +3,7 @@ from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, 
 from keras.utils import to_categorical
 import copy
 from simanneal import Annealer
+import numpy as np
 import time
 from keras.callbacks import EarlyStopping
 
@@ -38,28 +39,41 @@ class NaiveNAS:
         self.y_train = y_train
         self.y_test = y_test
         self.y_valid = y_valid
+        self.finalize_flag = 0
 
     def find_best_model(self, time_limit = 1 * 60 * 60):
         curr_model = self.base_model()
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=3)
         start_time = time.time()
         curr_acc = 0
+        num_of_ops = 0
+        temperature = 10000
+        coolingRate = 0.003
         operations = [self.add_conv_maxpool_block, self.add_filters]
-        while time.time()-start_time < time_limit:
+
+        while time.time()-start_time < time_limit and not self.finalize_flag:
             op_index = random.randint(0, len(operations) - 1)
-            model = operations[op_index](curr_model)
-            model = self.finalize_model(model)
-            model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
+            num_of_ops += 1
+            model = operations[op_index](curr_model, num_of_ops)
+            final_model = self.finalize_model(model)
+            final_model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                       callbacks=[earlystopping])
-            res = model.evaluate(self.X_test, self.y_test) * 100
+            res = final_model.evaluate(self.X_test, self.y_test) * 100
             if res[1] >= curr_acc:
                 curr_model = model
             else:
-                rand = random.randint(0,1)
+                probability = np.exp((res[1] - curr_acc) / temperature)
+                rand = np.random.choice(a=1, p=[1-probability, probability])
                 if rand == 1:
                     curr_model = model
+            temperature *= (1-coolingRate)
             print('model accuracy:', res[1] * 100)
 
+        final_model = self.finalize_model(curr_model)
+        final_model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
+                        callbacks=[earlystopping])
+        res = final_model.evaluate(self.X_test, self.y_test) * 100
+        print('model accuracy:', res[1] * 100)
 
     def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
         inputs = Input(shape=(self.n_chans, self.input_time_len, 1))
@@ -93,16 +107,23 @@ class NaiveNAS:
         model.summary()
         return model
 
-    def add_conv_maxpool_block(self, model):
+    def add_conv_maxpool_block(self, model, num_of_ops):
         conv_width = random.randint(5, 10)
         conv_filter_num = random.randint(50, 100)
         maxpool_len = random.randint(3, 5)
+        maxpool_stride = random.randint(1,3)
 
         output = model.layers[-1].output
-        conv_layer = Conv2D(filters=conv_filter_num, kernel_size=(1, conv_width),
-                            strides=(1, 1), activation='elu', name='convolution')(output)
-        maxpool_layer = MaxPool2D(pool_size=(1, maxpool_len), strides=(1, 3))(conv_layer)
-        model = MyModel(structure=model.structure, input=model.layers[0].input, output=maxpool_layer)
+        try:
+            conv_layer = Conv2D(filters=conv_filter_num, kernel_size=(1, conv_width),
+                                strides=(1, 1), activation='elu', name='convolution-'+str(num_of_ops))(output)
+            maxpool_layer = MaxPool2D(pool_size=(1, maxpool_len), strides=(1, maxpool_stride))(conv_layer)
+            model = MyModel(structure=model.structure, input=model.layers[0].input, output=maxpool_layer)
+        except ValueError as e:
+            print('failed to build new network with exception:', str(e))
+            print('finalizing network')
+            self.finalize_flag = 1
+
         model.structure.append('convolution-'+str(conv_filter_num)+'-'+str(conv_width))
         model.structure.append('maxpool-'+str(maxpool_len))
         return model
@@ -123,9 +144,12 @@ class NaiveNAS:
     #     print('just to make sure, its:', model.layers[random_conv_index].filters)
     #     return model
 
-    def add_filters(self, model):
+    def add_filters(self, model, num_of_ops):
         conv_indices = [i for i, layer in enumerate(model.structure) if 'convolution' in layer]
-        random_conv_index = random.randint(2, len(conv_indices) - 1)
+        try:
+            random_conv_index = random.randint(2, len(conv_indices) - 1)
+        except ValueError:
+            return model
         print('layer to widen is:', str(random_conv_index))
         factor = 2
         convolution, depth, width = model.structure[conv_indices[random_conv_index]].split('-')
