@@ -351,7 +351,7 @@ if __name__ == '__main__':
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
-    spectrogram_autokeras()
+    run_naive_nas()
 
 
 

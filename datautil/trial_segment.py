@@ -138,6 +138,8 @@ def _to_mrk_code_to_name_and_y(name_to_codes):
 def _create_signal_target_from_start_and_ival(
         data, events, fs, name_to_codes, epoch_ival_ms,
         one_hot_labels, one_label_per_trial):
+    print('in _create_signal_target_from_start_and_ival,'
+          'data.shape is', data.shape)
     cnt_y, i_start_stops = _create_cnt_y_and_trial_bounds_from_start_and_ival(
         data.shape[1], events, fs, name_to_codes, epoch_ival_ms
     )
@@ -154,6 +156,7 @@ def _create_signal_target_from_start_and_ival(
 def _create_cnt_y_and_trial_bounds_from_start_and_ival(
         n_samples, events, fs, name_to_start_codes, epoch_ival_ms):
     ival_in_samples = ms_to_samples(np.array(epoch_ival_ms), fs)
+    print('ival in samples is:', ival_in_samples)
     start_offset = np.int32(np.round(ival_in_samples[0]))
     # we will use ceil but exclusive...
     stop_offset = np.int32(np.ceil(ival_in_samples[1]))
