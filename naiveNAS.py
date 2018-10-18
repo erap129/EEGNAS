@@ -1,5 +1,5 @@
 from keras.models import Sequential, Model
-from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, Input, Cropping2D, Concatenate
+from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, Input, Cropping2D, Concatenate, ZeroPadding2D
 from keras.utils import to_categorical
 import copy
 from simanneal import Annealer
@@ -10,90 +10,101 @@ from keras.callbacks import EarlyStopping
 import random
 
 
-class InputLayer:
+class Layer:
+    running_id = 0
+    def __init__(self):
+        self.id = Layer.running_id
+        Layer.running_id += 1
+
+
+class InputLayer(Layer):
     def __init__(self, shape_height, shape_width):
+        Layer.__init__(self)
         self.shape_height = shape_height
         self.shape_width = shape_width
 
 
-class ConvLayer:
+class ConvLayer(Layer):
     def __init__(self, kernel_width, kernel_height, filter_num):
+        Layer.__init__(self)
         self.kernel_width = kernel_width
         self.kernel_height = kernel_height
         self.filter_num = filter_num
 
 
-class MaxPoolLayer:
+class MaxPoolLayer(Layer):
     def __init__(self, pool_width, stride_width):
+        Layer.__init__(self)
         self.pool_width = pool_width
         self.stride_width = stride_width
 
 
-class CroppingLayer:
+class CroppingLayer(Layer):
     def __init__(self, height_crop_top, height_crop_bottom, width_crop_left, width_crop_right):
+        Layer.__init__(self)
         self.height_crop_top = height_crop_top
         self.height_crop_bottom = height_crop_bottom
         self.width_crop_left = width_crop_left
         self.width_crop_right = width_crop_right
 
 
-class ConcatLayer:
+class ZeroPadLayer(Layer):
+    def __init__(self, height_pad_top, height_pad_bottom, width_pad_left, width_pad_right):
+        Layer.__init__(self)
+        self.height_pad_top = height_pad_top
+        self.height_pad_bottom = height_pad_bottom
+        self.width_pad_left = width_pad_left
+        self.width_pad_right = width_pad_right
+
+
+class ConcatLayer(Layer):
     def __init__(self, first_layer_index, second_layer_index):
+        Layer.__init__(self)
         self.first_layer_index = first_layer_index
         self.second_layer_index = second_layer_index
 
+
+def print_structure(structure):
+    print('---------------model structure-----------------')
+    for layer in structure:
+        print('layer type:', layer.__class__.__name__, 'layer id:', layer.id)
+    print('-----------------------------------------------')
 
 class MyModel(Model):
     def __init__(self, structure=[], *args, **kwargs):
         super(MyModel, self).__init__(*args, **kwargs)
         self.structure = structure
 
-    def new_model_from_structure(self, structure, naiveNAS):
-        # new_model = naiveNAS.base_model()
-        # x = new_model.layers[-1].output
-        # model_layers = [0, 0, 0, 0]
+    def new_model_from_structure(self, structure):
         model_layers = []
 
         for layer in structure:
-            # layer_desc = layer.split('-')
-            # if layer_desc[0] == 'input':
             if isinstance(layer, InputLayer):
-                # x = Input(shape=(int(layer_desc[1]), int(layer_desc[2]), 1))
-                x = Input(shape=(layer.shape_height, layer.shape_width, 1))
-            # elif layer_desc[0] == 'maxpool':
+                keras_layer = Input(shape=(layer.shape_height, layer.shape_width, 1))
+                x = keras_layer
             elif isinstance(layer, MaxPoolLayer):
-                # x = MaxPool2D(pool_size=(1, int(layer_desc[1])), strides=(1, int(layer_desc[2])))(x)
-                x = MaxPool2D(pool_size=(1, layer.pool_width), strides=(1, layer.stride_width))(x)
-            # elif layer_desc[0] == 'convolution':
+                keras_layer = MaxPool2D(pool_size=(1, layer.pool_width), strides=(1, layer.stride_width))
+                x = keras_layer(x)
             elif isinstance(layer, ConvLayer):
-                # x = Conv2D(filters=int(layer_desc[1]), kernel_size=(int(layer_desc[2]), int(layer_desc[3])),
-                #        strides=(1, 1), activation='elu', name='convolution')(x)
-                x = Conv2D(filters=layer.filter_num, kernel_size=(layer.kernel_height, layer.kernel_width),
-                           strides=(1, 1), activation='elu')(x)
-            # elif layer_desc[0] == 'cropping':
+                keras_layer = Conv2D(filters=layer.filter_num, kernel_size=(layer.kernel_height, layer.kernel_width),
+                           strides=(1, 1), activation='elu')
+                x = keras_layer(x)
             elif isinstance(layer, CroppingLayer):
-                # height_add = 0
-                # width_add = 0
-                # try:
-                #     height_crop = int(layer_desc[1])
-                # except ValueError:
-                #     height_crop = int(float(layer_desc[1]) - 0.5)
-                #     height_add = 1
-                # try:
-                #     width_crop = int(layer_desc[2])
-                # except ValueError:
-                #     width_crop = int(float(layer_desc[2]) - 0.5)
-                #     width_add = 1
-                # x = Cropping2D(((height_crop, height_crop + height_add),
-                #                (width_crop, width_crop + width_add)))(x)
-                x = Cropping2D(((layer.height_crop_top, layer.height_crop_bottom),
-                                (layer.width_crop_left, layer.width_crop_right)))(x)
-            # elif layer_desc[0] == 'concatenate':
+                keras_layer = Cropping2D(((layer.height_crop_top, layer.height_crop_bottom),
+                                (layer.width_crop_left, layer.width_crop_right)))
+                x = keras_layer(x)
+            elif isinstance(layer, ZeroPadLayer):
+                keras_layer = ZeroPadding2D(((layer.height_pad_top, layer.height_pad_bottom),
+                                   (layer.width_pad_left, layer.width_pad_right)))
+                x = keras_layer(x)
             elif isinstance(layer, ConcatLayer):
-                # x = Concatenate()([model_layers[int(layer_desc[1])], model_layers[int(layer_desc[2])]])(x)
-                x = Concatenate()([model_layers[layer.first_layer_index], model_layers[layer.second_layer_index]])(x)
-            model_layers.append(x)
-        return MyModel(structure=structure, inputs=new_model.layers[0].input, output=x)
+                print_structure(structure)
+                print('about to concatenate layers:', layer.first_layer_index, 'and:', layer.second_layer_index)
+                keras_layer = Concatenate()([next((x for x, id in model_layers if id == layer.first_layer_index), None),
+                                             next((x for x, id in model_layers if id == layer.second_layer_index), None)])
+                x = keras_layer
+            model_layers.append((x, layer.id))
+        return MyModel(structure=structure, inputs=model_layers[0][0], output=x)
 
 
 class NaiveNAS:
@@ -163,8 +174,8 @@ class NaiveNAS:
         model = MyModel(inputs=inputs, outputs=maxpool)
         model.structure.clear()
         model.structure.append(InputLayer(shape_height=self.n_chans, shape_width=self.input_time_len))
-        model.structure.append(ConvLayer(kernel_width=1, kernel_height=filter_time_length, filter_num=n_filters_time))
-        model.structure.append(ConvLayer(kernel_width=self.n_chans, kernel_height=1, filter_num=n_filters_spat))
+        model.structure.append(ConvLayer(kernel_width=filter_time_length, kernel_height=1, filter_num=n_filters_time))
+        model.structure.append(ConvLayer(kernel_width=1, kernel_height=self.n_chans, filter_num=n_filters_spat))
         model.structure.append(MaxPoolLayer(pool_width=3, stride_width=3))
         # model.structure.append('input-'+str(self.n_chans)+'-'+str(self.input_time_len))
         # model.structure.append('convolution-'+str(n_filters_time)+'-1-'+str(filter_time_length))
@@ -215,38 +226,44 @@ class NaiveNAS:
         second_shape = second_layer.output_shape
         print('first layer shape is:', first_shape)
         print('second layer shape is:', second_shape)
-        height_diff = first_shape[1] - second_shape[1]
-        width_diff = first_shape[2] - second_shape[2]
-        height_crop_top = height_crop_bottom = int(height_diff / 2)
-        width_crop_left = width_crop_right = int(width_diff / 2)
+        print('first layer index for concatLayer is:', first_layer_index, 'second layer index is:', second_layer_index)
+        print('-----------model summary in add skip connection------------')
+        model.summary()
+        print('-----------model structure in add skip connection----------')
+        print_structure(model.structure)
+        height_diff = second_shape[1] - first_shape[1]
+        width_diff = second_shape[2] - first_shape[2]
+        height_crop_top = height_crop_bottom = np.abs(int(height_diff / 2))
+        width_crop_left = width_crop_right = np.abs(int(width_diff / 2))
         if height_diff % 2 == 1:
-            height_crop_top += np.sign(height_diff)
+            height_crop_top += 1
         if width_diff % 2 == 1:
-            width_crop_left += np.sign(width_diff)
-        model.structure.insert(second_layer_index + 1, CroppingLayer(height_crop_top, height_crop_bottom,
-                                                                     width_crop_left, width_crop_right))
-        model.structure.insert(second_layer_index + 2, ConcatLayer(first_layer_index, second_layer_index))
+            width_crop_left += 1
+        if height_diff < 0:
+            ChosenHeightClass = ZeroPadLayer
+        else:
+            ChosenHeightClass = CroppingLayer
+        if width_diff < 0:
+            ChosenWidthClass = ZeroPadLayer
+        else:
+            ChosenWidthClass = CroppingLayer
+        layerdiff = 0
+        if height_diff != 0:
+            layerdiff += 1
+            heightChanger = ChosenHeightClass(height_crop_top, height_crop_bottom, 0, 0)
+            model.structure.insert(second_layer_index + layerdiff, heightChanger)
+        if width_diff != 0:
+            layerdiff += 1
+            widthChanger = ChosenWidthClass(0, 0, width_crop_left, width_crop_right)
+            model.structure.insert(second_layer_index + layerdiff, widthChanger)
+        model.structure.insert(second_layer_index + layerdiff + 1, ConcatLayer(
+            model.structure[first_layer_index].id, model.structure[second_layer_index + layerdiff].id))
         # model.structure.insert(second_layer_index + 1, 'cropping-' + str(height_diff / 2) + '-' +
         #                        str(width_diff / 2))
         # model.structure.insert(second_layer_index+2, 'concatenate-'+str(first_layer_index)+'-'+
         #                         str(second_layer_index+1))
-        return model.new_model_from_structure(copy.deepcopy(model.structure), self)
+        return model.new_model_from_structure(copy.deepcopy(model.structure))
 
-
-        # conv_indices = [i for i, layer in enumerate(model.layers) if layer.get_config()['class_name']=='Conv2D']
-        # if len(conv_indices) < 2:
-        #     return
-        # else:
-
-    # def add_filters(self, model):
-    #     conv_indices = [i for i, layer in enumerate(model.layers) if 'convolution' in layer.get_config()['name']]
-    #     random_conv_index = random.randint(0, len(conv_indices)-1)
-    #     factor = 2
-    #     conv_layer = model.layers[random_conv_index]
-    #     conv_layer.filters = conv_layer.filters * factor
-    #     print('new conv layer filters after transform is:', conv_layer.filters)
-    #     print('just to make sure, its:', model.layers[random_conv_index].filters)
-    #     return model
 
     def add_filters(self, model):
         conv_indices = [i for i, layer in enumerate(model.structure) if isinstance(layer, ConvLayer)]
