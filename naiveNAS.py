@@ -85,7 +85,8 @@ def print_structure(structure):
 def create_topo_layers(layers):
     layer_dict = {}
     for layer in layers:
-        layer_dict[layer] = {x for x in layer.connections}
+        layer_dict[layer.id] = {x.id for x in layer.connections}
+    print('about to sort:', layer_dict)
     return list(reversed(toposort_flatten(layer_dict)))
 
 
@@ -97,7 +98,8 @@ class MyModel(Model):
     @staticmethod
     def new_model_from_structure(layer_collection):
         topo_layers = create_topo_layers(layer_collection.values())
-        for layer in topo_layers:
+        for i in topo_layers:
+            layer = layer_collection[i]
             if isinstance(layer, InputLayer):
                 keras_layer = Input(shape=(layer.shape_height, layer.shape_width, 1), name=str(layer.id))
                 layer.keras_layer = keras_layer
@@ -130,9 +132,13 @@ class MyModel(Model):
                     print(layer.keras_layer.__class__.__name__)
                 except ValueError:
                     print(layer.keras_layer.__class__.__name__)
-
-        return MyModel(layer_collection=layer_collection,
+        model = MyModel(layer_collection=layer_collection,
                        inputs=layer_collection[0].keras_layer, output=layer.keras_layer)
+        try:
+            assert(len(model.layers) == len(layer_collection) == len(topo_layers))
+        except AssertionError:
+            print('what happened now..?')
+        return model
 
 
 class NaiveNAS:
@@ -168,14 +174,15 @@ class NaiveNAS:
             final_model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                       callbacks=[earlystopping])
             res = final_model.evaluate(self.X_test, self.y_test) * 100
-            if res[1] >= curr_acc:
-                curr_model = model
-            else:
-                probability = np.exp((res[1] - curr_acc) / temperature)
-                rand = np.random.choice(a=1, p=[1-probability, probability])
-                if rand == 1:
-                    curr_model = model
-            temperature *= (1-coolingRate)
+            curr_model = model
+            # if res[1] >= curr_acc:
+            #     curr_model = model
+            # else:
+            #     probability = np.exp((res[1] - curr_acc) / temperature)
+            #     rand = np.random.choice(a=1, p=[1-probability, probability])
+            #     if rand == 1:
+            #         curr_model = model
+            # temperature *= (1-coolingRate)
             print('model accuracy:', res[1] * 100)
 
         final_model = self.finalize_model(curr_model)
@@ -255,11 +262,17 @@ class NaiveNAS:
         return model
 
     def add_skip_connection_concat(self, model):
+        topo_layers = create_topo_layers(model.layer_collection.values())
         to_concat = random.sample(range(Layer.running_id), 2)  # choose 2 random layer id's
         first_layer_index = np.min(to_concat)
         second_layer_index = np.max(to_concat)
-        first_layer = model.get_layer(str(first_layer_index))
-        second_layer = model.get_layer(str(second_layer_index))
+        first_layer_index = topo_layers[first_layer_index]
+        second_layer_index = topo_layers[second_layer_index]
+        try:
+            first_layer = model.get_layer(str(first_layer_index))
+            second_layer = model.get_layer(str(second_layer_index))
+        except ValueError:
+            print('lala')
         first_shape = model.get_layer(str(first_layer_index)).output.shape
         second_shape = model.get_layer(str(second_layer_index)).output.shape
         print('first layer shape is:', first_shape)
@@ -306,10 +319,16 @@ class NaiveNAS:
         concat = ConcatLayer(next_layer.id, second_layer_index)
         model.layer_collection[concat.id] = concat
         next_layer.connections.append(concat)
-        concat.connections = second_layer.connections
-        for lay in concat.connections:
+        # concat.connections = second_layer.connections
+        for lay in second_layer.connections:
+            concat.connections.append(lay)
             if not isinstance(lay, ConcatLayer):
                 lay.parent = concat
+            else:
+                if lay.second_layer_index == second_layer_index:
+                    lay.second_layer_index = concat.id
+                if lay.first_layer_index == second_layer_index:
+                    lay.first_layer_index = concat.id
         second_layer.connections = []
         second_layer.connections.append(concat)
 
