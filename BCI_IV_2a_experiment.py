@@ -96,14 +96,6 @@ def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
 
 
 def show_spectrogram(data):
-    # fs = 250
-    # print('raw data is:', data)
-    # print('length of raw data is:', len(data))
-    # f, t, Sxx = signal.spectrogram(data, fs, nperseg=10)
-    # plt.pcolormesh(t, f, Sxx)
-    # plt.ylabel('Frequency [Hz]')
-    # plt.xlabel('Time [sec]')
-    # plt.show()
     fig = plt.figure(frameon=False)
     fig.set_size_inches(256/96, 256/96)
     ax = plt.Axes(fig, [0., 0., 1., 1.])
@@ -168,9 +160,10 @@ def run_keras_deep_model(train_set, test_set, row, cropped=False):
         model.fit_generator(generator=train_generator, steps_per_epoch=50, epochs=50,
                             validation_data=val_generator, validation_steps=20, callbacks=[earlystopping, mcp])
     else:
-        model = keras_models.deep_model(train_set.X.shape[1],
+        model = keras_models.deep_model_mimic(train_set.X.shape[1],
                                         train_set.X.shape[2],
                                         4)
+        model = keras_models.convert_to_dilated(model)
         print('X_train.shape is:', X_train.shape)
         print('y_train.shape is:', y_train.shape)
         print('X_valid.shape is:', X_valid.shape)
@@ -262,7 +255,7 @@ def run_auto_sklearn_model(train_set, test_set, row):
 
 def run_exp(train_set, test_set, subject):
     configs = ['keras', 'tpot', 'auto-keras', 'auto-sklearn']
-    disabled = {'keras': True, 'tpot': True, 'auto-keras': False, 'auto-sklearn': True}
+    disabled = {'keras': False, 'tpot': True, 'auto-keras': True, 'auto-sklearn': True}
     now = str(datetime.datetime.now()).replace(":", "-")
     row = np.array([])
     row = np.append(row, now)
@@ -272,7 +265,6 @@ def run_exp(train_set, test_set, subject):
             row = np.append(row, 0)
             row = np.append(row, 0)
             continue
-
         elif config == 'keras':
             row = run_keras_deep_model(train_set, test_set, row, cropped=False)
 
@@ -291,7 +283,6 @@ def run_exp(train_set, test_set, subject):
 def automl_comparison():
     data_folder = 'data/'
     low_cut_hz = 0
-
     results = pd.DataFrame(columns=['date', 'subject', 'keras_acc', 'keras_runtime',
                                     'tpot_acc', 'tpot_runtime',
                                     'auto-keras_acc', 'auto-keras_runtime',
@@ -360,7 +351,7 @@ if __name__ == '__main__':
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
-    run_naive_nas()
+    # run_naive_nas()
     # test_skip_connections()
-
+    automl_comparison()
 

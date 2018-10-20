@@ -2,7 +2,6 @@ from keras.models import Sequential, Model
 from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, Input, Cropping2D, Concatenate, ZeroPadding2D
 from keras.utils import to_categorical
 import copy
-from simanneal import Annealer
 import numpy as np
 import time
 from keras.utils import plot_model
@@ -192,22 +191,6 @@ class NaiveNAS:
         print('model accuracy:', res[1] * 100)
 
     def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
-        # inputs = Input(shape=(self.n_chans, self.input_time_len, 1))
-        # temporal_conv = Conv2D(name='temporal_convolution', filters=n_filters_time, input_shape=(self.n_chans, self.input_time_len, 1),
-        #                  kernel_size=(1, filter_time_length), strides=(1,1), activation='elu')(inputs)
-        #
-        # # note that this is a different implementation from the paper!
-        # # they didn't put an activation function between the first two convolutions
-        #
-        # # Also, in the paper they implemented batch-norm before each non-linearity - which I didn't do!
-        #
-        # # Also, they added dropout for each input the conv layers except the first! I dropped out only in the end
-        #
-        # spatial_conv = Conv2D(name='spatial_convolution', filters=n_filters_spat,
-        #                       kernel_size=(self.n_chans, 1), strides=(1,1), activation='elu')(temporal_conv)
-        # maxpool = MaxPool2D(pool_size=(1, 3), strides=(1, 3))(spatial_conv)
-        # model = MyModel(inputs=inputs, outputs=maxpool)
-        # model.structure.clear()
         layer_collection = {}
         inputs = InputLayer(shape_height=self.n_chans, shape_width=self.input_time_len)
         layer_collection[inputs.id] = inputs
@@ -220,11 +203,6 @@ class NaiveNAS:
         maxpool = MaxPoolLayer(pool_width=3, stride_width=3)
         layer_collection[maxpool.id] = maxpool
         conv_spat.make_connection(maxpool)
-
-        # model.structure.append(InputLayer(shape_height=self.n_chans, shape_width=self.input_time_len))
-        # model.structure.append(ConvLayer(kernel_width=filter_time_length, kernel_height=1, filter_num=n_filters_time))
-        # model.structure.append(ConvLayer(kernel_width=1, kernel_height=self.n_chans, filter_num=n_filters_spat))
-        # model.structure.append(MaxPoolLayer(pool_width=3, stride_width=3))
         return MyModel.new_model_from_structure(layer_collection)
 
     def finalize_model(self, model):
@@ -257,8 +235,6 @@ class NaiveNAS:
         model.structure.append(ConvLayer(kernel_width=1, kernel_height=conv_width, filter_num=conv_filter_num))
         model.structure.append(MaxPoolLayer(pool_width=maxpool_len, stride_width=maxpool_stride))
 
-        # model.structure.append('convolution-'+str(conv_filter_num)+'-1-'+str(conv_width))
-        # model.structure.append('maxpool-'+str(maxpool_len)+'-'+str(maxpool_stride))
         return model
 
     def add_skip_connection_concat(self, model):
@@ -277,11 +253,7 @@ class NaiveNAS:
         second_shape = model.get_layer(str(second_layer_index)).output.shape
         print('first layer shape is:', first_shape)
         print('second layer shape is:', second_shape)
-        # print('first layer index for concatLayer is:', first_layer_index, 'second layer index is:', second_layer_index)
-        # print('-----------model summary in add skip connection------------')
-        # model.summary()
-        # print('-----------model structure in add skip connection----------')
-        # print_structure(model.structure)
+
         height_diff = int(first_shape[1]) - int(second_shape[1])
         width_diff = int(first_shape[2]) - int(second_shape[2])
         height_crop_top = height_crop_bottom = np.abs(int(height_diff / 2))
@@ -298,28 +270,22 @@ class NaiveNAS:
             ChosenWidthClass = ZeroPadLayer
         else:
             ChosenWidthClass = CroppingLayer
-        # layerdiff = 0
         first_layer = model.layer_collection[first_layer_index]
         second_layer = model.layer_collection[second_layer_index]
         next_layer = first_layer
         if height_diff != 0:
-            # layerdiff += 1
             heightChanger = ChosenHeightClass(height_crop_top, height_crop_bottom, 0, 0)
             model.layer_collection[heightChanger.id] = heightChanger
             first_layer.make_connection(heightChanger)
-            next_layer = heightChanger
-            # model.structure.insert(second_layer_index + layerdiff, heightChanger)
+            next_layer = heightChange
         if width_diff != 0:
-            # layerdiff += 1
             widthChanger = ChosenWidthClass(0, 0, width_crop_left, width_crop_right)
             model.layer_collection[widthChanger.id] = widthChanger
             next_layer.make_connection(widthChanger)
             next_layer = widthChanger
-            # model.structure.insert(second_layer_index + layerdiff, widthChanger)
         concat = ConcatLayer(next_layer.id, second_layer_index)
         model.layer_collection[concat.id] = concat
         next_layer.connections.append(concat)
-        # concat.connections = second_layer.connections
         for lay in second_layer.connections:
             concat.connections.append(lay)
             if not isinstance(lay, ConcatLayer):
@@ -332,8 +298,6 @@ class NaiveNAS:
         second_layer.connections = []
         second_layer.connections.append(concat)
 
-        # model.structure.insert(second_layer_index + layerdiff + 1, ConcatLayer(
-        #     model.structure[first_layer_index].id, model.structure[second_layer_index + layerdiff].id))
         return model.new_model_from_structure(model.layer_collection)
 
 
@@ -345,8 +309,6 @@ class NaiveNAS:
             return model
         print('layer to widen is:', str(random_conv_index))
         factor = random.randint(2, 4)
-        # convolution, depth, height, width = model.structure[conv_indices[random_conv_index]].split('-')
-        # model.structure[conv_indices[random_conv_index]] = convolution+'-'+str(int(depth)*factor)+'-'+height+'-'+width
         model.structure[conv_indices[random_conv_index]].filter_num *= factor
         return model.new_model_from_structure(copy.deepcopy(model.structure),
                                               copy.deepcopy(model.layer_collection), self)
