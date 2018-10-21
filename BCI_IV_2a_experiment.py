@@ -9,12 +9,10 @@ import tensorflow as tf
 import platform
 from naiveNAS import NaiveNAS
 import test_skip_connection
-import io
-from scipy import signal
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from generator import cropped_generator, cropped_predictor
+from generator import binary_example_generator, four_class_example_generator
 # import autosklearn.classification
 import sklearn.metrics
 from autokeras import ImageClassifier
@@ -134,7 +132,7 @@ def create_spectrograms_from_raw(train_set, test_set):
     return create_all_spectrograms(train_set), create_all_spectrograms(test_set)
 
 
-def run_keras_deep_model(train_set, test_set, row, cropped=False):
+def run_keras_model(train_set, test_set, row, cropped=False, mode='deep'):
     print('--------------running keras model--------------')
     valid_set_fraction = 0.2
     print('train_set.X.shape is', train_set.X.shape)
@@ -147,37 +145,43 @@ def run_keras_deep_model(train_set, test_set, row, cropped=False):
     X_test = test_set.X[:, :, :, np.newaxis]
     y_train = to_categorical(train_set_split.y, num_classes=4)
     y_valid = to_categorical(valid_set_split.y, num_classes=4)
+    print('X_train.shape is:', X_train.shape)
+    print('y_train.shape is:', y_train.shape)
+    print('X_valid.shape is:', X_valid.shape)
+    print('y_valid.shape is:', y_valid.shape)
+
     start = time.time()
+    if mode == 'deep':
+        model = keras_models.deep_model_mimic(train_set.X.shape[1], train_set.X.shape[2], 4, cropped=cropped)
+    elif mode == 'shallow':
+        model = keras_models.shallow_model_mimic(train_set.X.shape[1], train_set.X.shape[2], 4, cropped=cropped)
     if cropped:
-        crop_len = 522
-        model = keras_models.deep_model_cropped(train_set.X.shape[1],
-                                                crop_len,
-                                                4)
-        train_generator = cropped_generator(X_train, y_train,
-                                            32, crop_len, 22, 4)
-        val_generator = cropped_generator(X_valid, y_valid,
-                                          32, crop_len, 22, 4)
-        model.fit_generator(generator=train_generator, steps_per_epoch=50, epochs=50,
-                            validation_data=val_generator, validation_steps=20, callbacks=[earlystopping, mcp])
-    else:
-        model = keras_models.deep_model_mimic(train_set.X.shape[1],
-                                        train_set.X.shape[2],
-                                        4)
         model = keras_models.convert_to_dilated(model)
-        print('X_train.shape is:', X_train.shape)
-        print('y_train.shape is:', y_train.shape)
-        print('X_valid.shape is:', X_valid.shape)
-        print('y_valid.shape is:', y_valid.shape)
-        model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid),
-                  callbacks=[earlystopping, mcp])
+
+    # if cropped:
+    #     crop_len = 522
+    #     model = keras_models.deep_model_cropped(train_set.X.shape[1],
+    #                                             crop_len,
+    #                                             4)
+    #     train_generator = cropped_generator(X_train, y_train,
+    #                                         32, crop_len, 22, 4)
+    #     val_generator = cropped_generator(X_valid, y_valid,
+    #                                       32, crop_len, 22, 4)
+    #     model.fit_generator(generator=train_generator, steps_per_epoch=50, epochs=50,
+    #                         validation_data=val_generator, validation_steps=20, callbacks=[earlystopping, mcp])
+    # else:
+    #     model = keras_models.deep_model_mimic(train_set.X.shape[1], train_set.X.shape[2], 4, cropped=True)
+    #     model = keras_models.convert_to_dilated(model)
+
+    model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid), callbacks=[earlystopping, mcp])
     model.load_weights('best_keras_model.hdf5')
     end = time.time()
-    if cropped:
-        predictions = np.argmax(cropped_predictor(model, X_test, crop_len, n_classes=4), axis=1)
-        res = sklearn.metrics.accuracy_score(predictions, test_set.y)
-    else:
-        y_test = to_categorical(test_set.y, num_classes=4)
-        res = model.evaluate(X_test, y_test)[1] * 100
+    # if cropped:
+    #     predictions = np.argmax(cropped_predictor(model, X_test, crop_len, n_classes=4), axis=1)
+    #     res = sklearn.metrics.accuracy_score(predictions, test_set.y)
+    # else:
+    y_test = to_categorical(test_set.y, num_classes=4)
+    res = model.evaluate(X_test, y_test)[1] * 100
     print('accuracy for keras model:', res)
     print('runtime for keras model:', end - start)
     row = np.append(row, res)
@@ -253,28 +257,22 @@ def run_auto_sklearn_model(train_set, test_set, row):
     return row
 
 
-def run_exp(train_set, test_set, subject):
-    configs = ['keras', 'tpot', 'auto-keras', 'auto-sklearn']
-    disabled = {'keras': False, 'tpot': True, 'auto-keras': True, 'auto-sklearn': True}
+def run_exp(train_set, test_set, subject, toggle):
     now = str(datetime.datetime.now()).replace(":", "-")
     row = np.array([])
     row = np.append(row, now)
     row = np.append(row, str(subject))
-    for config in configs:
-        if disabled[config] is True:
-            row = np.append(row, 0)
-            row = np.append(row, 0)
-            continue
-        elif config == 'keras':
-            row = run_keras_deep_model(train_set, test_set, row, cropped=False)
+    for config in toggle.keys():
+        if config == 'keras' and toggle[config]:
+            row = run_keras_model(train_set, test_set, row, cropped=False, mode='deep')
 
-        elif config == 'tpot':
+        elif config == 'tpot' and toggle[config]:
             row = run_tpot_model(train_set, test_set, row)
 
-        elif config == 'auto-keras':
+        elif config == 'auto-keras' and toggle[config]:
             row = run_autokeras_model(train_set, test_set, row)
 
-        elif config == 'auto-sklearn':
+        elif config == 'auto-sklearn' and toggle[config]:
             row = run_auto_sklearn_model(train_set, test_set, row)
     print('row is:', row)
     return row
@@ -283,21 +281,23 @@ def run_exp(train_set, test_set, subject):
 def automl_comparison():
     data_folder = 'data/'
     low_cut_hz = 0
-    results = pd.DataFrame(columns=['date', 'subject', 'keras_acc', 'keras_runtime',
-                                    'tpot_acc', 'tpot_runtime',
-                                    'auto-keras_acc', 'auto-keras_runtime',
-                                    'auto-sklearn_acc', 'auto-sklearn_runtime'])
+    results = pd.DataFrame(columns=['date', 'subject'])
+    toggle = {'keras': True, 'tpot': False, 'auto-keras': False, 'auto-sklearn': False}
+    for setting in toggle.keys():
+        if toggle[setting]:
+            results[setting+'_acc'] = None
+            results[setting+'_runtime'] = None
 
     for subject_id in range(1, 10):
         train_set, test_set = get_train_test(data_folder, subject_id, low_cut_hz)
-        row = run_exp(train_set, test_set, subject_id)
+        row = run_exp(train_set, test_set, subject_id, toggle)
         results.loc[subject_id - 1] = row
 
     now = str(datetime.datetime.now()).replace(":", "-")
     header = True
     if os.path.isfile('results' + now + '.csv'):
         header = False
-    results.to_csv('results' + now + '.csv', mode='a', header=header)
+    results.to_csv('results/results' + now + '.csv', mode='a', header=header)
 
 
 def spectrogram_autokeras():
@@ -312,23 +312,32 @@ def spectrogram_autokeras():
     run_autokeras_model(train_specs[:10], train_set.y[:10], test_specs[:10], test_set.y[:10])
 
 
-def run_naive_nas():
+def run_naive_nas(real_data=False, toy_data=True):
     global data_folder, valid_set_fraction
-    train_set, test_set = get_train_test(data_folder, 1, 0)
-    train_set, valid_set = split_into_two_sets(
-        train_set, first_set_fraction=1 - valid_set_fraction)
+    if real_data:
+        train_set, test_set = get_train_test(data_folder, 1, 0)
+        train_set, valid_set = split_into_two_sets(
+            train_set, first_set_fraction=1 - valid_set_fraction)
 
-    X_train = train_set.X[:, :, :, np.newaxis]
-    X_valid = valid_set.X[:, :, :, np.newaxis]
-    X_test = test_set.X[:, :, :, np.newaxis]
-    y_train = to_categorical(train_set.y, num_classes=4)
-    y_valid = to_categorical(valid_set.y, num_classes=4)
-    y_test = to_categorical(test_set.y, num_classes=4)
+        X_train = train_set.X[:, :, :, np.newaxis]
+        X_valid = valid_set.X[:, :, :, np.newaxis]
+        X_test = test_set.X[:, :, :, np.newaxis]
+        y_train = to_categorical(train_set.y, num_classes=4)
+        y_valid = to_categorical(valid_set.y, num_classes=4)
+        y_test = to_categorical(test_set.y, num_classes=4)
 
-    naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
-                        X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
-                        X_test=X_test, y_test=y_test)
-    naiveNAS.find_best_model()
+        naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
+                            X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
+                            X_test=X_test, y_test=y_test)
+        naiveNAS.find_best_model()
+    if toy_data:
+        X_train, y_train, X_val, y_val, X_test, y_test = four_class_example_generator()
+        print(X_test)
+        print(y_test)
+        naiveNAS = NaiveNAS(n_classes=4, input_time_len=1000, n_chans=4,
+                            X_train=X_train, y_train=y_train, X_valid=X_val, y_valid=y_val,
+                            X_test=X_test, y_test=y_test)
+        naiveNAS.find_best_model()
 
 
 def test_skip_connections():
@@ -351,7 +360,7 @@ if __name__ == '__main__':
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
-    # run_naive_nas()
+    run_naive_nas()
     # test_skip_connections()
-    automl_comparison()
+    # automl_comparison()
 

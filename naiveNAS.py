@@ -1,25 +1,27 @@
-from keras.models import Sequential, Model
-from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, Input, Cropping2D, Concatenate, ZeroPadding2D
-from keras.utils import to_categorical
-import copy
+from keras.models import Model
+from keras.layers import Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, Input, Cropping2D, Concatenate, ZeroPadding2D, BatchNormalization
+import pandas as pd
 import numpy as np
 import time
 from keras.utils import plot_model
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 from toposort import toposort_flatten
 import os
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
+import platform
+import datetime
 
 
 class Layer:
     running_id = 0
 
-    def __init__(self):
+    def __init__(self, name=None):
         self.id = Layer.running_id
         self.connections = []
         self.parent = None
         self.keras_layer = None
+        self.name = name
         Layer.running_id += 1
 
     def make_connection(self, other):
@@ -34,9 +36,29 @@ class InputLayer(Layer):
         self.shape_width = shape_width
 
 
-class ConvLayer(Layer):
-    def __init__(self, kernel_width, kernel_height, filter_num):
+class DropoutLayer(Layer):
+    def __init__(self, rate=0.5):
         Layer.__init__(self)
+        self.rate = rate
+
+
+class BatchNormLayer(Layer):
+    def __init__(self, axis=3, momentum=0.1, epsilon=1e-5):
+        Layer.__init__(self)
+        self.axis = axis
+        self.momentum = momentum
+        self.epsilon = epsilon
+
+
+class ActivationLayer(Layer):
+    def __init__(self, activation_type='elu'):
+        Layer.__init__(self)
+        self.activation_type = activation_type
+
+
+class ConvLayer(Layer):
+    def __init__(self, kernel_width, kernel_height, filter_num, name=None):
+        Layer.__init__(self, name)
         self.kernel_width = kernel_width
         self.kernel_height = kernel_height
         self.filter_num = filter_num
@@ -85,7 +107,6 @@ def create_topo_layers(layers):
     layer_dict = {}
     for layer in layers:
         layer_dict[layer.id] = {x.id for x in layer.connections}
-    print('about to sort:', layer_dict)
     return list(reversed(toposort_flatten(layer_dict)))
 
 
@@ -101,36 +122,52 @@ class MyModel(Model):
             layer = layer_collection[i]
             if isinstance(layer, InputLayer):
                 keras_layer = Input(shape=(layer.shape_height, layer.shape_width, 1), name=str(layer.id))
-                layer.keras_layer = keras_layer
+
             elif isinstance(layer, MaxPoolLayer):
                 keras_layer = MaxPool2D(pool_size=(1, layer.pool_width), strides=(1, layer.stride_width),
                                         name=str(layer.id))
-                layer.keras_layer = keras_layer
+
             elif isinstance(layer, ConvLayer):
+                if(layer.kernel_width == 'down_to_one'):
+                    topo_layers = create_topo_layers(layer_collection.values())
+                    last_layer_id = topo_layers[layer.id - 1]
+                    layer.kernel_width = int(layer_collection[last_layer_id].keras_layer.shape[2])
                 keras_layer = Conv2D(filters=layer.filter_num, kernel_size=(layer.kernel_height, layer.kernel_width),
                                      strides=(1, 1), activation='elu', name=str(layer.id))
-                layer.keras_layer = keras_layer
+
             elif isinstance(layer, CroppingLayer):
                 keras_layer = Cropping2D(((layer.height_crop_top, layer.height_crop_bottom),
                                           (layer.width_crop_left, layer.width_crop_right)), name=str(layer.id))
-                layer.keras_layer = keras_layer
+
             elif isinstance(layer, ZeroPadLayer):
                 keras_layer = ZeroPadding2D(((layer.height_pad_top, layer.height_pad_bottom),
                                              (layer.width_pad_left, layer.width_pad_right)), name=str(layer.id))
-                layer.keras_layer = keras_layer
+
             elif isinstance(layer, ConcatLayer):
-                print('about to concatenate layers:', layer.first_layer_index, 'and:', layer.second_layer_index)
                 keras_layer = Concatenate(name=str(layer.id))(
                     [layer_collection[layer.first_layer_index].keras_layer,
                      layer_collection[layer.second_layer_index].keras_layer])
-                layer.keras_layer = keras_layer
+
+            elif isinstance(layer, BatchNormLayer):
+                keras_layer = BatchNormalization(axis=layer.axis, momentum=layer.momentum, epsilon=layer.epsilon)
+
+            elif isinstance(layer, ActivationLayer):
+                keras_layer = Activation(layer.activation_type)
+
+            elif isinstance(layer, DropoutLayer):
+                keras_layer = Dropout(layer.rate)
+
+            layer.keras_layer = keras_layer
+            if layer.name is not None:
+                layer.keras_layer.name = layer.name
+
             if layer.parent is not None:
                 try:
                     layer.keras_layer = layer.keras_layer(layer.parent.keras_layer)
-                except TypeError:
-                    print(layer.keras_layer.__class__.__name__)
-                except ValueError:
-                    print(layer.keras_layer.__class__.__name__)
+                except TypeError as e:
+                    print('couldnt connect a keras layer with tensor...error was:', e)
+                except ValueError as e:
+                    print('couldnt connect a keras layer with tensor...error was:', e)
         model = MyModel(layer_collection=layer_collection,
                        inputs=layer_collection[0].keras_layer, output=layer.keras_layer)
         try:
@@ -154,41 +191,67 @@ class NaiveNAS:
         self.y_valid = y_valid
         self.finalize_flag = 0
 
-    def find_best_model(self, time_limit = 1 * 60 * 60):
-        curr_model = self.base_model()
-        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=3)
+    def find_best_model(self, time_limit = 5 * 60 * 60, first_experiment=True):
+        curr_model = self.target_model()
+        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
+        mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
         start_time = time.time()
         curr_acc = 0
         num_of_ops = 0
         temperature = 10000
         coolingRate = 0.003
-        operations = [self.add_conv_maxpool_block, self.add_filters]
+        operations = [self.add_remove_filters]
+        total_time = 0
+        if first_experiment:
+            results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters', 'accuracy'])
 
         while time.time()-start_time < time_limit and not self.finalize_flag:
             op_index = random.randint(0, len(operations) - 1)
             num_of_ops += 1
-            # model = operations[op_index](curr_model, num_of_ops)
-            model = self.add_skip_connection_concat(curr_model)
+            model = operations[op_index](curr_model)
             final_model = self.finalize_model(model)
-            final_model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
-                      callbacks=[earlystopping])
+            start = time.time()
+            final_model.fit(self.X_train, self.y_train, epochs=20, validation_data=(self.X_valid, self.y_valid),
+                      callbacks=[earlystopping, mcp])
+            try:
+                model.load_weights('best_keras_model.hdf5')
+            except ValueError as e:
+                WARNING = '\033[93m'
+                ENDC = '\033[0m'
+                print(WARNING + 'failed to load weights for best model with error:', str(e) + ENDC)
+            end = time.time()
+            total_time += end - start
             res = final_model.evaluate(self.X_test, self.y_test) * 100
             curr_model = model
-            # if res[1] >= curr_acc:
-            #     curr_model = model
-            # else:
-            #     probability = np.exp((res[1] - curr_acc) / temperature)
-            #     rand = np.random.choice(a=1, p=[1-probability, probability])
-            #     if rand == 1:
-            #         curr_model = model
-            # temperature *= (1-coolingRate)
+            if res[1] >= curr_acc:
+                curr_model = model
+            else:
+                probability = np.exp((res[1] - curr_acc) / temperature)
+                rand = np.random.choice(a=1, p=[1-probability, probability])
+                if rand == 1:
+                    curr_model = model
+            temperature *= (1-coolingRate)
+            print('train time in seconds:', end-start)
             print('model accuracy:', res[1] * 100)
+            if first_experiment:
+                results.loc[num_of_ops - 1] = np.array([int(final_model.get_layer('conv1').filters),
+                                                    int(final_model.get_layer('conv2').filters),
+                                                    int(final_model.get_layer('conv3').filters),
+                                                    res[1] * 100])
+                print(results)
 
         final_model = self.finalize_model(curr_model)
         final_model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                         callbacks=[earlystopping])
         res = final_model.evaluate(self.X_test, self.y_test) * 100
+
+        print('final model summary:')
+        final_model.summary()
         print('model accuracy:', res[1] * 100)
+        print('average train time per model', total_time / num_of_ops)
+        if first_experiment:
+            now = str(datetime.datetime.now()).replace(":", "-")
+            results.to_csv('results/filter_annealing_experiment' + now + '.csv', mode='a')
 
     def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
         layer_collection = {}
@@ -200,40 +263,75 @@ class NaiveNAS:
         conv_spat = ConvLayer(kernel_width=1, kernel_height=self.n_chans, filter_num=n_filters_spat)
         layer_collection[conv_spat.id] = conv_spat
         conv_time.make_connection(conv_spat)
+        batchnorm = BatchNormLayer()
+        layer_collection[batchnorm.id] = batchnorm
+        conv_spat.make_connection(batchnorm)
+        elu = ActivationLayer()
+        layer_collection[elu.id] = elu
+        batchnorm.make_connection(elu)
         maxpool = MaxPoolLayer(pool_width=3, stride_width=3)
         layer_collection[maxpool.id] = maxpool
-        conv_spat.make_connection(maxpool)
+        elu.make_connection(maxpool)
         return MyModel.new_model_from_structure(layer_collection)
 
-    def finalize_model(self, model):
-        output = model.layers[-1].output
-        flatten_layer = Flatten()(output)
-        prediction_layer = Dense(self.n_classes, activation='softmax', name='prediction_layer')(flatten_layer)
-        model = MyModel(layer_collection=model.layer_collection, input=model.layers[0].input, output=prediction_layer)
-        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-        model.summary()
-        plot_model(model, to_file='model.png')
+    def target_model(self):
+        base_model = self.base_model()
+        model = self.add_conv_maxpool_block(base_model, conv_filter_num=50, conv_layer_name='conv1')
+        model = self.add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2')
+        model = self.add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3')
+        topo_layers = create_topo_layers(model.layer_collection.values())
+        last_layer_id = topo_layers[-1]
+        conv_layer = ConvLayer(kernel_width='down_to_one', kernel_height=1, filter_num=self.n_classes)
+        model.layer_collection[conv_layer.id] = conv_layer
+        model.layer_collection[last_layer_id].make_connection(conv_layer)
         return model
 
-    def add_conv_maxpool_block(self, model, num_of_ops):
-        conv_width = random.randint(5, 10)
-        conv_filter_num = random.randint(50, 100)
-        maxpool_len = random.randint(3, 5)
-        maxpool_stride = random.randint(1,3)
+    def finalize_model(self, model, add_dense=False):
+        final_layer = model.layers[-1].output
+        if add_dense:
+            final_layer = Flatten(final_layer)
+            final_layer = Dense(self.n_classes, name='prediction_layer')(final_layer)
+        final_layer = Activation('softmax')(final_layer)
+        if not add_dense:
+            final_layer = Flatten()(final_layer)
+        model = MyModel(layer_collection=model.layer_collection, input=model.layers[0].input, output=final_layer)
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        model.summary()
+        if platform.node() != 'nvidia':
+            print('--------------------------------------------------------------------------------------------------------------------')
+            print('platform.node() is', platform.node())
+            print('--------------------------------------------------------------------------------------------------------------------')
+            plot_model(model, to_file='model.png')
+        return model
 
-        output = model.layers[-1].output
-        try:
-            conv_layer = Conv2D(filters=conv_filter_num, kernel_size=(1, conv_width),
-                                strides=(1, 1), activation='elu', name='convolution-'+str(num_of_ops))(output)
-            maxpool_layer = MaxPool2D(pool_size=(1, maxpool_len), strides=(1, maxpool_stride))(conv_layer)
-            model = MyModel(structure=model.structure, input=model.layers[0].input, output=maxpool_layer)
-        except ValueError as e:
-            print('failed to build new network with exception:', str(e))
-            print('finalizing network')
-            self.finalize_flag = 1
+    def add_conv_maxpool_block(self, model, conv_width=10, conv_filter_num=50,
+                               pool_width=3, pool_stride=3, dropout=False, conv_layer_name=None):
+        # conv_width = random.randint(5, 10)
+        # conv_filter_num = random.randint(0, 50)
+        # pool_width = random.randint(1, 3)
+        # pool_stride = random.randint(1,3)
 
-        model.structure.append(ConvLayer(kernel_width=1, kernel_height=conv_width, filter_num=conv_filter_num))
-        model.structure.append(MaxPoolLayer(pool_width=maxpool_len, stride_width=maxpool_stride))
+        topo_layers = create_topo_layers(model.layer_collection.values())
+        last_layer_id = topo_layers[-1]
+        if dropout:
+            dropout = DropoutLayer()
+            model.layer_collection[dropout.id] = dropout
+            model.layer_collection[last_layer_id].make_connection(dropout)
+            last_layer_id = dropout.id
+        conv_layer = ConvLayer(kernel_width=conv_width, kernel_height=1,
+                               filter_num=conv_filter_num, name=conv_layer_name)
+        model.layer_collection[conv_layer.id] = conv_layer
+        model.layer_collection[last_layer_id].make_connection(conv_layer)
+        batchnorm_layer = BatchNormLayer()
+        model.layer_collection[batchnorm_layer.id] = batchnorm_layer
+        conv_layer.make_connection(batchnorm_layer)
+        activation_layer = ActivationLayer()
+        model.layer_collection[activation_layer.id] = activation_layer
+        batchnorm_layer.make_connection(activation_layer)
+        maxpool_layer = MaxPoolLayer(pool_width=pool_width, stride_width=pool_stride)
+        model.layer_collection[maxpool_layer.id] = maxpool_layer
+        activation_layer.make_connection(maxpool_layer)
+        return MyModel.new_model_from_structure(model.layer_collection)
 
         return model
 
@@ -244,11 +342,6 @@ class NaiveNAS:
         second_layer_index = np.max(to_concat)
         first_layer_index = topo_layers[first_layer_index]
         second_layer_index = topo_layers[second_layer_index]
-        try:
-            first_layer = model.get_layer(str(first_layer_index))
-            second_layer = model.get_layer(str(second_layer_index))
-        except ValueError:
-            print('lala')
         first_shape = model.get_layer(str(first_layer_index)).output.shape
         second_shape = model.get_layer(str(second_layer_index)).output.shape
         print('first layer shape is:', first_shape)
@@ -301,15 +394,28 @@ class NaiveNAS:
         return model.new_model_from_structure(model.layer_collection)
 
 
-    def add_filters(self, model):
-        conv_indices = [i for i, layer in enumerate(model.structure) if isinstance(layer, ConvLayer)]
+    def factor_filters(self, model):
+        conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
         try:
             random_conv_index = random.randint(2, len(conv_indices) - 1)
         except ValueError:
             return model
         print('layer to widen is:', str(random_conv_index))
         factor = random.randint(2, 4)
-        model.structure[conv_indices[random_conv_index]].filter_num *= factor
-        return model.new_model_from_structure(copy.deepcopy(model.structure),
-                                              copy.deepcopy(model.layer_collection), self)
+        model.layer_collection[random_conv_index].filter_num *= factor
+        return model.new_model_from_structure(model.layer_collection)
+
+    def add_remove_filters(self, model):
+        conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
+        try:
+            random_conv_index = random.randint(2, len(conv_indices) - 2)  # don't include first 2 convs or last conv
+            random_conv_index = conv_indices[random_conv_index]
+        except ValueError:
+            return model
+        print('layer to add/remove filter is:', str(random_conv_index))
+        add_remove = [-1, 1]
+        rand = random.randint(0, 1)
+        to_add = add_remove[rand]
+        model.layer_collection[random_conv_index].filter_num += to_add
+        return model.new_model_from_structure(model.layer_collection)
 
