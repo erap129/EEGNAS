@@ -25,6 +25,7 @@ def shallow_model_mimic(n_chans, input_time_length, n_classes, n_filters_time=40
     model.summary()
     return model
 
+
 def dilation_pool(x, window_shape, strides, dilation_rate, pooling_type='MAX'):
     import tensorflow as tf
     return tf.nn.pool(x, window_shape=window_shape, strides=strides, dilation_rate=dilation_rate,
@@ -67,8 +68,10 @@ def deep_model_mimic(n_chans, input_time_length, n_classes, n_filters_time=25, n
     model.add(Activation('elu'))
     # model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
     model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 3), 'strides': (1, 3), 'dilation_rate': (1,1)}))
-
-    final_kernel_size = int(model.layers[-1].output_shape[2])
+    if cropped:
+        final_kernel_size = 2
+    else:
+        final_kernel_size = int(model.layers[-1].output_shape[2])
     model.add(Conv2D(filters=n_classes, kernel_size=(1, final_kernel_size), strides=(1, 1)))
     model.add(Activation('softmax'))
     if cropped:

@@ -264,7 +264,7 @@ def run_exp(train_set, test_set, subject, toggle):
     row = np.append(row, str(subject))
     for config in toggle.keys():
         if config == 'keras' and toggle[config]:
-            row = run_keras_model(train_set, test_set, row, cropped=False, mode='deep')
+            row = run_keras_model(train_set, test_set, row, cropped=True, mode='deep')
 
         elif config == 'tpot' and toggle[config]:
             row = run_tpot_model(train_set, test_set, row)
@@ -312,7 +312,7 @@ def spectrogram_autokeras():
     run_autokeras_model(train_specs[:10], train_set.y[:10], test_specs[:10], test_set.y[:10])
 
 
-def run_naive_nas(real_data=False, toy_data=True):
+def run_naive_nas(real_data=True, toy_data=False):
     global data_folder, valid_set_fraction
     if real_data:
         train_set, test_set = get_train_test(data_folder, 1, 0)
@@ -328,7 +328,7 @@ def run_naive_nas(real_data=False, toy_data=True):
 
         naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
                             X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
-                            X_test=X_test, y_test=y_test)
+                            X_test=X_test, y_test=y_test, cropping=False)
         naiveNAS.find_best_model()
     if toy_data:
         X_train, y_train, X_val, y_val, X_test, y_test = four_class_example_generator()
@@ -352,7 +352,7 @@ if __name__ == '__main__':
     global data_folder, valid_set_fraction
 
     if platform.node() == 'nvidia':
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        os.environ["CUDA_VISIBLE_DEVICES"] = "3"
         config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 56})
         sess = tf.Session(config=config)
         keras.backend.set_session(sess)
