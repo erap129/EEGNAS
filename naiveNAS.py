@@ -8,10 +8,14 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from toposort import toposort_flatten
 from keras_models import dilation_pool, convert_to_dilated, mean_layer
 import os
+import keras.backend as K
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import platform
 import datetime
+import tensorflow as tf
+WARNING = '\033[93m'
+ENDC = '\033[0m'
 
 
 class Layer:
@@ -35,6 +39,11 @@ class InputLayer(Layer):
         Layer.__init__(self)
         self.shape_height = shape_height
         self.shape_width = shape_width
+
+
+class FlattenLayer(Layer):
+    def __init__(self):
+        Layer.__init__(self)
 
 
 class DropoutLayer(Layer):
@@ -112,12 +121,7 @@ def create_topo_layers(layers):
     return list(reversed(toposort_flatten(layer_dict)))
 
 
-# class MyModel(Model):
-#     def __init__(self, layer_collection={}, *args, **kwargs):
-#         super(MyModel, self).__init__(*args, **kwargs)
-#         self.layer_collection = layer_collection
-
-class MyModel():
+class MyModel:
     def __init__(self, model, layer_collection={}):
         self.layer_collection = layer_collection
         self.model = model
@@ -166,6 +170,9 @@ class MyModel():
             elif isinstance(layer, DropoutLayer):
                 keras_layer = Dropout(layer.rate)
 
+            elif isinstance(layer, FlattenLayer):
+                keras_layer = Flatten()
+
             layer.keras_layer = keras_layer
             if layer.name is not None:
                 layer.keras_layer.name = layer.name
@@ -179,6 +186,8 @@ class MyModel():
                     print('couldnt connect a keras layer with tensor...error was:', e)
         model = MyModel(model=Model(inputs=layer_collection[0].keras_layer, output=layer.keras_layer),
                         layer_collection=layer_collection)
+        model.model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        # model.model.summary()
         try:
             assert(len(model.model.layers) == len(layer_collection) == len(topo_layers))
         except AssertionError:
@@ -201,58 +210,71 @@ class NaiveNAS:
         self.finalize_flag = 0
         self.cropping = cropping
 
-    def find_best_model(self, time_limit=5 * 60 * 60, first_experiment=True):
+    def find_best_model(self, time_limit=12 * 60 * 60, first_experiment=True):
         curr_model = self.target_model()
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
         mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
         start_time = time.time()
         curr_acc = 0
         num_of_ops = 0
-        temperature = 10000
+        temperature = 10
         coolingRate = 0.003
         operations = [self.add_remove_filters]
         total_time = 0
         if first_experiment:
-            results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters', 'accuracy'])
-
+            results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
+                                            'accuracy', 'runtime', 'switch probability', 'temperature'])
         while time.time()-start_time < time_limit and not self.finalize_flag:
+            K.clear_session()
             op_index = random.randint(0, len(operations) - 1)
             num_of_ops += 1
             model = operations[op_index](curr_model)
-            final_model = self.finalize_model(model)
+            # final_model = self.finalize_model(model)
             if self.cropping:
-                final_model.model = convert_to_dilated(final_model.model)
+                model.model = convert_to_dilated(model.model)
             start = time.time()
-            final_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
-                      callbacks=[earlystopping, mcp])
             try:
-                final_model.model.load_weights('best_keras_model.hdf5')
-            except ValueError as e:
-                WARNING = '\033[93m'
-                ENDC = '\033[0m'
-                print(WARNING + 'failed to load weights for best model with error:', str(e) + ENDC)
+                model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
+                         callbacks=[earlystopping])
+            except Exception as e:
+                print(WARNING + 'failed to execute network number:' + num_of_ops +', with error:' + str(e) + '\ncontinuing...')
+                num_of_ops -= 1
+                continue
+            # try:
+            #     model.model.load_weights('best_keras_model.hdf5')
+            # except ValueError as e:
+            #     WARNING = '\033[93m'
+            #     ENDC = '\033[0m'
+            #     print(WARNING + 'failed to load weights for best model with error:', str(e) + ENDC)
             end = time.time()
             total_time += end - start
-            res = final_model.model.evaluate(self.X_test, self.y_test) * 100
+            res = model.model.evaluate(self.X_test, self.y_test) * 100
             curr_model = model
             if res[1] >= curr_acc:
                 curr_model = model
+                curr_acc = res[1]
+                probability = -1
             else:
                 probability = np.exp((res[1] - curr_acc) / temperature)
-                rand = np.random.choice(a=1, p=[1-probability, probability])
+                rand = np.random.choice(a=[1, 0], p=[probability, 1-probability])
                 if rand == 1:
                     curr_model = model
             temperature *= (1-coolingRate)
             print('train time in seconds:', end-start)
             print('model accuracy:', res[1] * 100)
             if first_experiment:
-                results.loc[num_of_ops - 1] = np.array([int(final_model.model.get_layer('conv1').filters),
-                                                    int(final_model.model.get_layer('conv2').filters),
-                                                    int(final_model.model.get_layer('conv3').filters),
-                                                    res[1] * 100])
+                results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
+                                                    int(model.model.get_layer('conv2').filters),
+                                                    int(model.model.get_layer('conv3').filters),
+                                                    res[1] * 100,
+                                                    str(end-start),
+                                                    str(probability),
+                                                    str(temperature)])
                 print(results)
 
-        final_model = self.finalize_model(curr_model)
+
+        # final_model = self.finalize_model(curr_model)
+        final_model = curr_model
         final_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                         callbacks=[earlystopping])
         res = final_model.model.evaluate(self.X_test, self.y_test) * 100
@@ -264,6 +286,17 @@ class NaiveNAS:
         if first_experiment:
             now = str(datetime.datetime.now()).replace(":", "-")
             results.to_csv('results/filter_annealing_experiment' + now + '.csv', mode='a')
+
+        # except Exception as e:
+        #     print('something bad happened...this is the exception:')
+        #     print(str(e))
+        #     print('outputting to file the results up until now.')
+        #     if first_experiment:
+        #         now = str(datetime.datetime.now()).replace(":", "-")
+        #         results.to_csv('results/filter_annealing_experiment' + now + '.csv', mode='a')
+        #         Layer.running_id = 0
+        #         print('running again')
+        #         self.find_best_model()
 
     def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
         layer_collection = {}
@@ -300,6 +333,12 @@ class NaiveNAS:
         conv_layer = ConvLayer(kernel_width=final_conv_width, kernel_height=1, filter_num=self.n_classes)
         model.layer_collection[conv_layer.id] = conv_layer
         model.layer_collection[last_layer_id].make_connection(conv_layer)
+        softmax = ActivationLayer('softmax')
+        model.layer_collection[softmax.id] = softmax
+        conv_layer.make_connection(softmax)
+        flatten = FlattenLayer()
+        model.layer_collection[flatten.id] = flatten
+        softmax.make_connection(flatten)
         return model
 
     def finalize_model(self, model, add_dense=False):
@@ -322,6 +361,7 @@ class NaiveNAS:
             print('--------------------------------------------------------------------------------------------------------------------')
             plot_model(model.model, to_file='model.png')
         return model
+
 
     def add_conv_maxpool_block(self, model, conv_width=10, conv_filter_num=50,
                                pool_width=3, pool_stride=3, dropout=False, conv_layer_name=None):
@@ -435,6 +475,9 @@ class NaiveNAS:
         add_remove = [-1, 1]
         rand = random.randint(0, 1)
         to_add = add_remove[rand]
+        if (model.layer_collection[random_conv_index].filter_num == 1 and to_add == -1) or\
+                (model.layer_collection[random_conv_index].filter_num == 300 and to_add == 1):
+            return self.add_remove_filters(model)  # if zero or 300 filters, start over...
         model.layer_collection[random_conv_index].filter_num += to_add
         return model.new_model_from_structure(model.layer_collection)
 

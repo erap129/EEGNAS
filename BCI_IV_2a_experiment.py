@@ -264,7 +264,7 @@ def run_exp(train_set, test_set, subject, toggle):
     row = np.append(row, str(subject))
     for config in toggle.keys():
         if config == 'keras' and toggle[config]:
-            row = run_keras_model(train_set, test_set, row, cropped=True, mode='deep')
+            row = run_keras_model(train_set, test_set, row, cropped=False, mode='deep')
 
         elif config == 'tpot' and toggle[config]:
             row = run_tpot_model(train_set, test_set, row)
@@ -360,7 +360,7 @@ if __name__ == '__main__':
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
-    run_naive_nas()
+    # run_naive_nas()
     # test_skip_connections()
-    # automl_comparison()
+    automl_comparison()
 
