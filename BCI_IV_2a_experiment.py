@@ -329,7 +329,8 @@ def run_naive_nas(real_data=True, toy_data=False):
         naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
                             X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
                             X_test=X_test, y_test=y_test, cropping=False)
-        naiveNAS.find_best_model()
+        # naiveNAS.find_best_model()
+        naiveNAS.grid_search()
     if toy_data:
         X_train, y_train, X_val, y_val, X_test, y_test = four_class_example_generator()
         print(X_test)
@@ -360,7 +361,7 @@ if __name__ == '__main__':
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
-    # run_naive_nas()
+    run_naive_nas()
     # test_skip_connections()
-    automl_comparison()
+    # automl_comparison()
 

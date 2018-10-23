@@ -15,12 +15,16 @@ def shallow_model_mimic(n_chans, input_time_length, n_classes, n_filters_time=40
     model.add(Lambda(lambda x: x ** 2))  # squaring layer
     model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 75), 'strides': (1, 15), 'dilation_rate': (1, 1), 'pooling_type': 'AVG'}))
     model.add(Lambda(lambda x: K.log(K.clip(x, min_value=1e-6, max_value=None))))
-    model.add(Conv2D(filters=n_classes, kernel_size=(1, 69), strides=(1, 1)))
     model.add(Dropout(0.5))
+    if cropped:
+        final_kernel_size = 30
+    else:
+        final_kernel_size = int(model.layers[-1].output_shape[2])
+    model.add(Conv2D(filters=n_classes, kernel_size=(1, final_kernel_size), strides=(1, 1)))
+    model.add(Activation('softmax'))
     if cropped:
         model.add(Lambda(mean_layer))
     model.add(Flatten())
-    model.add(Activation('softmax'))
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
     return model
