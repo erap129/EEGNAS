@@ -197,7 +197,7 @@ class MyModel:
 
 class NaiveNAS:
     def __init__(self, n_classes, input_time_len, n_chans,
-                 X_train, y_train, X_valid, y_valid, X_test, y_test, cropping=False):
+                 X_train, y_train, X_valid, y_valid, X_test, y_test, subject_id, cropping=False):
         self.n_classes = n_classes
         self.n_chans = n_chans
         self.input_time_len = input_time_len
@@ -209,8 +209,9 @@ class NaiveNAS:
         self.y_valid = y_valid
         self.finalize_flag = 0
         self.cropping = cropping
+        self.subject_id = subject_id
 
-    def find_best_model(self, time_limit=12 * 60 * 60, first_experiment=True):
+    def find_best_model(self, folder_name, experiment, time_limit=12 * 60 * 60):
         curr_model = self.target_model()
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
         mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
@@ -221,31 +222,22 @@ class NaiveNAS:
         coolingRate = 0.003
         operations = [self.add_remove_filters]
         total_time = 0
-        if first_experiment:
+        if experiment == 'filter_experiment':
             results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
                                             'accuracy', 'runtime', 'switch probability', 'temperature'])
         while time.time()-start_time < time_limit and not self.finalize_flag:
             K.clear_session()
             op_index = random.randint(0, len(operations) - 1)
             num_of_ops += 1
+            mcp = ModelCheckpoint('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5',
+                save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
             model = operations[op_index](curr_model)
-            # final_model = self.finalize_model(model)
             if self.cropping:
                 model.model = convert_to_dilated(model.model)
             start = time.time()
-            try:
-                model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
-                         callbacks=[earlystopping])
-            except Exception as e:
-                print(WARNING + 'failed to execute network number:' + num_of_ops +', with error:' + str(e) + '\ncontinuing...')
-                num_of_ops -= 1
-                continue
-            # try:
-            #     model.model.load_weights('best_keras_model.hdf5')
-            # except ValueError as e:
-            #     WARNING = '\033[93m'
-            #     ENDC = '\033[0m'
-            #     print(WARNING + 'failed to load weights for best model with error:', str(e) + ENDC)
+            model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
+                         callbacks=[earlystopping, mcp])
+            model.model.load_weights('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5')
             end = time.time()
             total_time += end - start
             res = model.model.evaluate(self.X_test, self.y_test) * 100
@@ -262,7 +254,7 @@ class NaiveNAS:
             temperature *= (1-coolingRate)
             print('train time in seconds:', end-start)
             print('model accuracy:', res[1] * 100)
-            if first_experiment:
+            if experiment == 'filter_experiment':
                 results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
                                                     int(model.model.get_layer('conv2').filters),
                                                     int(model.model.get_layer('conv3').filters),
@@ -271,26 +263,37 @@ class NaiveNAS:
                                                     str(probability),
                                                     str(temperature)])
                 print(results)
-
-
-        # final_model = self.finalize_model(curr_model)
         final_model = curr_model
         final_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                         callbacks=[earlystopping])
         res = final_model.model.evaluate(self.X_test, self.y_test) * 100
-
         print('final model summary:')
         final_model.model.summary()
         print('model accuracy:', res[1] * 100)
         print('average train time per model', total_time / num_of_ops)
-        if first_experiment:
-            now = str(datetime.datetime.now()).replace(":", "-")
-            results.to_csv('results/filter_annealing_experiment' + now + '.csv', mode='a')
+        now = str(datetime.datetime.now()).replace(":", "-")
+        if experiment == 'filter_experiment':
+            results.to_csv('results/'+folder_name+'/subject_' + str(self.subject_id) + experiment + '_' + now + '.csv', mode='a')
 
-
-    def grid_search(self):
-        model = self.target_model()
+    def run_one_model(self, model):
+        if self.cropping:
+            model.model = convert_to_dilated(model.model)
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
+        mcp_filepath = 'keras_models/best_keras_model' + str(datetime.datetime.now()) + '.hdf5'
+        mcp = ModelCheckpoint(
+            mcp_filepath, save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
+        start = time.time()
+        model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
+                        callbacks=[earlystopping, mcp])
+        model.model.load_weights(mcp_filepath)
+        res = model.model.evaluate(self.X_test, self.y_test)[1] * 100
+        res_train = model.model.evaluate(self.X_train, self.y_train)[1] * 100
+        end = time.time()
+        time = end - start
+        return time, res, res_train
+
+    def grid_search_filters(self):
+        model = self.target_model()
         start_time = time.time()
         num_of_ops = 0
         total_time = 0
@@ -302,25 +305,16 @@ class NaiveNAS:
                     K.clear_session()
                     num_of_ops += 1
                     model = self.set_target_model_filters(model, first_filt, second_filt, third_filt)
-                    mcp = ModelCheckpoint('keras_models/best_keras_model'+str(first_filt)+str(second_filt)+str(third_filt)+'.hdf5',
-                                          save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
-                    start = time.time()
-                    model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
-                                    callbacks=[earlystopping, mcp])
-
-                    model.model.load_weights('keras_models/best_keras_model'+str(first_filt)+str(second_filt)+str(third_filt)+'.hdf5')
-                    res = model.model.evaluate(self.X_test, self.y_test) * 100
-                    res_train = model.model.evaluate(self.X_train, self.y_train) * 100
-                    end = time.time()
-                    total_time += end-start
-                    print('train time in seconds:', end - start)
-                    print('model accuracy:', res[1] * 100)
+                    time, res, res_train = self.run_one_model(model)
+                    total_time += time
+                    print('train time in seconds:', time)
+                    print('model accuracy:', res)
                     results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
                                                             int(model.model.get_layer('conv2').filters),
                                                             int(model.model.get_layer('conv3').filters),
-                                                            res[1] * 100,
-                                                            res_train[1] * 100,
-                                                            str(end - start)])
+                                                            res,
+                                                            res_train,
+                                                            str(time)])
                     print(results)
 
             total_time = time.time() - start_time

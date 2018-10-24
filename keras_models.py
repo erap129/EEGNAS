@@ -51,26 +51,22 @@ def deep_model_mimic(n_chans, input_time_length, n_classes, n_filters_time=25, n
     model.add(Conv2D(name='spatial_filter', filters=n_filters_spat, kernel_size=(n_chans, 1), strides=(1,1)))
     model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
     model.add(Activation('elu'))
-    # model.add(MaxPool2D(pool_size=(1,3), strides=(1,3)))
     model.add(Lambda(dilation_pool, arguments={'window_shape': (1,3), 'strides': (1,3), 'dilation_rate': (1,1)}))
 
     model.add(Conv2D(filters=n_filters_2, kernel_size=(1, filter_len_2), strides=(1, 1)))
     model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
     model.add(Activation('elu'))
-    # model.add(MaxPool2D(pool_size=(1,3), strides=(1,3)))
     model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 3), 'strides': (1, 3), 'dilation_rate': (1,1)}))
 
     model.add(Conv2D(filters=n_filters_3, kernel_size=(1, filter_len_3), strides=(1, 1)))
     model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
     model.add(Activation('elu'))
-    # model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
     model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 3), 'strides': (1, 3), 'dilation_rate': (1,1)}))
 
     model.add(Dropout(0.5))
     model.add(Conv2D(filters=n_filters_4, kernel_size=(1, filter_len_4), strides=(1, 1)))
     model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
     model.add(Activation('elu'))
-    # model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
     model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 3), 'strides': (1, 3), 'dilation_rate': (1,1)}))
     if cropped:
         final_kernel_size = 2

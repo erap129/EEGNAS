@@ -28,6 +28,13 @@ from datautil.trial_segment import create_signal_target_from_raw_mne
 from tpot import TPOTClassifier
 
 
+def createFolder(directory):
+    try:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    except OSError:
+        print ('Error: Creating directory. ' +  directory)
+
 
 def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
     ival = [-500, 4000]  # this is the window around the event from which we will take data to feed to the classifier
@@ -158,28 +165,10 @@ def run_keras_model(train_set, test_set, row, cropped=False, mode='deep'):
     if cropped:
         model = keras_models.convert_to_dilated(model)
 
-    # if cropped:
-    #     crop_len = 522
-    #     model = keras_models.deep_model_cropped(train_set.X.shape[1],
-    #                                             crop_len,
-    #                                             4)
-    #     train_generator = cropped_generator(X_train, y_train,
-    #                                         32, crop_len, 22, 4)
-    #     val_generator = cropped_generator(X_valid, y_valid,
-    #                                       32, crop_len, 22, 4)
-    #     model.fit_generator(generator=train_generator, steps_per_epoch=50, epochs=50,
-    #                         validation_data=val_generator, validation_steps=20, callbacks=[earlystopping, mcp])
-    # else:
-    #     model = keras_models.deep_model_mimic(train_set.X.shape[1], train_set.X.shape[2], 4, cropped=True)
-    #     model = keras_models.convert_to_dilated(model)
-
     model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid), callbacks=[earlystopping, mcp])
     model.load_weights('best_keras_model.hdf5')
     end = time.time()
-    # if cropped:
-    #     predictions = np.argmax(cropped_predictor(model, X_test, crop_len, n_classes=4), axis=1)
-    #     res = sklearn.metrics.accuracy_score(predictions, test_set.y)
-    # else:
+
     y_test = to_categorical(test_set.y, num_classes=4)
     res = model.evaluate(X_test, y_test)[1] * 100
     print('accuracy for keras model:', res)
@@ -312,25 +301,35 @@ def spectrogram_autokeras():
     run_autokeras_model(train_specs[:10], train_set.y[:10], test_specs[:10], test_set.y[:10])
 
 
+def handle_subject_data(subject_id):
+    train_set, test_set = get_train_test(data_folder, subject_id, 0)
+    train_set, valid_set = split_into_two_sets(
+        train_set, first_set_fraction=1 - valid_set_fraction)
+    X_train = train_set.X[:, :, :, np.newaxis]
+    X_valid = valid_set.X[:, :, :, np.newaxis]
+    X_test = test_set.X[:, :, :, np.newaxis]
+    y_train = to_categorical(train_set.y, num_classes=4)
+    y_valid = to_categorical(valid_set.y, num_classes=4)
+    y_test = to_categorical(test_set.y, num_classes=4)
+    return X_train, y_train, X_valid, y_valid, X_test, y_test
+
+
 def run_naive_nas(real_data=True, toy_data=False):
     global data_folder, valid_set_fraction
+    now = str(datetime.datetime.now()).replace(":", "-")
+    experiment_name = 'filter_experiment'
+    folder_name = experiment_name+'_'+now
+    createFolder(folder_name)
+    accuracies = np.zeros(9)
     if real_data:
-        train_set, test_set = get_train_test(data_folder, 1, 0)
-        train_set, valid_set = split_into_two_sets(
-            train_set, first_set_fraction=1 - valid_set_fraction)
+        for subject_id in range(1, 10):
+            X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id)
+            naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
+                                X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
+                                X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
+            accuracies[subject_id-1] = naiveNAS.find_best_model(folder_name, 'filter_experiment')
+        np.savetxt('results/' + folder_name + '/accuracies.csv', accuracies, delimiter=',')
 
-        X_train = train_set.X[:, :, :, np.newaxis]
-        X_valid = valid_set.X[:, :, :, np.newaxis]
-        X_test = test_set.X[:, :, :, np.newaxis]
-        y_train = to_categorical(train_set.y, num_classes=4)
-        y_valid = to_categorical(valid_set.y, num_classes=4)
-        y_test = to_categorical(test_set.y, num_classes=4)
-
-        naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
-                            X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
-                            X_test=X_test, y_test=y_test, cropping=False)
-        # naiveNAS.find_best_model()
-        naiveNAS.grid_search()
     if toy_data:
         X_train, y_train, X_val, y_val, X_test, y_test = four_class_example_generator()
         print(X_test)
@@ -338,7 +337,15 @@ def run_naive_nas(real_data=True, toy_data=False):
         naiveNAS = NaiveNAS(n_classes=4, input_time_len=1000, n_chans=4,
                             X_train=X_train, y_train=y_train, X_valid=X_val, y_valid=y_val,
                             X_test=X_test, y_test=y_test)
-        naiveNAS.find_best_model()
+        naiveNAS.find_best_model('filter_experiment')
+
+
+def run_grid_search():
+    X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id)
+    naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
+                        X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
+                        X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
+    naiveNAS.grid_search()
 
 
 def test_skip_connections():
@@ -361,7 +368,7 @@ if __name__ == '__main__':
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
-    run_naive_nas()
+    # run_naive_nas()
     # test_skip_connections()
     # automl_comparison()
-
+    run_grid_search()
