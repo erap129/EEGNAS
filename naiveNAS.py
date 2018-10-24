@@ -291,21 +291,26 @@ class NaiveNAS:
     def grid_search(self):
         model = self.target_model()
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
-        mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
         start_time = time.time()
         num_of_ops = 0
         total_time = 0
         results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
-                                         'accuracy', 'runtime'])
-        for first_filt in range(1, 300, 16):
-            for second_filt in range(1, 300, 16):
-                for third_filt in range(1, 300, 16):
+                                         'accuracy', 'train acc', 'runtime'])
+        for first_filt in range(1, 300, 50):
+            for second_filt in range(1, 300, 50):
+                for third_filt in range(1, 300, 25):
+                    K.clear_session()
                     num_of_ops += 1
                     model = self.set_target_model_filters(model, first_filt, second_filt, third_filt)
+                    mcp = ModelCheckpoint('keras_models/best_keras_model'+str(first_filt)+str(second_filt)+str(third_filt)+'.hdf5',
+                                          save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
                     start = time.time()
-                    model.model.fit(self.X_train, self.y_train, epochs=1, validation_data=(self.X_valid, self.y_valid),
-                                    callbacks=[earlystopping])
+                    model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
+                                    callbacks=[earlystopping, mcp])
+
+                    model.model.load_weights('keras_models/best_keras_model'+str(first_filt)+str(second_filt)+str(third_filt)+'.hdf5')
                     res = model.model.evaluate(self.X_test, self.y_test) * 100
+                    res_train = model.model.evaluate(self.X_train, self.y_train) * 100
                     end = time.time()
                     total_time += end-start
                     print('train time in seconds:', end - start)
@@ -314,6 +319,7 @@ class NaiveNAS:
                                                             int(model.model.get_layer('conv2').filters),
                                                             int(model.model.get_layer('conv3').filters),
                                                             res[1] * 100,
+                                                            res_train[1] * 100,
                                                             str(end - start)])
                     print(results)
 
