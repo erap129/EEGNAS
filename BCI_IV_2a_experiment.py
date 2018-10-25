@@ -26,6 +26,7 @@ from braindecode.datautil.splitters import split_into_two_sets
 from datautil.signalproc import bandpass_cnt, exponential_running_standardize
 from datautil.trial_segment import create_signal_target_from_raw_mne
 from tpot import TPOTClassifier
+import time
 
 
 def createFolder(directory):
@@ -139,37 +140,21 @@ def create_spectrograms_from_raw(train_set, test_set):
     return create_all_spectrograms(train_set), create_all_spectrograms(test_set)
 
 
-def run_keras_model(train_set, test_set, row, cropped=False, mode='deep'):
+def run_keras_model(X_train, y_train, X_valid, y_valid, X_test, y_test, row, cropping=False, mode='deep'):
     print('--------------running keras model--------------')
-    valid_set_fraction = 0.2
-    print('train_set.X.shape is', train_set.X.shape)
     earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
     mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
-    train_set_split, valid_set_split = split_into_two_sets(
-        train_set, first_set_fraction=1 - valid_set_fraction)
-    X_train = train_set_split.X[:, :, :, np.newaxis]
-    X_valid = valid_set_split.X[:, :, :, np.newaxis]
-    X_test = test_set.X[:, :, :, np.newaxis]
-    y_train = to_categorical(train_set_split.y, num_classes=4)
-    y_valid = to_categorical(valid_set_split.y, num_classes=4)
-    print('X_train.shape is:', X_train.shape)
-    print('y_train.shape is:', y_train.shape)
-    print('X_valid.shape is:', X_valid.shape)
-    print('y_valid.shape is:', y_valid.shape)
-
     start = time.time()
     if mode == 'deep':
-        model = keras_models.deep_model_mimic(train_set.X.shape[1], train_set.X.shape[2], 4, cropped=cropped)
+        model = keras_models.deep_model_mimic(X_train.shape[1], X_train.shape[2], 4, cropped=cropping)
     elif mode == 'shallow':
-        model = keras_models.shallow_model_mimic(train_set.X.shape[1], train_set.X.shape[2], 4, cropped=cropped)
-    if cropped:
+        model = keras_models.shallow_model_mimic(X_train.shape[1], X_train.shape[2], 4, cropped=cropping)
+    if cropping:
         model = keras_models.convert_to_dilated(model)
 
     model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid), callbacks=[earlystopping, mcp])
     model.load_weights('best_keras_model.hdf5')
     end = time.time()
-
-    y_test = to_categorical(test_set.y, num_classes=4)
     res = model.evaluate(X_test, y_test)[1] * 100
     print('accuracy for keras model:', res)
     print('runtime for keras model:', end - start)
@@ -246,28 +231,27 @@ def run_auto_sklearn_model(train_set, test_set, row):
     return row
 
 
-def run_exp(train_set, test_set, subject, toggle):
+def run_exp(X_train, y_train, X_valid, y_valid, X_test, y_test, subject, toggle, cropping=False):
     now = str(datetime.datetime.now()).replace(":", "-")
     row = np.array([])
     row = np.append(row, now)
     row = np.append(row, str(subject))
     for config in toggle.keys():
         if config == 'keras' and toggle[config]:
-            row = run_keras_model(train_set, test_set, row, cropped=False, mode='deep')
-
-        elif config == 'tpot' and toggle[config]:
-            row = run_tpot_model(train_set, test_set, row)
-
-        elif config == 'auto-keras' and toggle[config]:
-            row = run_autokeras_model(train_set, test_set, row)
-
-        elif config == 'auto-sklearn' and toggle[config]:
-            row = run_auto_sklearn_model(train_set, test_set, row)
+            row = run_keras_model(X_train, y_train, X_valid, y_valid, X_test, y_test, row, cropping=cropping, mode='deep')
+        # elif config == 'tpot' and toggle[config]:
+        #     row = run_tpot_model(train_set, test_set, row)
+        #
+        # elif config == 'auto-keras' and toggle[config]:
+        #     row = run_autokeras_model(train_set, test_set, row)
+        #
+        # elif config == 'auto-sklearn' and toggle[config]:
+        #     row = run_auto_sklearn_model(train_set, test_set, row)
     print('row is:', row)
     return row
 
 
-def automl_comparison():
+def automl_comparison(cropping=False):
     data_folder = 'data/'
     low_cut_hz = 0
     results = pd.DataFrame(columns=['date', 'subject'])
@@ -278,8 +262,8 @@ def automl_comparison():
             results[setting+'_runtime'] = None
 
     for subject_id in range(1, 10):
-        train_set, test_set = get_train_test(data_folder, subject_id, low_cut_hz)
-        row = run_exp(train_set, test_set, subject_id, toggle)
+        X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id, cropping=cropping)
+        row = run_exp(X_train, y_train, X_valid, y_valid, X_test, y_test, subject_id, toggle, cropping=cropping)
         results.loc[subject_id - 1] = row
 
     now = str(datetime.datetime.now()).replace(":", "-")
@@ -301,8 +285,47 @@ def spectrogram_autokeras():
     run_autokeras_model(train_specs[:10], train_set.y[:10], test_specs[:10], test_set.y[:10])
 
 
-def handle_subject_data(subject_id):
+class cropped_set:
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+
+def create_supercrops(train_set, test_set, crop_size):
+    trial_len = train_set.X.shape[2]
+    print('trial_len is:', trial_len)
+    ncrops_per_trial = trial_len/crop_size
+    if ncrops_per_trial % crop_size != 0:
+        ncrops_per_trial += 1
+    X_train_crops = int(train_set.X.shape[0] * ncrops_per_trial)
+    X_trial_len = crop_size
+    nchans = 22
+    X_test_crops = int(test_set.X.shape[0] * ncrops_per_trial)
+    new_train_set_X = np.zeros((X_train_crops, nchans, X_trial_len))
+    new_train_set_y = np.zeros(X_train_crops)
+    new_test_set_X = np.zeros((X_test_crops, nchans, X_trial_len))
+    new_test_set_y = np.zeros(X_test_crops)
+    for i, trial in enumerate(train_set.X):
+        curr_loc = int(ncrops_per_trial * i)
+        new_train_set_X[curr_loc] = trial[:, 0:crop_size]
+        new_train_set_X[curr_loc + 1] = trial[:, trial_len - crop_size:]
+        new_train_set_y[curr_loc] = train_set.y[i]
+        new_train_set_y[curr_loc + 1] = train_set.y[i]
+    for i, trial in enumerate(test_set.X):
+        curr_loc = int(ncrops_per_trial * i)
+        new_test_set_X[curr_loc] = trial[:, 0:crop_size]
+        new_test_set_X[curr_loc + 1] = trial[:, trial_len - crop_size:]
+        new_test_set_y[curr_loc] = test_set.y[i]
+        new_test_set_y[curr_loc + 1] = test_set.y[i]
+    return cropped_set(new_train_set_X, new_train_set_y), cropped_set(new_test_set_X, new_test_set_y)
+
+
+def handle_subject_data(subject_id, cropping=False):
     train_set, test_set = get_train_test(data_folder, subject_id, 0)
+    if cropping:
+        train_set, test_set = create_supercrops(train_set, test_set, crop_size=1000)
+        print('train_set.X.shape is:', train_set.X.shape)
+        print('train_set.y.shape is:', train_set.y.shape)
     train_set, valid_set = split_into_two_sets(
         train_set, first_set_fraction=1 - valid_set_fraction)
     X_train = train_set.X[:, :, :, np.newaxis]
@@ -340,12 +363,16 @@ def run_naive_nas(real_data=True, toy_data=False):
         naiveNAS.find_best_model('filter_experiment')
 
 
-def run_grid_search():
-    X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id)
-    naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
+def run_grid_search(subject_id, cropping=False):
+    X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id, cropping=cropping)
+    if cropping:
+        input_time_len = 1000
+    else:
+        input_time_len = 1125
+    naiveNAS = NaiveNAS(n_classes=4, input_time_len=input_time_len, n_chans=22,
                         X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
-                        X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
-    naiveNAS.grid_search()
+                        X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=True)
+    naiveNAS.grid_search_filters()
 
 
 def test_skip_connections():
@@ -370,5 +397,5 @@ if __name__ == '__main__':
     valid_set_fraction = 0.2
     # run_naive_nas()
     # test_skip_connections()
-    # automl_comparison()
-    run_grid_search()
+    automl_comparison(cropping=True)
+    # run_grid_search(subject_id=1, cropping=True)
