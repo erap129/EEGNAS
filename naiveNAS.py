@@ -319,13 +319,13 @@ class NaiveNAS:
         total_time = 0
         results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
                                          'accuracy', 'train acc', 'runtime'])
-        for first_filt in range(1, 300, 50):
-            for second_filt in range(1, 300, 50):
-                for third_filt in range(1, 300, 25):
+        for first_filt in range(lo, hi, jumps):
+            for second_filt in range(lo, hi, jumps):
+                for third_filt in range(lo, hi, jumps):
                     K.clear_session()
                     num_of_ops += 1
                     model = self.set_target_model_filters(model, first_filt, second_filt, third_filt)
-                    time, res, res_train = self.run_one_model(model)
+                    run_time, res, res_train = self.run_one_model(model)
                     total_time += time
                     print('train time in seconds:', time)
                     print('model accuracy:', res)
@@ -333,13 +333,42 @@ class NaiveNAS:
                                                             int(model.model.get_layer('conv2').filters),
                                                             int(model.model.get_layer('conv3').filters),
                                                             res_train,
-                                                            str(time)])
+                                                            str(run_time)])
                     print(results)
 
         total_time = time.time() - start_time
         print('average train time per model', total_time / num_of_ops)
         now = str(datetime.datetime.now()).replace(":", "-")
-        results.to_csv('results/filter_annealing_experiment' + now + '.csv', mode='a')
+        results.to_csv('results/filter_gridsearch_' + now + '.csv', mode='a')
+
+    def grid_search_kernel_size(self, lo, hi, jumps):
+        model = self.target_model()
+        start_time = time.time()
+        num_of_ops = 0
+        total_time = 0
+        results = pd.DataFrame(columns=['conv1 kernel size', 'conv2 kernel size', 'conv3 kernel size',
+                                         'accuracy', 'train acc', 'runtime'])
+        for first_size in range(lo, hi, jumps):
+            for second_size in range(lo, hi, jumps):
+                for third_size in range(lo, hi, jumps):
+                    K.clear_session()
+                    num_of_ops += 1
+                    model = self.set_target_model_kernel_sizes(model, first_size, second_size, third_size)
+                    run_time, res, res_train = self.run_one_model(model)
+                    total_time += time
+                    print('train time in seconds:', time)
+                    print('model accuracy:', res)
+                    results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').kernel_size[1]),
+                                                            int(model.model.get_layer('conv2').kernel_size[1]),
+                                                            int(model.model.get_layer('conv3').kernel_size[1]),
+                                                            res_train,
+                                                            str(run_time)])
+                    print(results)
+
+        total_time = time.time() - start_time
+        print('average train time per model', total_time / num_of_ops)
+        now = str(datetime.datetime.now()).replace(":", "-")
+        results.to_csv('results/kernel_size_gridsearch_' + now + '.csv', mode='a')
 
     def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
         layer_collection = {}
@@ -515,6 +544,14 @@ class NaiveNAS:
         model.layer_collection[conv_indices[0]].filter_num = filt1
         model.layer_collection[conv_indices[1]].filter_num = filt2
         model.layer_collection[conv_indices[2]].filter_num = filt3
+        return model.new_model_from_structure(model.layer_collection)
+
+    def set_target_model_kernel_sizes(self, model, size1, size2, size3):
+        conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
+        conv_indices = conv_indices[2:len(conv_indices)-1]  # take only relevant indices
+        model.layer_collection[conv_indices[0]].kernel_width = size1
+        model.layer_collection[conv_indices[1]].kernel_width = size2
+        model.layer_collection[conv_indices[2]].kernel_width = size3
         return model.new_model_from_structure(model.layer_collection)
 
 
