@@ -13,9 +13,21 @@ os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import platform
 import datetime
+import shutil
 import tensorflow as tf
 WARNING = '\033[93m'
 ENDC = '\033[0m'
+
+
+def delete_from_folder(folder):
+    for the_file in os.listdir(folder):
+        file_path = os.path.join(folder, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+            #elif os.path.isdir(file_path): shutil.rmtree(file_path)
+        except Exception as e:
+            print(e)
 
 
 class Layer:
@@ -33,6 +45,11 @@ class Layer:
         self.connections.append(other)
         other.parent = self
 
+
+class LambdaLayer(Layer):
+    def __init__(self, function):
+        Layer.__init__(self)
+        self.function = function
 
 class InputLayer(Layer):
     def __init__(self, shape_height, shape_width):
@@ -173,6 +190,9 @@ class MyModel:
             elif isinstance(layer, FlattenLayer):
                 keras_layer = Flatten()
 
+            elif isinstance(layer, LambdaLayer):
+                keras_layer = Lambda(layer.function)
+
             layer.keras_layer = keras_layer
             if layer.name is not None:
                 layer.keras_layer.name = layer.name
@@ -213,7 +233,7 @@ class NaiveNAS:
 
     def find_best_model(self, folder_name, experiment, time_limit=12 * 60 * 60):
         curr_model = self.target_model()
-        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
+        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
         mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
         start_time = time.time()
         curr_acc = 0
@@ -267,8 +287,6 @@ class NaiveNAS:
         final_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                         callbacks=[earlystopping])
         res = final_model.model.evaluate(self.X_test, self.y_test) * 100
-        print('final model summary:')
-        final_model.model.summary()
         print('model accuracy:', res[1] * 100)
         print('average train time per model', total_time / num_of_ops)
         now = str(datetime.datetime.now()).replace(":", "-")
@@ -278,8 +296,8 @@ class NaiveNAS:
     def run_one_model(self, model):
         if self.cropping:
             model.model = convert_to_dilated(model.model)
-        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
-        mcp_filepath = 'keras_models/best_keras_model' + str(datetime.datetime.now()) + '.hdf5'
+        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
+        mcp_filepath = 'keras_models/best_keras_model_' + str(datetime.datetime.now()).replace(":", "-") + '.hdf5'
         mcp = ModelCheckpoint(
             mcp_filepath, save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
         start = time.time()
@@ -288,9 +306,11 @@ class NaiveNAS:
         model.model.load_weights(mcp_filepath)
         res = model.model.evaluate(self.X_test, self.y_test)[1] * 100
         res_train = model.model.evaluate(self.X_train, self.y_train)[1] * 100
+        res_val = model.model.evaluate(self.X_valid, self.y_valid)[1] * 100
         end = time.time()
-        time = end - start
-        return time, res, res_train
+        final_time = end - start
+        os.remove(mcp_filepath)
+        return final_time, res, res_train, res_val
 
     def grid_search_filters(self, lo, hi, jumps):
         model = self.target_model()
@@ -299,22 +319,21 @@ class NaiveNAS:
         total_time = 0
         results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
                                          'accuracy', 'train acc', 'runtime'])
-        for first_filt in range(lo, hi+1, jumps):
-            for second_filt in range(lo, hi+1, jumps):
-                for third_filt in range(lo, hi+1, jumps):
+        for first_filt in range(1, 300, 50):
+            for second_filt in range(1, 300, 50):
+                for third_filt in range(1, 300, 25):
                     K.clear_session()
                     num_of_ops += 1
                     model = self.set_target_model_filters(model, first_filt, second_filt, third_filt)
-                    run_time, res, res_train = self.run_one_model(model)
-                    total_time += run_time
-                    print('train time in seconds:', run_time)
+                    time, res, res_train = self.run_one_model(model)
+                    total_time += time
+                    print('train time in seconds:', time)
                     print('model accuracy:', res)
                     results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
                                                             int(model.model.get_layer('conv2').filters),
                                                             int(model.model.get_layer('conv3').filters),
-                                                            res,
                                                             res_train,
-                                                            str(run_time)])
+                                                            str(time)])
                     print(results)
 
         total_time = time.time() - start_time
@@ -360,32 +379,17 @@ class NaiveNAS:
         softmax = ActivationLayer('softmax')
         model.layer_collection[softmax.id] = softmax
         conv_layer.make_connection(softmax)
+        if self.cropping:
+            mean = LambdaLayer(mean_layer)
+            model.layer_collection[mean.id] = mean
+            softmax.make_connection(mean)
         flatten = FlattenLayer()
         model.layer_collection[flatten.id] = flatten
-        softmax.make_connection(flatten)
-        return model
-
-    def finalize_model(self, model, add_dense=False):
-        final_layer = model.model.layers[-1].output
         if self.cropping:
-            final_layer = Lambda(mean_layer)(final_layer)
-        if add_dense:
-            final_layer = Flatten()(final_layer)
-            final_layer = Dense(self.n_classes, name='prediction_layer')(final_layer)
-        final_layer = Activation('softmax')(final_layer)
-        if not add_dense:
-            final_layer = Flatten()(final_layer)
-        model = MyModel(model=Model(input=model.model.layers[0].input, output=final_layer),
-                        layer_collection=model.layer_collection)
-        model.model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-        model.model.summary()
-        if platform.node() != 'nvidia':
-            print('--------------------------------------------------------------------------------------------------------------------')
-            print('platform.node() is', platform.node())
-            print('--------------------------------------------------------------------------------------------------------------------')
-            plot_model(model.model, to_file='model.png')
+            mean.make_connection(flatten)
+        else:
+            softmax.make_connection(flatten)
         return model
-
 
     def add_conv_maxpool_block(self, model, conv_width=10, conv_filter_num=50,
                                pool_width=3, pool_stride=3, dropout=False, conv_layer_name=None):
