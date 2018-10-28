@@ -340,12 +340,12 @@ def run_naive_nas(real_data=True, toy_data=False):
         naiveNAS.find_best_model('filter_experiment')
 
 
-def run_grid_search():
+def run_grid_search(subject_id):
     X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id)
     naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
                         X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
                         X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
-    naiveNAS.grid_search()
+    naiveNAS.grid_search_filters(1, 21, 1)
 
 
 def test_skip_connections():
@@ -371,4 +371,4 @@ if __name__ == '__main__':
     # run_naive_nas()
     # test_skip_connections()
     # automl_comparison()
-    run_grid_search()
+    run_grid_search(subject_id=1)

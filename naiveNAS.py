@@ -292,35 +292,35 @@ class NaiveNAS:
         time = end - start
         return time, res, res_train
 
-    def grid_search_filters(self):
+    def grid_search_filters(self, lo, hi, jumps):
         model = self.target_model()
         start_time = time.time()
         num_of_ops = 0
         total_time = 0
         results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
                                          'accuracy', 'train acc', 'runtime'])
-        for first_filt in range(1, 300, 50):
-            for second_filt in range(1, 300, 50):
-                for third_filt in range(1, 300, 25):
+        for first_filt in range(lo, hi+1, jumps):
+            for second_filt in range(lo, hi+1, jumps):
+                for third_filt in range(lo, hi+1, jumps):
                     K.clear_session()
                     num_of_ops += 1
                     model = self.set_target_model_filters(model, first_filt, second_filt, third_filt)
-                    time, res, res_train = self.run_one_model(model)
-                    total_time += time
-                    print('train time in seconds:', time)
+                    run_time, res, res_train = self.run_one_model(model)
+                    total_time += run_time
+                    print('train time in seconds:', run_time)
                     print('model accuracy:', res)
                     results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
                                                             int(model.model.get_layer('conv2').filters),
                                                             int(model.model.get_layer('conv3').filters),
                                                             res,
                                                             res_train,
-                                                            str(time)])
+                                                            str(run_time)])
                     print(results)
 
-            total_time = time.time() - start_time
-            print('average train time per model', total_time / num_of_ops)
-            now = str(datetime.datetime.now()).replace(":", "-")
-            results.to_csv('results/filter_annealing_experiment' + now + '.csv', mode='a')
+        total_time = time.time() - start_time
+        print('average train time per model', total_time / num_of_ops)
+        now = str(datetime.datetime.now()).replace(":", "-")
+        results.to_csv('results/filter_annealing_experiment' + now + '.csv', mode='a')
 
     def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
         layer_collection = {}
