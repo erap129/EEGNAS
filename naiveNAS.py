@@ -13,10 +13,19 @@ os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import platform
 import datetime
+import copy
 import shutil
 import tensorflow as tf
 WARNING = '\033[93m'
 ENDC = '\033[0m'
+
+
+def createFolder(directory):
+    try:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    except OSError:
+        print ('Error: Creating directory. ' +  directory)
 
 
 def delete_from_folder(folder):
@@ -145,6 +154,7 @@ class MyModel:
 
     @staticmethod
     def new_model_from_structure(layer_collection):
+        pool_counter = 0
         topo_layers = create_topo_layers(layer_collection.values())
         for i in topo_layers:
             layer = layer_collection[i]
@@ -152,16 +162,15 @@ class MyModel:
                 keras_layer = Input(shape=(layer.shape_height, layer.shape_width, 1), name=str(layer.id))
 
             elif isinstance(layer, PoolingLayer):
-                keras_layer = Lambda(dilation_pool, arguments={'window_shape': (1, layer.pool_width), 'strides':
+                pool_counter += 1
+                keras_layer = Lambda(dilation_pool, name='pooling_'+str(pool_counter), arguments={'window_shape': (1, layer.pool_width), 'strides':
                     (1, layer.stride_width), 'dilation_rate': (1, 1), 'pooling_type': layer.mode})
-                # keras_layer = MaxPool2D(pool_size=(1, layer.pool_width), strides=(1, layer.stride_width),
-                #                         name=str(layer.id))
 
             elif isinstance(layer, ConvLayer):
                 if(layer.kernel_width == 'down_to_one'):
                     topo_layers = create_topo_layers(layer_collection.values())
-                    last_layer_id = topo_layers[layer.id - 1]
-                    layer.kernel_width = int(layer_collection[last_layer_id].keras_layer.shape[2])
+                    before_conv_layer_id = topo_layers[(np.where(np.array(topo_layers) == layer.id)[0] - 1)[0]]
+                    layer.kernel_width = int(layer_collection[before_conv_layer_id].keras_layer.shape[2])
                 keras_layer = Conv2D(filters=layer.filter_num, kernel_size=(layer.kernel_height, layer.kernel_width),
                                      strides=(1, 1), activation='elu', name=str(layer.id))
 
@@ -231,8 +240,8 @@ class NaiveNAS:
         self.cropping = cropping
         self.subject_id = subject_id
 
-    def find_best_model(self, folder_name, experiment, time_limit=12 * 60 * 60):
-        curr_model = self.target_model()
+    def find_best_model(self, folder_name, experiment=None, time_limit=12 * 60 * 60):
+        curr_model = self.base_model()
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
         mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
         start_time = time.time()
@@ -240,7 +249,7 @@ class NaiveNAS:
         num_of_ops = 0
         temperature = 10
         coolingRate = 0.003
-        operations = [self.add_remove_filters]
+        operations = [self.factor_filters, self.add_conv_maxpool_block]
         total_time = 0
         if experiment == 'filter_experiment':
             results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
@@ -252,15 +261,16 @@ class NaiveNAS:
             mcp = ModelCheckpoint('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5',
                 save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
             model = operations[op_index](curr_model)
+            finalized_model = self.finalize_model(model.layer_collection)
             if self.cropping:
-                model.model = convert_to_dilated(model.model)
+                finalized_model.model = convert_to_dilated(model.model)
             start = time.time()
-            model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
+            finalized_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                          callbacks=[earlystopping, mcp])
-            model.model.load_weights('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5')
+            finalized_model.model.load_weights('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5')
             end = time.time()
             total_time += end - start
-            res = model.model.evaluate(self.X_test, self.y_test) * 100
+            res = finalized_model.model.evaluate(self.X_test, self.y_test) * 100
             curr_model = model
             if res[1] >= curr_acc:
                 curr_model = model
@@ -275,15 +285,15 @@ class NaiveNAS:
             print('train time in seconds:', end-start)
             print('model accuracy:', res[1] * 100)
             if experiment == 'filter_experiment':
-                results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
-                                                    int(model.model.get_layer('conv2').filters),
-                                                    int(model.model.get_layer('conv3').filters),
+                results.loc[num_of_ops - 1] = np.array([int(finalized_model.model.get_layer('conv1').filters),
+                                                    int(finalized_model.model.get_layer('conv2').filters),
+                                                    int(finalized_model.model.get_layer('conv3').filters),
                                                     res[1] * 100,
                                                     str(end-start),
                                                     str(probability),
                                                     str(temperature)])
                 print(results)
-        final_model = curr_model
+        final_model = self.finalize_model(curr_model.layer_collection)
         final_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                         callbacks=[earlystopping])
         res = final_model.model.evaluate(self.X_test, self.y_test) * 100
@@ -291,6 +301,8 @@ class NaiveNAS:
         print('average train time per model', total_time / num_of_ops)
         now = str(datetime.datetime.now()).replace(":", "-")
         if experiment == 'filter_experiment':
+            if not os.path.isdir('results/'+folder_name):
+                createFolder('results/'+folder_name)
             results.to_csv('results/'+folder_name+'/subject_' + str(self.subject_id) + experiment + '_' + now + '.csv', mode='a')
 
     def run_one_model(self, model):
@@ -370,7 +382,7 @@ class NaiveNAS:
         now = str(datetime.datetime.now()).replace(":", "-")
         results.to_csv('results/kernel_size_gridsearch_' + now + '.csv', mode='a')
 
-    def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
+    def base_model(self, n_filters_time=25, n_filters_spat=25, filter_time_length=10, finalize=False):
         layer_collection = {}
         inputs = InputLayer(shape_height=self.n_chans, shape_width=self.input_time_len)
         layer_collection[inputs.id] = inputs
@@ -389,43 +401,49 @@ class NaiveNAS:
         maxpool = PoolingLayer(pool_width=3, stride_width=3, mode='MAX')
         layer_collection[maxpool.id] = maxpool
         elu.make_connection(maxpool)
-        return MyModel.new_model_from_structure(layer_collection)
+        return MyModel(model=None, layer_collection=layer_collection)
 
     def target_model(self):
         base_model = self.base_model()
         model = self.add_conv_maxpool_block(base_model, conv_filter_num=50, conv_layer_name='conv1')
         model = self.add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2')
         model = self.add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3')
-        topo_layers = create_topo_layers(model.layer_collection.values())
+        return model
+
+    def finalize_model(self, layer_collection):
+        layer_collection = copy.deepcopy(layer_collection)
+        topo_layers = create_topo_layers(layer_collection.values())
         last_layer_id = topo_layers[-1]
         if self.cropping:
             final_conv_width = 2
         else:
             final_conv_width = 'down_to_one'
         conv_layer = ConvLayer(kernel_width=final_conv_width, kernel_height=1, filter_num=self.n_classes)
-        model.layer_collection[conv_layer.id] = conv_layer
-        model.layer_collection[last_layer_id].make_connection(conv_layer)
+        layer_collection[conv_layer.id] = conv_layer
+        layer_collection[last_layer_id].make_connection(conv_layer)
         softmax = ActivationLayer('softmax')
-        model.layer_collection[softmax.id] = softmax
+        layer_collection[softmax.id] = softmax
         conv_layer.make_connection(softmax)
         if self.cropping:
             mean = LambdaLayer(mean_layer)
-            model.layer_collection[mean.id] = mean
+            layer_collection[mean.id] = mean
             softmax.make_connection(mean)
         flatten = FlattenLayer()
-        model.layer_collection[flatten.id] = flatten
+        layer_collection[flatten.id] = flatten
         if self.cropping:
             mean.make_connection(flatten)
         else:
             softmax.make_connection(flatten)
-        return model
+        return MyModel.new_model_from_structure(layer_collection)
+
 
     def add_conv_maxpool_block(self, model, conv_width=10, conv_filter_num=50,
-                               pool_width=3, pool_stride=3, dropout=False, conv_layer_name=None):
-        # conv_width = random.randint(5, 10)
-        # conv_filter_num = random.randint(0, 50)
-        # pool_width = random.randint(1, 3)
-        # pool_stride = random.randint(1,3)
+                               pool_width=3, pool_stride=3, dropout=False, conv_layer_name=None, random_values=True):
+        if random_values:
+            conv_width = random.randint(5, 10)
+            conv_filter_num = random.randint(0, 50)
+            pool_width = random.randint(1, 3)
+            pool_stride = random.randint(1,3)
 
         topo_layers = create_topo_layers(model.layer_collection.values())
         last_layer_id = topo_layers[-1]
@@ -447,8 +465,6 @@ class NaiveNAS:
         maxpool_layer = PoolingLayer(pool_width=pool_width, stride_width=pool_stride, mode='MAX')
         model.layer_collection[maxpool_layer.id] = maxpool_layer
         activation_layer.make_connection(maxpool_layer)
-        return MyModel.new_model_from_structure(model.layer_collection)
-
         return model
 
     def add_skip_connection_concat(self, model):
@@ -458,8 +474,8 @@ class NaiveNAS:
         second_layer_index = np.max(to_concat)
         first_layer_index = topo_layers[first_layer_index]
         second_layer_index = topo_layers[second_layer_index]
-        first_shape = model.get_layer(str(first_layer_index)).output.shape
-        second_shape = model.get_layer(str(second_layer_index)).output.shape
+        first_shape = model.model.get_layer(str(first_layer_index)).output.shape
+        second_shape = model.model.get_layer(str(second_layer_index)).output.shape
         print('first layer shape is:', first_shape)
         print('second layer shape is:', second_shape)
 
@@ -506,9 +522,7 @@ class NaiveNAS:
                     lay.first_layer_index = concat.id
         second_layer.connections = []
         second_layer.connections.append(concat)
-
-        return model.new_model_from_structure(model.layer_collection)
-
+        return model
 
     def factor_filters(self, model):
         conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
@@ -516,10 +530,9 @@ class NaiveNAS:
             random_conv_index = random.randint(2, len(conv_indices) - 1)
         except ValueError:
             return model
-        print('layer to widen is:', str(random_conv_index))
         factor = random.randint(2, 4)
-        model.layer_collection[random_conv_index].filter_num *= factor
-        return model.new_model_from_structure(model.layer_collection)
+        model.layer_collection[conv_indices[random_conv_index]].filter_num *= factor
+        return model
 
     def add_remove_filters(self, model):
         conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
@@ -536,7 +549,7 @@ class NaiveNAS:
                 (model.layer_collection[random_conv_index].filter_num == 300 and to_add == 1):
             return self.add_remove_filters(model)  # if zero or 300 filters, start over...
         model.layer_collection[random_conv_index].filter_num += to_add
-        return model.new_model_from_structure(model.layer_collection)
+        return model
 
     def set_target_model_filters(self, model, filt1, filt2, filt3):
         conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
@@ -544,7 +557,7 @@ class NaiveNAS:
         model.layer_collection[conv_indices[0]].filter_num = filt1
         model.layer_collection[conv_indices[1]].filter_num = filt2
         model.layer_collection[conv_indices[2]].filter_num = filt3
-        return model.new_model_from_structure(model.layer_collection)
+        return model
 
     def set_target_model_kernel_sizes(self, model, size1, size2, size3):
         conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
@@ -552,6 +565,6 @@ class NaiveNAS:
         model.layer_collection[conv_indices[0]].kernel_width = size1
         model.layer_collection[conv_indices[1]].kernel_width = size2
         model.layer_collection[conv_indices[2]].kernel_width = size3
-        return model.new_model_from_structure(model.layer_collection)
+        return model
 
 

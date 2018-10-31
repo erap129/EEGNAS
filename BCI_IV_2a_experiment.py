@@ -29,14 +29,6 @@ from tpot import TPOTClassifier
 import time
 
 
-def createFolder(directory):
-    try:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-    except OSError:
-        print ('Error: Creating directory. ' +  directory)
-
-
 def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
     ival = [-500, 4000]  # this is the window around the event from which we will take data to feed to the classifier
     input_time_length = 1000
@@ -342,7 +334,6 @@ def run_naive_nas(real_data=True, toy_data=False):
     now = str(datetime.datetime.now()).replace(":", "-")
     experiment_name = 'filter_experiment'
     folder_name = experiment_name+'_'+now
-    createFolder(folder_name)
     accuracies = np.zeros(9)
     if real_data:
         for subject_id in range(1, 10):
@@ -350,7 +341,7 @@ def run_naive_nas(real_data=True, toy_data=False):
             naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
                                 X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
                                 X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
-            accuracies[subject_id-1] = naiveNAS.find_best_model(folder_name, 'filter_experiment')
+            accuracies[subject_id-1] = naiveNAS.find_best_model(folder_name)
         np.savetxt('results/' + folder_name + '/accuracies.csv', accuracies, delimiter=',')
 
     if toy_data:
@@ -395,7 +386,7 @@ if __name__ == '__main__':
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
-    # run_naive_nas()
+    run_naive_nas()
     # test_skip_connections()
     # automl_comparison()
-    run_grid_search(subject_id=1)
+    # run_grid_search(subject_id=1)
