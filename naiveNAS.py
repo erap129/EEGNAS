@@ -11,13 +11,21 @@ import os
 import keras.backend as K
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
+import queue
 import platform
 import datetime
 import copy
+import treelib
 import shutil
 import tensorflow as tf
 WARNING = '\033[93m'
 ENDC = '\033[0m'
+
+
+class Tree(object):
+    def __init__(self):
+        self.children = []
+        self.data = None
 
 
 def createFolder(directory):
@@ -148,9 +156,10 @@ def create_topo_layers(layers):
 
 
 class MyModel:
-    def __init__(self, model, layer_collection={}):
+    def __init__(self, model, layer_collection={}, name=None):
         self.layer_collection = layer_collection
         self.model = model
+        self.name = name
 
     @staticmethod
     def new_model_from_structure(layer_collection):
@@ -240,7 +249,46 @@ class NaiveNAS:
         self.cropping = cropping
         self.subject_id = subject_id
 
-    def find_best_model(self, folder_name, experiment=None, time_limit=12 * 60 * 60):
+    def evaluate_model(self, model):
+        finalized_model = self.finalize_model(model.layer_collection)
+        if self.cropping:
+            finalized_model.model = convert_to_dilated(model.model)
+        best_model_name = 'keras_models/best_keras_model' + str(time.time()) + '.hdf5'
+        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
+        mcp = ModelCheckpoint(best_model_name, save_best_only=True, monitor='val_acc', mode='max')
+        finalized_model.model.fit(self.X_train, self.y_train, epochs=50,
+                                  validation_data=(self.X_valid, self.y_valid),
+                                  callbacks=[earlystopping, mcp])
+        finalized_model.model.load_weights(best_model_name)
+        res = finalized_model.model.evaluate(self.X_test, self.y_test)[1] * 100
+        return res
+
+    def find_best_model_bb(self, folder_name, time_limit=12 * 60 * 60):
+        curr_models = queue.Queue()
+        operations = [self.factor_filters, self.add_conv_maxpool_block]
+        initial_model = self.base_model()
+        curr_models.put(initial_model)
+        res = self.evaluate_model(initial_model)
+        total_results = []
+        result_tree = treelib.Tree()
+        result_tree.create_node(data=res, identifier=initial_model.name)
+        start_time = time.time()
+        while not curr_models.empty() and time.time() - start_time < time_limit:
+            curr_model = curr_models.get_nowait()
+            for op in operations:
+                model = op(curr_model)
+                model.name += op.__name__
+                res = self.evaluate_model(model)
+                print('node name is:', model.name)
+                result_tree.create_node(data=res, identifier=model.name, parent=curr_model.name)
+                result_tree.show()
+                print('model accuracy:', res[1] * 100)
+                total_results.append(res[1])
+                curr_models.put(model)
+        print(total_results)
+        return total_results.max()
+
+    def find_best_model_simanneal(self, folder_name, experiment=None, time_limit=12 * 60 * 60):
         curr_model = self.base_model()
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
         mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
@@ -270,25 +318,25 @@ class NaiveNAS:
             finalized_model.model.load_weights('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5')
             end = time.time()
             total_time += end - start
-            res = finalized_model.model.evaluate(self.X_test, self.y_test) * 100
+            res = finalized_model.model.evaluate(self.X_test, self.y_test)[1] * 100
             curr_model = model
-            if res[1] >= curr_acc:
+            if res >= curr_acc:
                 curr_model = model
-                curr_acc = res[1]
+                curr_acc = res
                 probability = -1
             else:
-                probability = np.exp((res[1] - curr_acc) / temperature)
+                probability = np.exp((res - curr_acc) / temperature)
                 rand = np.random.choice(a=[1, 0], p=[probability, 1-probability])
                 if rand == 1:
                     curr_model = model
             temperature *= (1-coolingRate)
             print('train time in seconds:', end-start)
-            print('model accuracy:', res[1] * 100)
+            print('model accuracy:', res * 100)
             if experiment == 'filter_experiment':
                 results.loc[num_of_ops - 1] = np.array([int(finalized_model.model.get_layer('conv1').filters),
                                                     int(finalized_model.model.get_layer('conv2').filters),
                                                     int(finalized_model.model.get_layer('conv3').filters),
-                                                    res[1] * 100,
+                                                    res,
                                                     str(end-start),
                                                     str(probability),
                                                     str(temperature)])
@@ -296,8 +344,8 @@ class NaiveNAS:
         final_model = self.finalize_model(curr_model.layer_collection)
         final_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
                         callbacks=[earlystopping])
-        res = final_model.model.evaluate(self.X_test, self.y_test) * 100
-        print('model accuracy:', res[1] * 100)
+        res = final_model.model.evaluate(self.X_test, self.y_test)[1] * 100
+        print('model accuracy:', res)
         print('average train time per model', total_time / num_of_ops)
         now = str(datetime.datetime.now()).replace(":", "-")
         if experiment == 'filter_experiment':
@@ -401,7 +449,7 @@ class NaiveNAS:
         maxpool = PoolingLayer(pool_width=3, stride_width=3, mode='MAX')
         layer_collection[maxpool.id] = maxpool
         elu.make_connection(maxpool)
-        return MyModel(model=None, layer_collection=layer_collection)
+        return MyModel(model=None, layer_collection=layer_collection, name='base')
 
     def target_model(self):
         base_model = self.base_model()
@@ -465,6 +513,7 @@ class NaiveNAS:
         maxpool_layer = PoolingLayer(pool_width=pool_width, stride_width=pool_stride, mode='MAX')
         model.layer_collection[maxpool_layer.id] = maxpool_layer
         activation_layer.make_connection(maxpool_layer)
+        model.name += '->add_conv_maxpool'
         return model
 
     def add_skip_connection_concat(self, model):
@@ -532,6 +581,7 @@ class NaiveNAS:
             return model
         factor = random.randint(2, 4)
         model.layer_collection[conv_indices[random_conv_index]].filter_num *= factor
+        model.name = model.name + '->factor_filters'
         return model
 
     def add_remove_filters(self, model):

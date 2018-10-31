@@ -341,7 +341,7 @@ def run_naive_nas(real_data=True, toy_data=False):
             naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
                                 X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
                                 X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
-            accuracies[subject_id-1] = naiveNAS.find_best_model(folder_name)
+            accuracies[subject_id-1] = naiveNAS.find_best_model_bb(folder_name)
         np.savetxt('results/' + folder_name + '/accuracies.csv', accuracies, delimiter=',')
 
     if toy_data:
