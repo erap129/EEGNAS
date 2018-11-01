@@ -162,7 +162,7 @@ class MyModel:
         self.name = name
 
     @staticmethod
-    def new_model_from_structure(layer_collection):
+    def new_model_from_structure(layer_collection, name=None):
         pool_counter = 0
         topo_layers = create_topo_layers(layer_collection.values())
         for i in topo_layers:
@@ -223,7 +223,7 @@ class MyModel:
                 except ValueError as e:
                     print('couldnt connect a keras layer with tensor...error was:', e)
         model = MyModel(model=Model(inputs=layer_collection[0].keras_layer, output=layer.keras_layer),
-                        layer_collection=layer_collection)
+                        layer_collection=layer_collection, name=name)
         model.model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
         model.model.summary()
         try:
@@ -277,7 +277,6 @@ class NaiveNAS:
             curr_model = curr_models.get_nowait()
             for op in operations:
                 model = op(curr_model)
-                model.name += op.__name__
                 res = self.evaluate_model(model)
                 print('node name is:', model.name)
                 result_tree.create_node(data=res, identifier=model.name, parent=curr_model.name)
@@ -485,8 +484,9 @@ class NaiveNAS:
         return MyModel.new_model_from_structure(layer_collection)
 
 
-    def add_conv_maxpool_block(self, model, conv_width=10, conv_filter_num=50,
+    def add_conv_maxpool_block(self, layer_collection, conv_width=10, conv_filter_num=50,
                                pool_width=3, pool_stride=3, dropout=False, conv_layer_name=None, random_values=True):
+        layer_collection = copy.deepcopy(layer_collection)
         if random_values:
             conv_width = random.randint(5, 10)
             conv_filter_num = random.randint(0, 50)
@@ -502,19 +502,18 @@ class NaiveNAS:
             last_layer_id = dropout.id
         conv_layer = ConvLayer(kernel_width=conv_width, kernel_height=1,
                                filter_num=conv_filter_num, name=conv_layer_name)
-        model.layer_collection[conv_layer.id] = conv_layer
-        model.layer_collection[last_layer_id].make_connection(conv_layer)
+        layer_collection[conv_layer.id] = conv_layer
+        layer_collection[last_layer_id].make_connection(conv_layer)
         batchnorm_layer = BatchNormLayer()
-        model.layer_collection[batchnorm_layer.id] = batchnorm_layer
+        layer_collection[batchnorm_layer.id] = batchnorm_layer
         conv_layer.make_connection(batchnorm_layer)
         activation_layer = ActivationLayer()
-        model.layer_collection[activation_layer.id] = activation_layer
+        layer_collection[activation_layer.id] = activation_layer
         batchnorm_layer.make_connection(activation_layer)
         maxpool_layer = PoolingLayer(pool_width=pool_width, stride_width=pool_stride, mode='MAX')
-        model.layer_collection[maxpool_layer.id] = maxpool_layer
+        layer_collection[maxpool_layer.id] = maxpool_layer
         activation_layer.make_connection(maxpool_layer)
-        model.name += '->add_conv_maxpool'
-        return model
+        return MyModel.new_model_from_structure(layer_collection, name=model.name + '->add_conv_maxpool')
 
     def add_skip_connection_concat(self, model):
         topo_layers = create_topo_layers(model.layer_collection.values())
@@ -574,6 +573,7 @@ class NaiveNAS:
         return model
 
     def factor_filters(self, model):
+        model = copy.deepcopy(model)
         conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
         try:
             random_conv_index = random.randint(2, len(conv_indices) - 1)
