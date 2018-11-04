@@ -41,6 +41,21 @@ def delete_from_folder(folder):
         except Exception as e:
             print(e)
 
+def set_target_model_filters(self, model, filt1, filt2, filt3):
+    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
+    conv_indices = conv_indices[2:len(conv_indices) - 1]  # take only relevant indices
+    model.layer_collection[conv_indices[0]].filter_num = filt1
+    model.layer_collection[conv_indices[1]].filter_num = filt2
+    model.layer_collection[conv_indices[2]].filter_num = filt3
+    return model.new_model_from_structure(model.layer_collection)
+
+def set_target_model_kernel_sizes(self, model, size1, size2, size3):
+    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
+    conv_indices = conv_indices[2:len(conv_indices) - 1]  # take only relevant indices
+    model.layer_collection[conv_indices[0]].kernel_width = size1
+    model.layer_collection[conv_indices[1]].kernel_width = size2
+    model.layer_collection[conv_indices[2]].kernel_width = size3
+    return model.new_model_from_structure(model.layer_collection)
 
 class NaiveNAS:
     def __init__(self, n_classes, input_time_len, n_chans,
@@ -248,7 +263,7 @@ class NaiveNAS:
                 for third_size in range(lo, hi, jumps):
                     K.clear_session()
                     num_of_ops += 1
-                    model = self.set_target_model_kernel_sizes(model, first_size, second_size, third_size)
+                    model = set_target_model_kernel_sizes(model, first_size, second_size, third_size)
                     run_time, res, res_train = self.run_one_model(model)
                     total_time += time
                     print('train time in seconds:', time)
