@@ -1,4 +1,5 @@
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import time
 import datetime
 import numpy as np
@@ -332,8 +333,6 @@ def handle_subject_data(subject_id, cropping=False):
 def run_naive_nas(real_data=True, toy_data=False):
     global data_folder, valid_set_fraction
     now = str(datetime.datetime.now()).replace(":", "-")
-    experiment_name = 'filter_experiment'
-    folder_name = experiment_name+'_'+now
     accuracies = np.zeros(9)
     if real_data:
         for subject_id in range(1, 10):
@@ -341,8 +340,8 @@ def run_naive_nas(real_data=True, toy_data=False):
             naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
                                 X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
                                 X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
-            accuracies[subject_id-1] = naiveNAS.find_best_model_bb(folder_name)
-        np.savetxt('results/' + folder_name + '/accuracies.csv', accuracies, delimiter=',')
+            accuracies[subject_id-1] = naiveNAS.find_best_model_evolution()
+        np.savetxt('results/naive_nas_'+now+'.csv', accuracies, delimiter=',')
 
     if toy_data:
         X_train, y_train, X_val, y_val, X_test, y_test = four_class_example_generator()
