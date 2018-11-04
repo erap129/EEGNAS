@@ -119,27 +119,6 @@ class ConcatLayer(Layer):
         self.second_layer_index = second_layer_index
 
 
-def base_model(n_chans, input_time_len, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
-    layer_collection = {}
-    inputs = InputLayer(shape_height=n_chans, shape_width=input_time_len)
-    layer_collection[inputs.id] = inputs
-    conv_time = ConvLayer(kernel_width=filter_time_length, kernel_height=1, filter_num=n_filters_time)
-    layer_collection[conv_time.id] = conv_time
-    inputs.make_connection(conv_time)
-    conv_spat = ConvLayer(kernel_width=1, kernel_height=n_chans, filter_num=n_filters_spat)
-    layer_collection[conv_spat.id] = conv_spat
-    conv_time.make_connection(conv_spat)
-    batchnorm = BatchNormLayer()
-    layer_collection[batchnorm.id] = batchnorm
-    conv_spat.make_connection(batchnorm)
-    elu = ActivationLayer()
-    layer_collection[elu.id] = elu
-    batchnorm.make_connection(elu)
-    maxpool = PoolingLayer(pool_width=3, stride_width=3, mode='MAX')
-    layer_collection[maxpool.id] = maxpool
-    elu.make_connection(maxpool)
-    return MyModel(model=None, layer_collection=layer_collection, name='base')
-
 def random_model(n_chans, input_time_len):
     layer_collection = {}
 
@@ -181,12 +160,36 @@ def random_model(n_chans, input_time_len):
 
     return MyModel.new_model_from_structure(layer_collection=layer_collection, name='base')
 
+
+def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
+    layer_collection = {}
+    inputs = InputLayer(shape_height=n_chans, shape_width=input_time_len)
+    layer_collection[inputs.id] = inputs
+    conv_time = ConvLayer(kernel_width=filter_time_length, kernel_height=1, filter_num=n_filters_time)
+    layer_collection[conv_time.id] = conv_time
+    inputs.make_connection(conv_time)
+    conv_spat = ConvLayer(kernel_width=1, kernel_height=n_chans, filter_num=n_filters_spat)
+    layer_collection[conv_spat.id] = conv_spat
+    conv_time.make_connection(conv_spat)
+    batchnorm = BatchNormLayer()
+    layer_collection[batchnorm.id] = batchnorm
+    conv_spat.make_connection(batchnorm)
+    elu = ActivationLayer()
+    layer_collection[elu.id] = elu
+    batchnorm.make_connection(elu)
+    maxpool = PoolingLayer(pool_width=3, stride_width=3, mode='MAX')
+    layer_collection[maxpool.id] = maxpool
+    elu.make_connection(maxpool)
+    return MyModel(model=None, layer_collection=layer_collection, name='base')
+
+
 def target_model():
-    base_model = base_model()
-    model = self.add_conv_maxpool_block(base_model, conv_filter_num=50, conv_layer_name='conv1')
-    model = self.add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2')
-    model = self.add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3')
+    basemodel = base_model()
+    model = add_conv_maxpool_block(basemodel, conv_filter_num=50, conv_layer_name='conv1', random_values=False)
+    model = add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2', random_values=False)
+    model = add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3', random_values=False)
     return model
+
 
 def finalize_model(layer_collection, naive_nas):
     for layer in layer_collection.values():
@@ -217,8 +220,10 @@ def finalize_model(layer_collection, naive_nas):
     return MyModel.new_model_from_structure(layer_collection)
 
 
-def add_conv_maxpool_block(model, conv_width=10, conv_filter_num=50,
+def add_conv_maxpool_block(model, conv_width=10, conv_filter_num=50, dropout=False,
                            pool_width=3, pool_stride=3, conv_layer_name=None, random_values=True):
+    for layer in model.layer_collection.values():
+        layer.keras_layer = None
     layer_collection = copy.deepcopy(model.layer_collection)
     if random_values:
         conv_width = random.randint(5, 10)
@@ -228,7 +233,7 @@ def add_conv_maxpool_block(model, conv_width=10, conv_filter_num=50,
 
     topo_layers = create_topo_layers(layer_collection.values())
     last_layer_id = topo_layers[-1]
-    if random.random() > 0.5:  # randomly add a dropout layer
+    if dropout:
         dropout = DropoutLayer()
         layer_collection[dropout.id] = dropout
         layer_collection[last_layer_id].make_connection(dropout)
@@ -328,6 +333,22 @@ def factor_filters(model):
 
 def factor_kernels(model):
     return edit_conv_layer(model, mode='kernels')
+
+def set_target_model_filters(model, filt1, filt2, filt3):
+    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
+    conv_indices = conv_indices[2:len(conv_indices)]  # take only relevant indices
+    model.layer_collection[conv_indices[0]].filter_num = filt1
+    model.layer_collection[conv_indices[1]].filter_num = filt2
+    model.layer_collection[conv_indices[2]].filter_num = filt3
+    return model.new_model_from_structure(model.layer_collection)
+
+def set_target_model_kernel_sizes(model, size1, size2, size3):
+    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
+    conv_indices = conv_indices[2:len(conv_indices)]  # take only relevant indices
+    model.layer_collection[conv_indices[0]].kernel_width = size1
+    model.layer_collection[conv_indices[1]].kernel_width = size2
+    model.layer_collection[conv_indices[2]].kernel_width = size3
+    return model.new_model_from_structure(model.layer_collection)
 
 def mutate_net(model):
     operations = [add_conv_maxpool_block, factor_filters, factor_kernels, add_skip_connection_concat]

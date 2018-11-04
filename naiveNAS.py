@@ -1,4 +1,4 @@
-from models_generation import random_model, finalize_model, mutate_net
+from models_generation import random_model, finalize_model, mutate_net, target_model, set_target_model_filters
 import pandas as pd
 import numpy as np
 import time
@@ -41,22 +41,6 @@ def delete_from_folder(folder):
         except Exception as e:
             print(e)
 
-def set_target_model_filters(self, model, filt1, filt2, filt3):
-    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
-    conv_indices = conv_indices[2:len(conv_indices) - 1]  # take only relevant indices
-    model.layer_collection[conv_indices[0]].filter_num = filt1
-    model.layer_collection[conv_indices[1]].filter_num = filt2
-    model.layer_collection[conv_indices[2]].filter_num = filt3
-    return model.new_model_from_structure(model.layer_collection)
-
-def set_target_model_kernel_sizes(self, model, size1, size2, size3):
-    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
-    conv_indices = conv_indices[2:len(conv_indices) - 1]  # take only relevant indices
-    model.layer_collection[conv_indices[0]].kernel_width = size1
-    model.layer_collection[conv_indices[1]].kernel_width = size2
-    model.layer_collection[conv_indices[2]].kernel_width = size3
-    return model.new_model_from_structure(model.layer_collection)
-
 class NaiveNAS:
     def __init__(self, n_classes, input_time_len, n_chans,
                  X_train, y_train, X_valid, y_valid, X_test, y_test, subject_id, cropping=False):
@@ -73,7 +57,7 @@ class NaiveNAS:
         self.cropping = cropping
         self.subject_id = subject_id
 
-    def evaluate_model(self, model, test=False, finalized=False):
+    def evaluate_model(self, model):
         K.clear_session()
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
         finalized_model = finalize_model(model.layer_collection, naive_nas=self)
@@ -82,19 +66,18 @@ class NaiveNAS:
         best_model_name = 'keras_models/best_keras_model' + str(time.time()) + '.hdf5'
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
         mcp = ModelCheckpoint(best_model_name, save_best_only=True, monitor='val_acc', mode='max')
+        start = time.time()
         finalized_model.model.fit(self.X_train, self.y_train, epochs=50,
                                   validation_data=(self.X_valid, self.y_valid),
                                   callbacks=[earlystopping, mcp], verbose=0)
         finalized_model.model.load_weights(best_model_name)
-        if not test:
-            X_check = self.X_valid
-            y_check = self.y_valid
-        else:
-            X_check = self.X_test
-            y_check = self.y_test
-        res = finalized_model.model.evaluate(X_check, y_check)[1] * 100
+        res_test = finalized_model.model.evaluate(self.X_test, self.y_test)[1] * 100
+        res_train = finalized_model.model.evaluate(self.X_train, self.y_train)[1] * 100
+        res_val = finalized_model.model.evaluate(self.X_valid, self.y_valid)[1] * 100
+        end = time.time()
+        final_time = end-start
         delete_from_folder('keras_models')
-        return res, finalized_model.model
+        return final_time, res_test, res_val, res_train, finalized_model.model
 
     def find_best_model_evolution(self):
         nb_evolution_steps = 10
@@ -203,45 +186,28 @@ class NaiveNAS:
                 createFolder('results/'+folder_name)
             results.to_csv('results/'+folder_name+'/subject_' + str(self.subject_id) + experiment + '_' + now + '.csv', mode='a')
 
-    def run_one_model(self, model):
-        if self.cropping:
-            model.model = convert_to_dilated(model.model)
-        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
-        mcp_filepath = 'keras_models/best_keras_model_' + str(datetime.datetime.now()).replace(":", "-") + '.hdf5'
-        mcp = ModelCheckpoint(
-            mcp_filepath, save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
-        start = time.time()
-        model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
-                        callbacks=[earlystopping, mcp])
-        model.model.load_weights(mcp_filepath)
-        res = model.model.evaluate(self.X_test, self.y_test)[1] * 100
-        res_train = model.model.evaluate(self.X_train, self.y_train)[1] * 100
-        res_val = model.model.evaluate(self.X_valid, self.y_valid)[1] * 100
-        end = time.time()
-        final_time = end - start
-        os.remove(mcp_filepath)
-        return final_time, res, res_train, res_val
-
     def grid_search_filters(self, lo, hi, jumps):
-        model = self.target_model()
+        model = target_model()
         start_time = time.time()
         num_of_ops = 0
         total_time = 0
         results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
-                                         'accuracy', 'train acc', 'runtime'])
+                                         'test acc', 'val acc', 'train acc', 'runtime'])
         for first_filt in range(lo, hi, jumps):
             for second_filt in range(lo, hi, jumps):
                 for third_filt in range(lo, hi, jumps):
                     K.clear_session()
                     num_of_ops += 1
-                    model = self.set_target_model_filters(model, first_filt, second_filt, third_filt)
-                    run_time, res, res_train = self.run_one_model(model)
-                    total_time += time
-                    print('train time in seconds:', time)
-                    print('model accuracy:', res)
+                    model = set_target_model_filters(model, first_filt, second_filt, third_filt)
+                    run_time, res_test, res_val, res_train, _ = self.evaluate_model(model)
+                    total_time += run_time
+                    print('train time in seconds:', run_time)
+                    print('model accuracy:', res_test)
                     results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
                                                             int(model.model.get_layer('conv2').filters),
                                                             int(model.model.get_layer('conv3').filters),
+                                                            res_test,
+                                                            res_val,
                                                             res_train,
                                                             str(run_time)])
                     print(results)
@@ -252,7 +218,7 @@ class NaiveNAS:
         results.to_csv('results/filter_gridsearch_' + now + '.csv', mode='a')
 
     def grid_search_kernel_size(self, lo, hi, jumps):
-        model = self.target_model()
+        model = target_model()
         start_time = time.time()
         num_of_ops = 0
         total_time = 0
