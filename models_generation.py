@@ -187,15 +187,47 @@ def target_model():
     basemodel = base_model()
     model = add_conv_maxpool_block(basemodel, conv_filter_num=50, conv_layer_name='conv1', random_values=False)
     model = add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2', random_values=False)
-    model = add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3', random_values=False)
+    model = add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3',
+                                   random_values=False)
     return model
 
 
-def genetic_filter_experiment_model():
-    basemodel = base_model()
-    add_conv_layer(base_model, filters=random.randint(1,1000), kernel_width=10, kernel_height=1, in_place=True)
-    model = add_conv_layer()
+def genetic_filter_experiment_model(num_blocks):
+    layer_collection = base_model().layer_collection
+    for block in range(num_blocks):
+        add_layer(layer_collection, DropoutLayer(), in_place=True)
+        add_layer(layer_collection, ConvLayer(filter_num=random.randint(1, 1000), kernel_height=1, kernel_width=10),
+                  in_place=True)
+        add_layer(layer_collection, BatchNormLayer(), in_place=True)
+        add_layer(layer_collection, PoolingLayer(stride_width=2, pool_width=2, mode='MAX'), in_place=True)
+    return MyModel.new_model_from_structure(layer_collection)
 
+
+def add_layer(layer_collection, layer_to_add, in_place=False):
+    if not in_place:
+        for layer in layer_collection.values():
+            layer.keras_layer = None
+        layer_collection = copy.deepcopy(layer_collection)
+    topo_layers = create_topo_layers(layer_collection.values())
+    last_layer_id = topo_layers[-1]
+    layer_collection[layer_to_add.id] = layer_to_add
+    layer_collection[last_layer_id].make_connection(layer_to_add)
+    return layer_collection
+
+
+def breed(first_model, second_model, mutation_rate, breed_rate):
+    conv_indices_first = [layer.id for layer in first_model.layer_collection.values() if isinstance(layer, ConvLayer)]
+    conv_indices_second = [layer.id for layer in second_model.layer_collection.values() if isinstance(layer, ConvLayer)]
+    if random.random() < breed_rate:
+        cut_point = random.randint(2, len(conv_indices_first) - 2)  # don't include last conv
+        for i in range(cut_point):
+            second_model.layer_collection[conv_indices_second[i]].filter_num = first_model.layer_collection[conv_indices_first[i]].filter_num
+    if random.random() < mutation_rate:
+        random_rate = random.uniform(0.1,3)
+        random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
+        second_model.layer_collection[random_index].filter_num = \
+            np.clip(int(second_model.layer_collection[random_index].filter_num * random_rate), 1, None)
+    return second_model
 
 
 def finalize_model(layer_collection, naive_nas):

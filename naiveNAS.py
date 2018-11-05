@@ -1,4 +1,5 @@
-from models_generation import random_model, finalize_model, mutate_net, target_model, set_target_model_filters
+from models_generation import random_model, finalize_model, mutate_net, target_model, set_target_model_filters,\
+    genetic_filter_experiment_model, breed
 import pandas as pd
 import numpy as np
 import time
@@ -69,7 +70,7 @@ class NaiveNAS:
         start = time.time()
         finalized_model.model.fit(self.X_train, self.y_train, epochs=50,
                                   validation_data=(self.X_valid, self.y_valid),
-                                  callbacks=[earlystopping, mcp], verbose=0)
+                                  callbacks=[earlystopping, mcp], verbose=1)
         finalized_model.model.load_weights(best_model_name)
         res_test = finalized_model.model.evaluate(self.X_test, self.y_test)[1] * 100
         res_train = finalized_model.model.evaluate(self.X_train, self.y_train)[1] * 100
@@ -187,40 +188,33 @@ class NaiveNAS:
             results.to_csv('results/'+folder_name+'/subject_' + str(self.subject_id) + experiment + '_' + now + '.csv', mode='a')
 
     def evolution_filters(self):
-        pop_size = 100
-        select_fittest = 20
-        select_lucky_few = 20
+        pop_size = 10
+        select_fittest = 2
+        select_lucky_few = 2
         num_generations = 100
-        population = np.zeros(pop_size)
-        model = target_model()
+        population = []
         breed_rate = 0.8
         mutation_rate = 0.3
-
-        for i in range(len(population)):
-            population[i] = set_target_model_filters(model, random.randint(1, 1000), random.randint(1, 1000),
-                                                     random.randint(1, 1000))
+        for i in range(pop_size):
+            population.append(genetic_filter_experiment_model(num_blocks=5))
         for generation in range(num_generations):
-            weighted_population = np.zeros(len(population))
+            weighted_population = []
             for i, pop in enumerate(population):
                 final_time, _, res_val, _, _ = self.evaluate_model(pop)
-                weighted_population[i] = (pop, res_val)
+                weighted_population.append((pop, res_val))
             weighted_population = sorted(weighted_population, key=lambda x: x[1])
             print('fittest individual in generation', generation, 'has fitness:', weighted_population[0][1])
             print('mean fitness of population is', np.mean([weight for (model, weight) in weighted_population]))
             fittest = weighted_population[0:select_fittest + 1]
             lucky_few_indexes = random.sample(range(select_fittest+1, len(population)), k=select_lucky_few)
-            lucky_few = weighted_population[lucky_few_indexes]
-            to_breed = np.concatenate(fittest, lucky_few)
+            lucky_few = [weighted_population[i] for i in lucky_few_indexes]
+            to_breed = fittest + lucky_few
             np.random.shuffle(to_breed)
             new_population = np.zeros(len(population))
-            for i in range(len(to_breed) / 2):
-                for j in range(num_generations / (len(to_breed) / 2)):
-                    new_population[i * (num_generations / (len(to_breed) / 2)) + j] = self.breed(to_breed[i], to_breed[len(to_breed) - 1 - i],
-                                                                                                 mutation_rate=mutation_rate, breed_rate=breed_rate)
-
-    def breed(self, first_model, second_model, mutation_rate, breed_rate):
-        if (random.random() < breed_rate):
-
+            for i in range(int(len(to_breed) / 2)):
+                for j in range(int(num_generations / (len(to_breed) / 2))):
+                    new_population[i * int((num_generations / (len(to_breed) / 2))) + j] = breed(first_model=to_breed[i][0],
+                                second_model=to_breed[len(to_breed) - 1 - i][0], mutation_rate=mutation_rate, breed_rate=breed_rate)
 
     def grid_search_filters(self, lo, hi, jumps):
         model = target_model()
