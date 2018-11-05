@@ -186,6 +186,42 @@ class NaiveNAS:
                 createFolder('results/'+folder_name)
             results.to_csv('results/'+folder_name+'/subject_' + str(self.subject_id) + experiment + '_' + now + '.csv', mode='a')
 
+    def evolution_filters(self):
+        pop_size = 100
+        select_fittest = 20
+        select_lucky_few = 20
+        num_generations = 100
+        population = np.zeros(pop_size)
+        model = target_model()
+        breed_rate = 0.8
+        mutation_rate = 0.3
+
+        for i in range(len(population)):
+            population[i] = set_target_model_filters(model, random.randint(1, 1000), random.randint(1, 1000),
+                                                     random.randint(1, 1000))
+        for generation in range(num_generations):
+            weighted_population = np.zeros(len(population))
+            for i, pop in enumerate(population):
+                final_time, _, res_val, _, _ = self.evaluate_model(pop)
+                weighted_population[i] = (pop, res_val)
+            weighted_population = sorted(weighted_population, key=lambda x: x[1])
+            print('fittest individual in generation', generation, 'has fitness:', weighted_population[0][1])
+            print('mean fitness of population is', np.mean([weight for (model, weight) in weighted_population]))
+            fittest = weighted_population[0:select_fittest + 1]
+            lucky_few_indexes = random.sample(range(select_fittest+1, len(population)), k=select_lucky_few)
+            lucky_few = weighted_population[lucky_few_indexes]
+            to_breed = np.concatenate(fittest, lucky_few)
+            np.random.shuffle(to_breed)
+            new_population = np.zeros(len(population))
+            for i in range(len(to_breed) / 2):
+                for j in range(num_generations / (len(to_breed) / 2)):
+                    new_population[i * (num_generations / (len(to_breed) / 2)) + j] = self.breed(to_breed[i], to_breed[len(to_breed) - 1 - i],
+                                                                                                 mutation_rate=mutation_rate, breed_rate=breed_rate)
+
+    def breed(self, first_model, second_model, mutation_rate, breed_rate):
+        if (random.random() < breed_rate):
+
+
     def grid_search_filters(self, lo, hi, jumps):
         model = target_model()
         start_time = time.time()

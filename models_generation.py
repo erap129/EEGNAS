@@ -191,6 +191,13 @@ def target_model():
     return model
 
 
+def genetic_filter_experiment_model():
+    basemodel = base_model()
+    add_conv_layer(base_model, filters=random.randint(1,1000), kernel_width=10, kernel_height=1, in_place=True)
+    model = add_conv_layer()
+
+
+
 def finalize_model(layer_collection, naive_nas):
     for layer in layer_collection.values():
         layer.keras_layer = None
