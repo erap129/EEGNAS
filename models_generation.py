@@ -196,11 +196,16 @@ def genetic_filter_experiment_model(num_blocks):
     layer_collection = base_model().layer_collection
     for block in range(num_blocks):
         add_layer(layer_collection, DropoutLayer(), in_place=True)
-        add_layer(layer_collection, ConvLayer(filter_num=random.randint(1, 1000), kernel_height=1, kernel_width=10),
+        add_layer(layer_collection, ConvLayer(filter_num=random.randint(1, 500), kernel_height=1, kernel_width=10),
                   in_place=True)
         add_layer(layer_collection, BatchNormLayer(), in_place=True)
         add_layer(layer_collection, PoolingLayer(stride_width=2, pool_width=2, mode='MAX'), in_place=True)
     return MyModel.new_model_from_structure(layer_collection)
+
+
+def get_evolution_model_filters(model):
+    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)][2:]
+    return '-'.join(str(model.layer_collection[index].filter_num) for index in conv_indices)
 
 
 def add_layer(layer_collection, layer_to_add, in_place=False):
@@ -223,10 +228,10 @@ def breed(first_model, second_model, mutation_rate, breed_rate):
         for i in range(cut_point):
             second_model.layer_collection[conv_indices_second[i]].filter_num = first_model.layer_collection[conv_indices_first[i]].filter_num
     if random.random() < mutation_rate:
-        random_rate = random.uniform(0.1,3)
+        random_rate = random.uniform(0.1, 2)
         random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
         second_model.layer_collection[random_index].filter_num = \
-            np.clip(int(second_model.layer_collection[random_index].filter_num * random_rate), 1, None)
+            np.clip(int(second_model.layer_collection[random_index].filter_num * random_rate), 1, 10000)
     return second_model
 
 

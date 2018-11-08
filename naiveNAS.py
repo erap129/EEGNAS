@@ -1,5 +1,5 @@
 from models_generation import random_model, finalize_model, mutate_net, target_model, set_target_model_filters,\
-    genetic_filter_experiment_model, breed
+    genetic_filter_experiment_model, breed, get_evolution_model_filters
 import pandas as pd
 import numpy as np
 import time
@@ -62,15 +62,17 @@ class NaiveNAS:
         K.clear_session()
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
         finalized_model = finalize_model(model.layer_collection, naive_nas=self)
+        finalized_model.model.summary()
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
         best_model_name = 'keras_models/best_keras_model' + str(time.time()) + '.hdf5'
         earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
         mcp = ModelCheckpoint(best_model_name, save_best_only=True, monitor='val_acc', mode='max')
         start = time.time()
-        finalized_model.model.fit(self.X_train, self.y_train, epochs=50,
+        r = finalized_model.model.fit(self.X_train, self.y_train, epochs=50,
                                   validation_data=(self.X_valid, self.y_valid),
                                   callbacks=[earlystopping, mcp], verbose=1)
+        n_epochs = len(r.history['loss'])
         finalized_model.model.load_weights(best_model_name)
         res_test = finalized_model.model.evaluate(self.X_test, self.y_test)[1] * 100
         res_train = finalized_model.model.evaluate(self.X_train, self.y_train)[1] * 100
@@ -78,7 +80,7 @@ class NaiveNAS:
         end = time.time()
         final_time = end-start
         delete_from_folder('keras_models')
-        return final_time, res_test, res_val, res_train, finalized_model.model
+        return final_time, n_epochs, res_test, res_val, res_train, finalized_model
 
     def find_best_model_evolution(self):
         nb_evolution_steps = 10
@@ -195,26 +197,40 @@ class NaiveNAS:
         population = []
         breed_rate = 0.8
         mutation_rate = 0.3
+        results = pd.DataFrame(columns=['best model acc', 'best model time', 'best model epoch num', 'best model filters',
+                                        'mean model acc', 'mean model time', 'mean model epoch num'])
         for i in range(pop_size):
             population.append(genetic_filter_experiment_model(num_blocks=5))
         for generation in range(num_generations):
             weighted_population = []
             for i, pop in enumerate(population):
-                final_time, _, res_val, _, _ = self.evaluate_model(pop)
-                weighted_population.append((pop, res_val))
-            weighted_population = sorted(weighted_population, key=lambda x: x[1])
+                final_time, n_epochs, _, res_val, _, _ = self.evaluate_model(pop)
+                weighted_population.append((pop, res_val, final_time, n_epochs))
+            weighted_population = sorted(weighted_population, key=lambda x: x[1], reverse=True)
             print('fittest individual in generation', generation, 'has fitness:', weighted_population[0][1])
-            print('mean fitness of population is', np.mean([weight for (model, weight) in weighted_population]))
-            fittest = weighted_population[0:select_fittest + 1]
+            print('mean fitness of population is', np.mean([weight for (model, weight, final_time, n_epochs) in weighted_population]))
+            best_model_filters = get_evolution_model_filters(weighted_population[0][0])
+            results.loc[generation] = np.array([weighted_population[0][1],
+                                                weighted_population[0][2],
+                                                weighted_population[0][3],
+                                                best_model_filters,
+                                                np.mean([weight for (model, weight, final_time, n_epochs) in weighted_population]),
+                                                np.mean([final_time for (model, weight, final_time, n_epochs) in weighted_population]),
+                                                np.mean([n_epochs for (model, weight, final_time, n_epochs) in weighted_population])])
+            fittest = weighted_population[0:select_fittest]
             lucky_few_indexes = random.sample(range(select_fittest+1, len(population)), k=select_lucky_few)
             lucky_few = [weighted_population[i] for i in lucky_few_indexes]
             to_breed = fittest + lucky_few
             np.random.shuffle(to_breed)
-            new_population = np.zeros(len(population))
+            new_population = []
             for i in range(int(len(to_breed) / 2)):
                 for j in range(int(num_generations / (len(to_breed) / 2))):
-                    new_population[i * int((num_generations / (len(to_breed) / 2))) + j] = breed(first_model=to_breed[i][0],
-                                second_model=to_breed[len(to_breed) - 1 - i][0], mutation_rate=mutation_rate, breed_rate=breed_rate)
+                    new_population.append(breed(first_model=to_breed[i][0],
+                                second_model=to_breed[len(to_breed) - 1 - i][0], mutation_rate=mutation_rate, breed_rate=breed_rate))
+            print(results)
+        now = str(datetime.datetime.now()).replace(":", "-")
+        results.to_csv('results/filter_size_evolution_' + 'pop_' + str(pop_size) +
+                       '_gen_' + str(num_generations) + '_' + now + '.csv', mode='a')
 
     def grid_search_filters(self, lo, hi, jumps):
         model = target_model()
