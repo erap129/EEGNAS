@@ -12,14 +12,12 @@ from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.datautil.splitters import split_into_two_sets
 from datautil.signalproc import bandpass_cnt, exponential_running_standardize
 from datautil.trial_segment import create_signal_target_from_raw_mne
+import globals
 
 
-def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
+def get_train_val_test(data_folder, subject_id, low_cut_hz):
+    global config
     ival = [-500, 4000]  # this is the window around the event from which we will take data to feed to the classifier
-    input_time_length = 1000
-    max_epochs = 800  # max runs of the NN
-    max_increase_epochs = 80  # ???
-    batch_size = 60  # 60 examples will be processed each run of the NN
     high_cut_hz = 38  # cut off parts of signal higher than 38 hz
     factor_new = 1e-3  # ??? has to do with exponential running standardize
     init_block_size = 1000  # ???
@@ -74,8 +72,10 @@ def get_train_test(data_folder, subject_id, low_cut_hz, model=None):
 
     train_set = create_signal_target_from_raw_mne(train_cnt, marker_def, ival)
     test_set = create_signal_target_from_raw_mne(test_cnt, marker_def, ival)
+    train_set, valid_set = split_into_two_sets(
+        train_set, first_set_fraction=1 - globals.config['DEFAULT'].getfloat('valid_set_fraction'))
 
-    return train_set, test_set
+    return train_set, valid_set, test_set
 
 
 def show_spectrogram(data):

@@ -1,26 +1,88 @@
 from models_generation import random_model, finalize_model, mutate_net, target_model, set_target_model_filters,\
     genetic_filter_experiment_model, breed
+import configparser
+from braindecode.torch_ext.util import np_to_var
+from braindecode.experiments.loggers import Printer
+import torch.optim as optim
+import torch.nn.functional as F
 import pandas as pd
 import numpy as np
 import time
-from keras.callbacks import EarlyStopping, ModelCheckpoint
+import torch
 from keras_models import convert_to_dilated
 import os
-import keras.backend as K
+import globals
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
-import queue
-import datetime
-import treelib
-import gp
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 
 
-class Tree(object):
-    def __init__(self):
-        self.children = []
-        self.data = None
+class RememberBest(object):
+    """
+    Class to remember and restore
+    the parameters of the model and the parameters of the
+    optimizer at the epoch with the best performance.
+    Parameters
+    ----------
+    column_name: str
+        The lowest value in this column should indicate the epoch with the
+        best performance (e.g. misclass might make sense).
+
+    Attributes
+    ----------
+    best_epoch: int
+        Index of best epoch
+    """
+
+    def __init__(self, column_name):
+        self.column_name = column_name
+        self.best_epoch = 0
+        self.lowest_val = float('inf')
+        self.model_state_dict = None
+        self.optimizer_state_dict = None
+
+    def remember_epoch(self, epochs_df, model, optimizer):
+        """
+        Remember this epoch: Remember parameter values in case this epoch
+        has the best performance so far.
+
+        Parameters
+        ----------
+        epochs_df: `pandas.Dataframe`
+            Dataframe containing the column `column_name` with which performance
+            is evaluated.
+        model: `torch.nn.Module`
+        optimizer: `torch.optim.Optimizer`
+        """
+        i_epoch = len(epochs_df) - 1
+        current_val = float(epochs_df[self.column_name].iloc[-1])
+        if current_val <= self.lowest_val:
+            self.best_epoch = i_epoch
+            self.lowest_val = current_val
+            self.model_state_dict = deepcopy(model.state_dict())
+            self.optimizer_state_dict = deepcopy(optimizer.state_dict())
+            log.info("New best {:s}: {:5f}".format(self.column_name,
+                                                   current_val))
+            log.info("")
+
+    def reset_to_best_model(self, epochs_df, model, optimizer):
+        """
+        Reset parameters to parameters at best epoch and remove rows
+        after best epoch from epochs dataframe.
+
+        Modifies parameters of model and optimizer, changes epochs_df in-place.
+
+        Parameters
+        ----------
+        epochs_df: `pandas.Dataframe`
+        model: `torch.nn.Module`
+        optimizer: `torch.optim.Optimizer`
+        """
+        # Remove epochs past the best one from epochs dataframe
+        epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
+        model.load_state_dict(self.model_state_dict)
+        optimizer.load_state_dict(self.optimizer_state_dict)
 
 
 def createFolder(directory):
@@ -42,31 +104,34 @@ def delete_from_folder(folder):
             print(e)
 
 class NaiveNAS:
-    def __init__(self, n_classes, input_time_len, n_chans,
-                 X_train, y_train, X_valid, y_valid, X_test,
-                 y_test, configuration, subject_id, cropping=False):
+    def __init__(self, iterator, n_classes, input_time_len, n_chans,
+                 train_set, val_set, test_set,
+                 config, subject_id, cropping=False):
+        self.iterator = iterator
         self.n_classes = n_classes
         self.n_chans = n_chans
         self.input_time_len = input_time_len
-        self.X_train = X_train
-        self.X_test = X_test
-        self.X_valid = X_valid
-        self.y_train = y_train
-        self.y_test = y_test
-        self.y_valid = y_valid
+        self.train_set = train_set
+        self.val_set = val_set
+        self.test_set = test_set
         self.subject_id = subject_id
         self.cropping = cropping
-        self.configuration = configuration
+        self.config = config
+        if globals.config['DEFAULT'].getboolean('do_early_stop'):
+            self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
+        self.loggers = [Printer()]
+        self.epochs_df = pd.DataFrame()
 
     def evolution_filters(self):
-        pop_size = self.configuration.getint('pop_size')
-        num_generations = self.configuration.getint('num_generations')
-        mutation_rate = self.configuration.getfloat('mutation_rate')
+        configuration = self.config['evolution']
+        pop_size = configuration.getint('pop_size')
+        num_generations = configuration.getint('num_generations')
+        mutation_rate = configuration.getfloat('mutation_rate')
         results_dict = {'subject': [], 'generation': [], 'val_acc': []}
 
         weighted_population = []
         for i in range(pop_size):  # generate pop_size random models
-            weighted_population.append((genetic_filter_experiment_model(num_blocks=self.configuration.getint('num_conv_blocks')), None))
+            weighted_population.append((genetic_filter_experiment_model(num_blocks=configuration.getint('num_conv_blocks')), None))
 
         for generation in range(num_generations):
             for i, (pop, eval) in enumerate(weighted_population):
@@ -96,190 +161,48 @@ class NaiveNAS:
         finalized_model = finalize_model(model, naive_nas=self)
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
-        best_model_name = 'keras_models/best_keras_model' + str(time.time()) + '.hdf5'
-        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
-        mcp = ModelCheckpoint(best_model_name, save_best_only=True, monitor='val_acc', mode='max')
         start = time.time()
-        finalized_model.model.fit(self.X_train, self.y_train, epochs=50,
-                                  validation_data=(self.X_valid, self.y_valid),
-                                  callbacks=[earlystopping, mcp], verbose=1)
-        finalized_model.model.load_weights(best_model_name)
-        res_test = finalized_model.model.evaluate(self.X_test, self.y_test)[1] * 100
-        res_train = finalized_model.model.evaluate(self.X_train, self.y_train)[1] * 100
-        res_val = finalized_model.model.evaluate(self.X_valid, self.y_valid)[1] * 100
+        for epoch in range(globals.config['DEFAULT'].getint('epochs')):
+            self.train_pytorch(finalized_model)
+        res_test = self.eval_pytorch(finalized_model, self.test_set)
+        res_val = self.eval_pytorch(finalized_model, self.val_set)
+        res_train = self.eval_pytorch(finalized_model, self.train_set)
         end = time.time()
         final_time = end-start
-        delete_from_folder('keras_models')
         return final_time, res_test, res_val, res_train, finalized_model.model
 
-    def find_best_model_evolution(self):
-        nb_evolution_steps = 10
-        tournament = \
-            gp.TournamentOptimizer(
-                population_sz=10,
-                init_fn=random_model,
-                mutate_fn=mutate_net,
-                naive_nas=self)
+    def train_pytorch(self, model):
+        self.setup_training()
+        model.train()
+        batch_generator = self.iterator.get_batches(self.train_set, shuffle=True)
+        optimizer = optim.Adam(model.parameters())
+        for inputs, targets in batch_generator:
+            input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+            optimizer.zero_grad()
+            outputs = model(input_vars)
+            loss = F.nll_loss(outputs, target_vars)
+            loss.backward()
+            optimizer.step()
 
-        for i in range(nb_evolution_steps):
-            print('\nEvolution step:{}'.format(i))
-            print('================')
-            top_model = tournament.step()
-            # keep track of the experiment results & corresponding architectures
-            name = "tourney_{}".format(i)
-            res, _ = self.evaluate_model(top_model, test=True)
-        return res
+    def eval_pytorch(self, model, data):
+        model.eval()
+        val_loss = 0
+        correct = 0
+        with torch.no_grad():
+            for inputs, targets in self.iterator.get_batches(data, shuffle=False):
+                input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+                target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+                outputs = model(input_vars)
+                val_loss += F.nll_loss(outputs, target_vars)
+                pred = outputs.max(1, keepdim=True)[1]  # get the index of the max log-probability
+                correct += pred.eq(target_vars.view_as(pred)).sum().item()
 
-    def find_best_model_bb(self, folder_name, time_limit=12 * 60 * 60):
-        curr_models = queue.Queue()
-        operations = [self.factor_filters, self.add_conv_maxpool_block]
-        initial_model = self.base_model()
-        curr_models.put(initial_model)
-        res = self.evaluate_model(initial_model)
-        total_results = []
-        result_tree = treelib.Tree()
-        result_tree.create_node(data=res, identifier=initial_model.name)
-        start_time = time.time()
-        while not curr_models.empty() and time.time() - start_time < time_limit:
-            curr_model = curr_models.get_nowait()
-            for op in operations:
-                model = op(curr_model)
-                res = self.evaluate_model(model)
-                print('node name is:', model.name)
-                result_tree.create_node(data=res, identifier=model.name, parent=curr_model.name)
-                result_tree.show()
-                print('model accuracy:', res[1] * 100)
-                total_results.append(res[1])
-                curr_models.put(model)
-        print(total_results)
-        return total_results.max()
-
-    def find_best_model_simanneal(self, folder_name, experiment=None, time_limit=12 * 60 * 60):
-        curr_model = self.base_model()
-        earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=5)
-        mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
-        start_time = time.time()
-        curr_acc = 0
-        num_of_ops = 0
-        temperature = 10
-        coolingRate = 0.003
-        operations = [self.factor_filters, self.add_conv_maxpool_block]
-        total_time = 0
-        if experiment == 'filter_experiment':
-            results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
-                                            'accuracy', 'runtime', 'switch probability', 'temperature'])
-        while time.time()-start_time < time_limit and not self.finalize_flag:
-            K.clear_session()
-            op_index = random.randint(0, len(operations) - 1)
-            num_of_ops += 1
-            mcp = ModelCheckpoint('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5',
-                save_best_only=True, monitor='val_acc', mode='max', save_weights_only=True)
-            model = operations[op_index](curr_model)
-            finalized_model = self.finalize_model(model.layer_collection)
-            if self.cropping:
-                finalized_model.model = convert_to_dilated(model.model)
-            start = time.time()
-            finalized_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
-                         callbacks=[earlystopping, mcp])
-            finalized_model.model.load_weights('keras_models/best_keras_model' + str(num_of_ops) + '.hdf5')
-            end = time.time()
-            total_time += end - start
-            res = finalized_model.model.evaluate(self.X_test, self.y_test)[1] * 100
-            curr_model = model
-            if res >= curr_acc:
-                curr_model = model
-                curr_acc = res
-                probability = -1
-            else:
-                probability = np.exp((res - curr_acc) / temperature)
-                rand = np.random.choice(a=[1, 0], p=[probability, 1-probability])
-                if rand == 1:
-                    curr_model = model
-            temperature *= (1-coolingRate)
-            print('train time in seconds:', end-start)
-            print('model accuracy:', res * 100)
-            if experiment == 'filter_experiment':
-                results.loc[num_of_ops - 1] = np.array([int(finalized_model.model.get_layer('conv1').filters),
-                                                    int(finalized_model.model.get_layer('conv2').filters),
-                                                    int(finalized_model.model.get_layer('conv3').filters),
-                                                    res,
-                                                    str(end-start),
-                                                    str(probability),
-                                                    str(temperature)])
-                print(results)
-        final_model = self.finalize_model(curr_model.layer_collection)
-        final_model.model.fit(self.X_train, self.y_train, epochs=50, validation_data=(self.X_valid, self.y_valid),
-                        callbacks=[earlystopping])
-        res = final_model.model.evaluate(self.X_test, self.y_test)[1] * 100
-        print('model accuracy:', res)
-        print('average train time per model', total_time / num_of_ops)
-        now = str(datetime.datetime.now()).replace(":", "-")
-        if experiment == 'filter_experiment':
-            if not os.path.isdir('results/'+folder_name):
-                createFolder('results/'+folder_name)
-            results.to_csv('results/'+folder_name+'/subject_' + str(self.subject_id) + experiment + '_' + now + '.csv', mode='a')
-
-
-    def grid_search_filters(self, lo, hi, jumps):
-        model = target_model()
-        start_time = time.time()
-        num_of_ops = 0
-        total_time = 0
-        results = pd.DataFrame(columns=['conv1 filters', 'conv2 filters', 'conv3 filters',
-                                         'test acc', 'val acc', 'train acc', 'runtime'])
-        for first_filt in range(lo, hi, jumps):
-            for second_filt in range(lo, hi, jumps):
-                for third_filt in range(lo, hi, jumps):
-                    K.clear_session()
-                    num_of_ops += 1
-                    model = set_target_model_filters(model, first_filt, second_filt, third_filt)
-                    run_time, res_test, res_val, res_train, _ = self.evaluate_model(model)
-                    total_time += run_time
-                    print('train time in seconds:', run_time)
-                    print('model accuracy:', res_test)
-                    results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').filters),
-                                                            int(model.model.get_layer('conv2').filters),
-                                                            int(model.model.get_layer('conv3').filters),
-                                                            res_test,
-                                                            res_val,
-                                                            res_train,
-                                                            str(run_time)])
-                    print(results)
-
-        total_time = time.time() - start_time
-        print('average train time per model', total_time / num_of_ops)
-        now = str(datetime.datetime.now()).replace(":", "-")
-        results.to_csv('results/filter_gridsearch_' + now + '.csv', mode='a')
-
-    def grid_search_kernel_size(self, lo, hi, jumps):
-        model = target_model()
-        start_time = time.time()
-        num_of_ops = 0
-        total_time = 0
-        results = pd.DataFrame(columns=['conv1 kernel size', 'conv2 kernel size', 'conv3 kernel size',
-                                         'accuracy', 'train acc', 'runtime'])
-        for first_size in range(lo, hi, jumps):
-            for second_size in range(lo, hi, jumps):
-                for third_size in range(lo, hi, jumps):
-                    K.clear_session()
-                    num_of_ops += 1
-                    model = set_target_model_kernel_sizes(model, first_size, second_size, third_size)
-                    run_time, res, res_train = self.run_one_model(model)
-                    total_time += time
-                    print('train time in seconds:', time)
-                    print('model accuracy:', res)
-                    results.loc[num_of_ops - 1] = np.array([int(model.model.get_layer('conv1').kernel_size[1]),
-                                                            int(model.model.get_layer('conv2').kernel_size[1]),
-                                                            int(model.model.get_layer('conv3').kernel_size[1]),
-                                                            res_train,
-                                                            str(run_time)])
-                    print(results)
-
-        total_time = time.time() - start_time
-        print('average train time per model', total_time / num_of_ops)
-        now = str(datetime.datetime.now()).replace(":", "-")
-        results.to_csv('results/kernel_size_gridsearch_' + now + '.csv', mode='a')
-
+            val_loss /= len(data.X)
+            # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            #     val_loss, correct, len(data.X),
+            #     100. * correct / len(data.X)))
+        return correct / len(data.X)
 
 
 
