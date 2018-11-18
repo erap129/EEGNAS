@@ -11,7 +11,6 @@ os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import queue
 import datetime
-import pickle
 import treelib
 import gp
 WARNING = '\033[93m'
@@ -44,7 +43,8 @@ def delete_from_folder(folder):
 
 class NaiveNAS:
     def __init__(self, n_classes, input_time_len, n_chans,
-                 X_train, y_train, X_valid, y_valid, X_test, y_test, subject_id, cropping=False):
+                 X_train, y_train, X_valid, y_valid, X_test,
+                 y_test, configuration, subject_id, cropping=False):
         self.n_classes = n_classes
         self.n_chans = n_chans
         self.input_time_len = input_time_len
@@ -54,14 +54,46 @@ class NaiveNAS:
         self.y_train = y_train
         self.y_test = y_test
         self.y_valid = y_valid
-        self.finalize_flag = 0
-        self.cropping = cropping
         self.subject_id = subject_id
+        self.cropping = cropping
+        self.configuration = configuration
+
+    def evolution_filters(self):
+        pop_size = self.configuration.getint('pop_size')
+        num_generations = self.configuration.getint('num_generations')
+        mutation_rate = self.configuration.getfloat('mutation_rate')
+        results_dict = {'subject': [], 'generation': [], 'val_acc': []}
+
+        weighted_population = []
+        for i in range(pop_size):  # generate pop_size random models
+            weighted_population.append((genetic_filter_experiment_model(num_blocks=self.configuration.getint('num_conv_blocks')), None))
+
+        for generation in range(num_generations):
+            for i, (pop, eval) in enumerate(weighted_population):
+                final_time, _, res_val, _, _ = self.evaluate_model(pop)
+                weighted_population[i][1] = res_val
+            weighted_population = sorted(weighted_population, key=lambda x: x[1])
+            mean_fitness = np.mean([weight for (model, weight) in weighted_population])
+            print('fittest individual in generation %d has fitness %.3f'.format(generation, weighted_population[0][1]))
+            print('mean fitness of population is %.3f'.format(mean_fitness))
+            results_dict['subject'].append(self.subject_id)
+            results_dict['generation'].append(generation + 1)
+            results_dict['val_acc'].append(mean_fitness)
+
+
+            for index, model, res_val in enumerate(weighted_population):
+                if random.uniform(0,1) < (index / pop_size):
+                    del weighted_population[index]  # kill models according to their performance
+
+            while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
+                breeders = random.sample(range(pop_size), 2)
+                new_model = breed(first_model=weighted_population[breeders[0]][0],
+                                second_model=weighted_population[breeders[0]][0], mutation_rate=mutation_rate)
+                weighted_population.append((new_model, None))
+        return results_dict
 
     def evaluate_model(self, model):
-        K.clear_session()
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-        finalized_model = finalize_model(model.layer_collection, naive_nas=self)
+        finalized_model = finalize_model(model, naive_nas=self)
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
         best_model_name = 'keras_models/best_keras_model' + str(time.time()) + '.hdf5'
@@ -187,34 +219,6 @@ class NaiveNAS:
                 createFolder('results/'+folder_name)
             results.to_csv('results/'+folder_name+'/subject_' + str(self.subject_id) + experiment + '_' + now + '.csv', mode='a')
 
-    def evolution_filters(self):
-        pop_size = 10
-        select_fittest = 2
-        select_lucky_few = 2
-        num_generations = 100
-        population = []
-        breed_rate = 0.8
-        mutation_rate = 0.3
-        for i in range(pop_size):
-            population.append(genetic_filter_experiment_model(num_blocks=5))
-        for generation in range(num_generations):
-            weighted_population = []
-            for i, pop in enumerate(population):
-                final_time, _, res_val, _, _ = self.evaluate_model(pop)
-                weighted_population.append((pop, res_val))
-            weighted_population = sorted(weighted_population, key=lambda x: x[1])
-            print('fittest individual in generation', generation, 'has fitness:', weighted_population[0][1])
-            print('mean fitness of population is', np.mean([weight for (model, weight) in weighted_population]))
-            fittest = weighted_population[0:select_fittest + 1]
-            lucky_few_indexes = random.sample(range(select_fittest+1, len(population)), k=select_lucky_few)
-            lucky_few = [weighted_population[i] for i in lucky_few_indexes]
-            to_breed = fittest + lucky_few
-            np.random.shuffle(to_breed)
-            new_population = np.zeros(len(population))
-            for i in range(int(len(to_breed) / 2)):
-                for j in range(int(num_generations / (len(to_breed) / 2))):
-                    new_population[i * int((num_generations / (len(to_breed) / 2))) + j] = breed(first_model=to_breed[i][0],
-                                second_model=to_breed[len(to_breed) - 1 - i][0], mutation_rate=mutation_rate, breed_rate=breed_rate)
 
     def grid_search_filters(self, lo, hi, jumps):
         model = target_model()

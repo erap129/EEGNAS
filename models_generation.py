@@ -3,7 +3,13 @@ from keras.layers import Conv2D, Flatten, Activation, Lambda, Dropout, Input, Cr
 import numpy as np
 from toposort import toposort_flatten
 from keras_models import dilation_pool, mean_layer
+from braindecode.torch_ext.modules import Expression
+from braindecode.torch_ext.util import np_to_var
 import os
+from torch import nn
+from torch.nn import init
+from torch.nn.functional import elu
+import configparser
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import copy
@@ -119,6 +125,162 @@ class ConcatLayer(Layer):
         self.second_layer_index = second_layer_index
 
 
+class MyModel:
+    input_height = 22
+    input_width = 1125
+
+    def __init__(self, model, layer_collection={}, name=None):
+        self.layer_collection = layer_collection
+        self.model = model
+        self.name = name
+
+    @staticmethod
+    def new_model_from_structure_pytorch(layer_collection, name=None):
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+        topo_layers = create_topo_layers(layer_collection.values())
+        model = nn.Sequential()
+        model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
+        for index, i in enumerate(topo_layers):
+            layer = layer_collection[i]
+            if index > 0:
+                out = model(np_to_var(np.ones(
+                    (1, MyModel.input_height, MyModel.input_width, 1),
+                    dtype=np.float32)))
+                prev_channels = out.cpu().data.numpy().shape[1]
+                prev_height = out.cpu().data.numpy().shape[2]
+                prev_width = out.cpu().data.numpy().shape[3]
+            else:
+                prev_height = MyModel.input_height
+                prev_width = MyModel.input_width
+                prev_channels = 1
+
+            if isinstance(layer, PoolingLayer):
+                model.add_module('pool_%d'.format(layer.id), nn.MaxPool2d(kernel_size=(layer.kernel_height,
+                                                                                       layer.kernel_width),
+                                                                          stride=(1, layer.stride_width)))
+
+            elif isinstance(layer, ConvLayer):
+                if (layer.kernel_width == 'down_to_one'):
+                    layer.kernel_width = prev_width
+                    layer.kernel_height = prev_height
+                    conv_name = 'conv_classifier'
+                else:
+                    conv_name = 'conv_%d'.format(layer.id)
+                model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
+                                                                       (layer.kernel_height, layer.kernel_width),
+                                                                       stride=1))
+
+            elif isinstance(layer, BatchNormLayer):
+                model.add_module('bnorm_%'.format(layer.id), nn.BatchNorm2d(prev_channels,
+                                                                            momentum=config['DEFAULT'].getfloat(
+                                                                                'batch_norm_alpha'),
+                                                                            affine=True, eps=1e-5), )
+
+            elif isinstance(layer, ActivationLayer):
+                model.add_module('%s_%d'.format(layer.activation_type, layer.id), nn.ELU())
+
+
+            elif isinstance(layer, DropoutLayer):
+                model.add_module('dropout_%d'.format(layer.id), nn.Dropout(p=config['DEFAULT'].getfloat('dropout_p')))
+
+            elif isinstance(layer, FlattenLayer):
+                model.add_module('squeeze', Expression(MyModel._squeeze_final_output))
+
+        init.xavier_uniform_(model.conv_classifier.weight, gain=1)
+        init.constant_(model.conv_classifier.bias, 0)
+
+        return model
+
+    # remove empty dim at end and potentially remove empty time dim
+    # do not just use squeeze as we never want to remove first dim
+    @staticmethod
+    def _squeeze_final_output(x):
+        assert x.size()[3] == 1
+        x = x[:, :, :, 0]
+        if x.size()[2] == 1:
+            x = x[:, :, 0]
+        return x
+
+    @staticmethod
+    def _transpose_time_to_spat(x):
+        return x.permute(0, 3, 2, 1)
+
+    @staticmethod
+    def new_model_from_structure_keras(layer_collection, name=None):
+        pool_counter = 0
+        topo_layers = create_topo_layers(layer_collection.values())
+        for i in topo_layers:
+            layer = layer_collection[i]
+            if isinstance(layer, InputLayer):
+                keras_layer = Input(shape=(layer.shape_height, layer.shape_width, 1), name=str(layer.id))
+
+            elif isinstance(layer, PoolingLayer):
+                pool_counter += 1
+                keras_layer = Lambda(dilation_pool, name=str(layer.id),
+                                     arguments={'window_shape': (1, layer.pool_width), 'strides':
+                                         (1, layer.stride_width), 'dilation_rate': (1, 1), 'pooling_type': layer.mode})
+
+            elif isinstance(layer, ConvLayer):
+                if (layer.kernel_width == 'down_to_one'):
+                    topo_layers = create_topo_layers(layer_collection.values())
+                    before_conv_layer_id = topo_layers[(np.where(np.array(topo_layers) == layer.id)[0] - 1)[0]]
+                    layer.kernel_width = int(layer_collection[before_conv_layer_id].keras_layer.shape[2])
+                    layer.kernel_height = int(layer_collection[before_conv_layer_id].keras_layer.shape[1])
+                keras_layer = Conv2D(filters=layer.filter_num, kernel_size=(layer.kernel_height, layer.kernel_width),
+                                     strides=(1, 1), activation='elu', name=str(layer.id))
+
+            elif isinstance(layer, CroppingLayer):
+                keras_layer = Cropping2D(((layer.height_crop_top, layer.height_crop_bottom),
+                                          (layer.width_crop_left, layer.width_crop_right)), name=str(layer.id))
+
+            elif isinstance(layer, ZeroPadLayer):
+                keras_layer = ZeroPadding2D(((layer.height_pad_top, layer.height_pad_bottom),
+                                             (layer.width_pad_left, layer.width_pad_right)), name=str(layer.id))
+
+            elif isinstance(layer, ConcatLayer):
+                keras_layer = Concatenate(name=str(layer.id))(
+                    [layer_collection[layer.first_layer_index].keras_layer,
+                     layer_collection[layer.second_layer_index].keras_layer])
+
+            elif isinstance(layer, BatchNormLayer):
+                keras_layer = BatchNormalization(axis=layer.axis, momentum=layer.momentum, epsilon=layer.epsilon,
+                                                 name=str(layer.id))
+
+            elif isinstance(layer, ActivationLayer):
+                keras_layer = Activation(layer.activation_type, name=str(layer.id))
+
+            elif isinstance(layer, DropoutLayer):
+                keras_layer = Dropout(layer.rate, name=str(layer.id))
+
+            elif isinstance(layer, FlattenLayer):
+                keras_layer = Flatten(name=str(layer.id))
+
+            elif isinstance(layer, LambdaLayer):
+                keras_layer = Lambda(layer.function, name=str(layer.id))
+
+            layer.keras_layer = keras_layer
+            if layer.name is not None:
+                layer.keras_layer.name = layer.name
+
+            if layer.parent is not None:
+                try:
+                    layer.keras_layer = layer.keras_layer(layer.parent.keras_layer)
+                except TypeError as e:
+                    print('couldnt connect a keras layer with tensor...error was:', e)
+                except ValueError as e:
+                    print('couldnt connect a keras layer with tensor...error was:', e)
+        model = MyModel(
+            model=Model(inputs=layer_collection[next(iter(layer_collection))].keras_layer, outputs=layer.keras_layer),
+            layer_collection=layer_collection, name=name)
+        model.model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        try:
+            assert (len(model.model.layers) == len(layer_collection) == len(topo_layers))
+        except AssertionError:
+            print('what happened now..?')
+        return model
+
+
 def random_model(n_chans, input_time_len):
     layer_collection = {}
 
@@ -163,11 +325,8 @@ def random_model(n_chans, input_time_len):
 
 def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
     layer_collection = {}
-    inputs = InputLayer(shape_height=n_chans, shape_width=input_time_len)
-    layer_collection[inputs.id] = inputs
     conv_time = ConvLayer(kernel_width=filter_time_length, kernel_height=1, filter_num=n_filters_time)
     layer_collection[conv_time.id] = conv_time
-    inputs.make_connection(conv_time)
     conv_spat = ConvLayer(kernel_width=1, kernel_height=n_chans, filter_num=n_filters_spat)
     layer_collection[conv_spat.id] = conv_spat
     conv_time.make_connection(conv_spat)
@@ -180,7 +339,7 @@ def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spa
     maxpool = PoolingLayer(pool_width=3, stride_width=3, mode='MAX')
     layer_collection[maxpool.id] = maxpool
     elu.make_connection(maxpool)
-    return MyModel(model=None, layer_collection=layer_collection, name='base')
+    return layer_collection
 
 
 def target_model():
@@ -193,14 +352,14 @@ def target_model():
 
 
 def genetic_filter_experiment_model(num_blocks):
-    layer_collection = base_model().layer_collection
+    layer_collection = base_model()
     for block in range(num_blocks):
         add_layer(layer_collection, DropoutLayer(), in_place=True)
         add_layer(layer_collection, ConvLayer(filter_num=random.randint(1, 1000), kernel_height=1, kernel_width=10),
                   in_place=True)
         add_layer(layer_collection, BatchNormLayer(), in_place=True)
         add_layer(layer_collection, PoolingLayer(stride_width=2, pool_width=2, mode='MAX'), in_place=True)
-    return MyModel.new_model_from_structure(layer_collection)
+    return layer_collection
 
 
 def add_layer(layer_collection, layer_to_add, in_place=False):
@@ -231,8 +390,8 @@ def breed(first_model, second_model, mutation_rate, breed_rate):
 
 
 def finalize_model(layer_collection, naive_nas):
-    for layer in layer_collection.values():
-        layer.keras_layer = None
+    # for layer in layer_collection.values():
+    #     layer.keras_layer = None
     layer_collection = copy.deepcopy(layer_collection)
     topo_layers = create_topo_layers(layer_collection.values())
     last_layer_id = topo_layers[-1]
@@ -256,14 +415,12 @@ def finalize_model(layer_collection, naive_nas):
         mean.make_connection(flatten)
     else:
         softmax.make_connection(flatten)
-    return MyModel.new_model_from_structure(layer_collection)
+    return MyModel.new_model_from_structure_pytorch(layer_collection)
 
 
-def add_conv_maxpool_block(model, conv_width=10, conv_filter_num=50, dropout=False,
+def add_conv_maxpool_block(layer_collection, conv_width=10, conv_filter_num=50, dropout=False,
                            pool_width=3, pool_stride=3, conv_layer_name=None, random_values=True):
-    for layer in model.layer_collection.values():
-        layer.keras_layer = None
-    layer_collection = copy.deepcopy(model.layer_collection)
+    layer_collection = copy.deepcopy(layer_collection)
     if random_values:
         conv_width = random.randint(5, 10)
         conv_filter_num = random.randint(0, 50)
@@ -290,7 +447,8 @@ def add_conv_maxpool_block(model, conv_width=10, conv_filter_num=50, dropout=Fal
     maxpool_layer = PoolingLayer(pool_width=pool_width, stride_width=pool_stride, mode='MAX')
     layer_collection[maxpool_layer.id] = maxpool_layer
     activation_layer.make_connection(maxpool_layer)
-    return MyModel.new_model_from_structure(layer_collection, name=model.name + '->add_conv_maxpool')
+    return layer_collection
+    # return MyModel.new_model_from_structure(layer_collection, name=model.name + '->add_conv_maxpool')
 
 def add_skip_connection_concat(model):
     topo_layers = create_topo_layers(model.layer_collection.values())
@@ -395,86 +553,9 @@ def mutate_net(model):
     try:
         model = operations[op_index](model)
     except ValueError as e:
-        print('excpetion occured while performing ', operations[op_index].__name__)
+        print('exception occured while performing ', operations[op_index].__name__)
         print('error message: ', str(e))
         print('trying another mutation...')
         return mutate_net(model)
     return model
-
-class MyModel:
-    def __init__(self, model, layer_collection={}, name=None):
-        self.layer_collection = layer_collection
-        self.model = model
-        self.name = name
-
-    @staticmethod
-    def new_model_from_structure(layer_collection, name=None):
-        pool_counter = 0
-        topo_layers = create_topo_layers(layer_collection.values())
-        for i in topo_layers:
-            layer = layer_collection[i]
-            if isinstance(layer, InputLayer):
-                keras_layer = Input(shape=(layer.shape_height, layer.shape_width, 1), name=str(layer.id))
-
-            elif isinstance(layer, PoolingLayer):
-                pool_counter += 1
-                keras_layer = Lambda(dilation_pool, name=str(layer.id), arguments={'window_shape': (1, layer.pool_width), 'strides':
-                    (1, layer.stride_width), 'dilation_rate': (1, 1), 'pooling_type': layer.mode})
-
-            elif isinstance(layer, ConvLayer):
-                if(layer.kernel_width == 'down_to_one'):
-                    topo_layers = create_topo_layers(layer_collection.values())
-                    before_conv_layer_id = topo_layers[(np.where(np.array(topo_layers) == layer.id)[0] - 1)[0]]
-                    layer.kernel_width = int(layer_collection[before_conv_layer_id].keras_layer.shape[2])
-                    layer.kernel_height = int(layer_collection[before_conv_layer_id].keras_layer.shape[1])
-                keras_layer = Conv2D(filters=layer.filter_num, kernel_size=(layer.kernel_height, layer.kernel_width),
-                                     strides=(1, 1), activation='elu', name=str(layer.id))
-
-            elif isinstance(layer, CroppingLayer):
-                keras_layer = Cropping2D(((layer.height_crop_top, layer.height_crop_bottom),
-                                          (layer.width_crop_left, layer.width_crop_right)), name=str(layer.id))
-
-            elif isinstance(layer, ZeroPadLayer):
-                keras_layer = ZeroPadding2D(((layer.height_pad_top, layer.height_pad_bottom),
-                                             (layer.width_pad_left, layer.width_pad_right)), name=str(layer.id))
-
-            elif isinstance(layer, ConcatLayer):
-                keras_layer = Concatenate(name=str(layer.id))(
-                    [layer_collection[layer.first_layer_index].keras_layer,
-                     layer_collection[layer.second_layer_index].keras_layer])
-
-            elif isinstance(layer, BatchNormLayer):
-                keras_layer = BatchNormalization(axis=layer.axis, momentum=layer.momentum, epsilon=layer.epsilon, name=str(layer.id))
-
-            elif isinstance(layer, ActivationLayer):
-                keras_layer = Activation(layer.activation_type, name=str(layer.id))
-
-            elif isinstance(layer, DropoutLayer):
-                keras_layer = Dropout(layer.rate, name=str(layer.id))
-
-            elif isinstance(layer, FlattenLayer):
-                keras_layer = Flatten(name=str(layer.id))
-
-            elif isinstance(layer, LambdaLayer):
-                keras_layer = Lambda(layer.function, name=str(layer.id))
-
-            layer.keras_layer = keras_layer
-            if layer.name is not None:
-                layer.keras_layer.name = layer.name
-
-            if layer.parent is not None:
-                try:
-                    layer.keras_layer = layer.keras_layer(layer.parent.keras_layer)
-                except TypeError as e:
-                    print('couldnt connect a keras layer with tensor...error was:', e)
-                except ValueError as e:
-                    print('couldnt connect a keras layer with tensor...error was:', e)
-        model = MyModel(model=Model(inputs=layer_collection[next(iter(layer_collection))].keras_layer, outputs=layer.keras_layer),
-                        layer_collection=layer_collection, name=name)
-        model.model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-        try:
-            assert(len(model.model.layers) == len(layer_collection) == len(topo_layers))
-        except AssertionError:
-            print('what happened now..?')
-        return model
 
