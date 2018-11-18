@@ -1,11 +1,11 @@
 from models_generation import random_model, finalize_model, mutate_net, target_model, set_target_model_filters,\
     genetic_filter_experiment_model, breed
-import configparser
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import torch.optim as optim
 import torch.nn.functional as F
 import pandas as pd
+from collections import OrderedDict
 import numpy as np
 import time
 import torch
@@ -105,18 +105,21 @@ def delete_from_folder(folder):
 
 class NaiveNAS:
     def __init__(self, iterator, n_classes, input_time_len, n_chans,
-                 train_set, val_set, test_set,
+                 train_set, val_set, test_set, stop_criterion, monitors,
                  config, subject_id, cropping=False):
         self.iterator = iterator
         self.n_classes = n_classes
         self.n_chans = n_chans
         self.input_time_len = input_time_len
-        self.train_set = train_set
-        self.val_set = val_set
-        self.test_set = test_set
         self.subject_id = subject_id
         self.cropping = cropping
         self.config = config
+        self.optimizer = None
+        self.datasets = OrderedDict(
+            (('train', train_set), ('valid', val_set), ('test', test_set))
+        )
+        self.stop_criterion = stop_criterion
+        self.monitors = monitors
         if globals.config['DEFAULT'].getboolean('do_early_stop'):
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
         self.loggers = [Printer()]
@@ -161,9 +164,11 @@ class NaiveNAS:
         finalized_model = finalize_model(model, naive_nas=self)
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
+        self.optimizer = optim.Adam(model.parameters())
         start = time.time()
-        for epoch in range(globals.config['DEFAULT'].getint('epochs')):
-            self.train_pytorch(finalized_model)
+        while not self.stop_criterion.should_stop(self.epochs_df):
+            self.run_one_epoch(self.datasets, finalized_model)
+
         res_test = self.eval_pytorch(finalized_model, self.test_set)
         res_val = self.eval_pytorch(finalized_model, self.val_set)
         res_train = self.eval_pytorch(finalized_model, self.train_set)
@@ -171,8 +176,60 @@ class NaiveNAS:
         final_time = end-start
         return final_time, res_test, res_val, res_train, finalized_model.model
 
+    def run_one_epoch(self, datasets, model):
+        model.train()
+        batch_generator = self.iterator.get_batches(datasets['train'], shuffle=True)
+        for inputs, targets in batch_generator:
+            input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+            if(globals.config['DEFAULT'].getboolean('cuda')):
+                input_vars = input_vars.cuda()
+                target_vars = target_vars.cuda()
+            self.optimizer.zero_grad()
+            outputs = model(input_vars)
+            loss = F.nll_loss(outputs, target_vars)
+            loss.backward()
+            self.optimizer.step()
+        self.monitor_epoch(datasets)
+        self.log_epoch()
+
+    def monitor_epoch(self, datasets):
+        result_dicts_per_monitor = OrderedDict()
+        for m in self.monitors:
+            result_dicts_per_monitor[m] = OrderedDict()
+        for m in self.monitors:
+            result_dict = m.monitor_epoch()
+            if result_dict is not None:
+                result_dicts_per_monitor[m].update(result_dict)
+        for setname in datasets:
+            assert setname in ['train', 'valid', 'test']
+            dataset = datasets[setname]
+            all_preds = []
+            all_losses = []
+            all_batch_sizes = []
+            all_targets = []
+            for batch in self.iterator.get_batches(dataset, shuffle=False):
+                preds, loss = self.eval_on_batch(batch[0], batch[1])
+                all_preds.append(preds)
+                all_losses.append(loss)
+                all_batch_sizes.append(len(batch[0]))
+                all_targets.append(batch[1])
+
+            for m in self.monitors:
+                result_dict = m.monitor_set(setname, all_preds, all_losses,
+                                            all_batch_sizes, all_targets,
+                                            dataset)
+                if result_dict is not None:
+                    result_dicts_per_monitor[m].update(result_dict)
+            row_dict = OrderedDict()
+            for m in self.monitors:
+                row_dict.update(result_dicts_per_monitor[m])
+            self.epochs_df = self.epochs_df.append(row_dict, ignore_index=True)
+            assert set(self.epochs_df.columns) == set(row_dict.keys())
+            self.epochs_df = self.epochs_df[list(row_dict.keys())]
+
+
     def train_pytorch(self, model):
-        self.setup_training()
         model.train()
         batch_generator = self.iterator.get_batches(self.train_set, shuffle=True)
         optimizer = optim.Adam(model.parameters())
