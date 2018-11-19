@@ -15,10 +15,14 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
     RuntimeMonitor
 from globals import init_config
+import logging
 import globals
+import sys
 
 global data_folder, valid_set_fraction, config
 init_config()
+logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
+                        level=logging.DEBUG, stream=sys.stdout)
 if platform.node() == 'nvidia':
     globals.set('DEFAULT', 'cuda', 'True')
     os.environ["CUDA_VISIBLE_DEVICES"] = "3"

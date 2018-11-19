@@ -1,20 +1,17 @@
-from keras.models import Model
-from keras.layers import Conv2D, Flatten, Activation, Lambda, Dropout, Input, Cropping2D, Concatenate, ZeroPadding2D, BatchNormalization
 import numpy as np
 from toposort import toposort_flatten
 from keras_models import dilation_pool, mean_layer
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
-from utils import initializer
 import os
 from torch import nn
 from torch.nn import init
 from torchsummary import summary
-from torch.nn.functional import elu
 import configparser
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import copy
+import globals
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 
@@ -106,6 +103,8 @@ class PoolingLayer(Layer):
         self.pool_eeg_chan = pool_eeg_chan
 
 
+
+
 # class CroppingLayer(Layer):
 #     @initializer
 #     def __init__(self, height_crop_top, height_crop_bottom, width_crop_left, width_crop_right):
@@ -194,7 +193,7 @@ class MyModel:
         init.xavier_uniform_(model.conv_classifier.weight, gain=1)
         init.constant_(model.conv_classifier.bias, 0)
         summary(model, (22, 1125, 1))
-        return model
+        return MyModel(layer_collection=layer_collection, model=model)
 
     # remove empty dim at end and potentially remove empty time dim
     # do not just use squeeze as we never want to remove first dim
@@ -253,11 +252,17 @@ def random_model(n_chans, input_time_len):
     return MyModel.new_model_from_structure(layer_collection=layer_collection, name='base')
 
 
-def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25, filter_time_length=10):
+def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25,
+               filter_time_length=10, random_filters=False):
+    if random_filters:
+        min_filt = globals.config['evolution'].getint('random_filter_range_min')
+        max_filt = globals.config['evolution'].getint('random_filter_range_max')
     layer_collection = {}
-    conv_time = ConvLayer(kernel_time=filter_time_length, kernel_eeg_chan=1, filter_num=n_filters_time)
+    conv_time = ConvLayer(kernel_time=filter_time_length, kernel_eeg_chan=1, filter_num=
+                random.randint(min_filt, max_filt) if random_filters else n_filters_time)
     layer_collection[conv_time.id] = conv_time
-    conv_spat = ConvLayer(kernel_time=1, kernel_eeg_chan=n_chans, filter_num=n_filters_spat)
+    conv_spat = ConvLayer(kernel_time=1, kernel_eeg_chan=n_chans, filter_num=
+        random.randint(min_filt, max_filt) if random_filters else n_filters_spat)
     layer_collection[conv_spat.id] = conv_spat
     conv_time.make_connection(conv_spat)
     batchnorm = BatchNormLayer()
@@ -282,13 +287,15 @@ def target_model():
 
 
 def genetic_filter_experiment_model(num_blocks):
-    layer_collection = base_model()
+    layer_collection = base_model(random_filters=True)
+    min_filt = globals.config['evolution'].getint('random_filter_range_min')
+    max_filt = globals.config['evolution'].getint('random_filter_range_max')
     for block in range(num_blocks):
         add_layer(layer_collection, DropoutLayer(), in_place=True)
-        add_layer(layer_collection, ConvLayer(filter_num=random.randint(1, 1000), kernel_height=1, kernel_width=10),
+        add_layer(layer_collection, ConvLayer(filter_num=random.randint(min_filt, max_filt), kernel_eeg_chan=1, kernel_time=10),
                   in_place=True)
         add_layer(layer_collection, BatchNormLayer(), in_place=True)
-        add_layer(layer_collection, PoolingLayer(stride_width=2, pool_width=2, mode='MAX'), in_place=True)
+        add_layer(layer_collection, PoolingLayer(stride_time=2, pool_time=2, mode='MAX'), in_place=True)
     return layer_collection
 
 
@@ -308,7 +315,7 @@ def breed(first_model, second_model, mutation_rate, breed_rate):
     conv_indices_first = [layer.id for layer in first_model.layer_collection.values() if isinstance(layer, ConvLayer)]
     conv_indices_second = [layer.id for layer in second_model.layer_collection.values() if isinstance(layer, ConvLayer)]
     if random.random() < breed_rate:
-        cut_point = random.randint(2, len(conv_indices_first) - 2)  # don't include last conv
+        cut_point = random.randint(0, len(conv_indices_first) - 1)
         for i in range(cut_point):
             second_model.layer_collection[conv_indices_second[i]].filter_num = first_model.layer_collection[conv_indices_first[i]].filter_num
     if random.random() < mutation_rate:

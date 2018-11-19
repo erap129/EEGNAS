@@ -2,9 +2,10 @@ from models_generation import random_model, finalize_model, mutate_net, target_m
     genetic_filter_experiment_model, breed
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
-from braindecode.experiments.loggers import Printer
+import logging
 import torch.optim as optim
 import torch.nn.functional as F
+from copy import deepcopy
 import pandas as pd
 from collections import OrderedDict
 import numpy as np
@@ -17,6 +18,7 @@ os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 WARNING = '\033[93m'
 ENDC = '\033[0m'
+log = logging.getLogger(__name__)
 
 
 class RememberBest(object):
@@ -120,14 +122,13 @@ class NaiveNAS:
         self.datasets = OrderedDict(
             (('train', train_set), ('valid', val_set), ('test', test_set))
         )
+        self.rememberer = None
         self.loggers = [Printer()]
         self.stop_criterion = stop_criterion
         self.monitors = monitors
-        if globals.config['DEFAULT'].getboolean('do_early_stop'):
-            self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
         self.cuda = globals.config['DEFAULT'].getboolean('cuda')
         self.loggers = [Printer()]
-        self.epochs_df = pd.DataFrame()
+        self.epochs_df = None
 
     def evolution_filters(self):
         configuration = self.config['evolution']
@@ -138,7 +139,7 @@ class NaiveNAS:
 
         weighted_population = []
         for i in range(pop_size):  # generate pop_size random models
-            weighted_population.append((genetic_filter_experiment_model(num_blocks=configuration.getint('num_conv_blocks')), None))
+            weighted_population.append([genetic_filter_experiment_model(num_blocks=configuration.getint('num_conv_blocks')), None])
 
         for generation in range(num_generations):
             for i, (pop, eval) in enumerate(weighted_population):
@@ -165,22 +166,33 @@ class NaiveNAS:
         return results_dict
 
     def evaluate_model(self, model):
+        self.epochs_df = pd.DataFrame()
+        if globals.config['DEFAULT'].getboolean('do_early_stop'):
+            self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
         finalized_model = finalize_model(model, naive_nas=self)
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
-        self.optimizer = optim.Adam(finalized_model.parameters())
-        start = time.time()
-        self.monitor_epoch(self.datasets, finalized_model)
-        self.log_epoch()
-        while not self.stop_criterion.should_stop(self.epochs_df):
-            self.run_one_epoch(self.datasets, finalized_model)
+        self.optimizer = optim.Adam(finalized_model.model.parameters())
+        if self.cuda:
+            assert torch.cuda.is_available(), "Cuda not available"
+            self.finalized_model.model.cuda()
 
-        res_test = self.eval_pytorch(finalized_model, self.test_set)
-        res_val = self.eval_pytorch(finalized_model, self.val_set)
-        res_train = self.eval_pytorch(finalized_model, self.train_set)
+        start = time.time()
+
+        self.monitor_epoch(self.datasets, finalized_model.model)
+        self.log_epoch()
+        if globals.config['DEFAULT'].getboolean('remember_best'):
+            self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
+
+        while not self.stop_criterion.should_stop(self.epochs_df):
+            self.run_one_epoch(self.datasets, finalized_model.model)
+        self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
+        res_test = 1 - self.epochs_df.iloc[-1]['test_misclass']
+        res_val = 1 - self.epochs_df.iloc[-1]['valid_misclass']
+        res_train = 1 - self.epochs_df.iloc[-1]['train_misclass']
         end = time.time()
         final_time = end-start
-        return final_time, res_test, res_val, res_train, finalized_model.model
+        return final_time, res_test, res_val, res_train, finalized_model
 
     def run_one_epoch(self, datasets, model):
         model.train()
@@ -188,7 +200,7 @@ class NaiveNAS:
         for inputs, targets in batch_generator:
             input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
             target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
-            if(globals.config['DEFAULT'].getboolean('cuda')):
+            if self.cuda:
                 input_vars = input_vars.cuda()
                 target_vars = target_vars.cuda()
             self.optimizer.zero_grad()
@@ -198,6 +210,8 @@ class NaiveNAS:
             self.optimizer.step()
         self.monitor_epoch(datasets, model)
         self.log_epoch()
+        if globals.config['DEFAULT'].getboolean('remember_best'):
+            self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
 
     def monitor_epoch(self, datasets, model):
         result_dicts_per_monitor = OrderedDict()
@@ -227,12 +241,12 @@ class NaiveNAS:
                                             dataset)
                 if result_dict is not None:
                     result_dicts_per_monitor[m].update(result_dict)
-            row_dict = OrderedDict()
-            for m in self.monitors:
-                row_dict.update(result_dicts_per_monitor[m])
-            self.epochs_df = self.epochs_df.append(row_dict, ignore_index=True)
-            assert set(self.epochs_df.columns) == set(row_dict.keys())
-            self.epochs_df = self.epochs_df[list(row_dict.keys())]
+        row_dict = OrderedDict()
+        for m in self.monitors:
+            row_dict.update(result_dicts_per_monitor[m])
+        self.epochs_df = self.epochs_df.append(row_dict, ignore_index=True)
+        assert set(self.epochs_df.columns) == set(row_dict.keys())
+        self.epochs_df = self.epochs_df[list(row_dict.keys())]
 
     def eval_on_batch(self, inputs, targets, model):
         """
