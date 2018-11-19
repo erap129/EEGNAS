@@ -2,6 +2,7 @@ from models_generation import random_model, finalize_model, mutate_net, target_m
     genetic_filter_experiment_model, breed
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
+from braindecode.experiments.loggers import Printer
 import torch.optim as optim
 import torch.nn.functional as F
 import pandas as pd
@@ -104,7 +105,7 @@ def delete_from_folder(folder):
             print(e)
 
 class NaiveNAS:
-    def __init__(self, iterator, n_classes, input_time_len, n_chans,
+    def __init__(self, iterator, n_classes, input_time_len, n_chans, loss_function,
                  train_set, val_set, test_set, stop_criterion, monitors,
                  config, subject_id, cropping=False):
         self.iterator = iterator
@@ -114,14 +115,17 @@ class NaiveNAS:
         self.subject_id = subject_id
         self.cropping = cropping
         self.config = config
+        self.loss_function = loss_function
         self.optimizer = None
         self.datasets = OrderedDict(
             (('train', train_set), ('valid', val_set), ('test', test_set))
         )
+        self.loggers = [Printer()]
         self.stop_criterion = stop_criterion
         self.monitors = monitors
         if globals.config['DEFAULT'].getboolean('do_early_stop'):
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
+        self.cuda = globals.config['DEFAULT'].getboolean('cuda')
         self.loggers = [Printer()]
         self.epochs_df = pd.DataFrame()
 
@@ -164,8 +168,10 @@ class NaiveNAS:
         finalized_model = finalize_model(model, naive_nas=self)
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
-        self.optimizer = optim.Adam(model.parameters())
+        self.optimizer = optim.Adam(finalized_model.parameters())
         start = time.time()
+        self.monitor_epoch(self.datasets, finalized_model)
+        self.log_epoch()
         while not self.stop_criterion.should_stop(self.epochs_df):
             self.run_one_epoch(self.datasets, finalized_model)
 
@@ -190,10 +196,10 @@ class NaiveNAS:
             loss = F.nll_loss(outputs, target_vars)
             loss.backward()
             self.optimizer.step()
-        self.monitor_epoch(datasets)
+        self.monitor_epoch(datasets, model)
         self.log_epoch()
 
-    def monitor_epoch(self, datasets):
+    def monitor_epoch(self, datasets, model):
         result_dicts_per_monitor = OrderedDict()
         for m in self.monitors:
             result_dicts_per_monitor[m] = OrderedDict()
@@ -209,7 +215,7 @@ class NaiveNAS:
             all_batch_sizes = []
             all_targets = []
             for batch in self.iterator.get_batches(dataset, shuffle=False):
-                preds, loss = self.eval_on_batch(batch[0], batch[1])
+                preds, loss = self.eval_on_batch(batch[0], batch[1], model)
                 all_preds.append(preds)
                 all_losses.append(loss)
                 all_batch_sizes.append(len(batch[0]))
@@ -228,6 +234,44 @@ class NaiveNAS:
             assert set(self.epochs_df.columns) == set(row_dict.keys())
             self.epochs_df = self.epochs_df[list(row_dict.keys())]
 
+    def eval_on_batch(self, inputs, targets, model):
+        """
+        Evaluate given inputs and targets.
+
+        Parameters
+        ----------
+        inputs: `torch.autograd.Variable`
+        targets: `torch.autograd.Variable`
+
+        Returns
+        -------
+        predictions: `torch.autograd.Variable`
+        loss: `torch.autograd.Variable`
+
+        """
+        model.eval()
+        with torch.no_grad():
+            input_vars = np_to_var(inputs, pin_memory=globals.config['DEFAULT'].getboolean('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=globals.config['DEFAULT'].getboolean('pin_memory'))
+            if self.cuda:
+                input_vars = input_vars.cuda()
+                target_vars = target_vars.cuda()
+            outputs = model(input_vars)
+            loss = self.loss_function(outputs, target_vars)
+            if hasattr(outputs, 'cpu'):
+                outputs = outputs.cpu().data.numpy()
+            else:
+                # assume it is iterable
+                outputs = [o.cpu().data.numpy() for o in outputs]
+            loss = loss.cpu().data.numpy()
+        return outputs, loss
+
+    def log_epoch(self):
+        """
+        Print monitoring values for this epoch.
+        """
+        for logger in self.loggers:
+            logger.log_epoch(self.epochs_df)
 
     def train_pytorch(self, model):
         model.train()
