@@ -1,5 +1,5 @@
 from models_generation import random_model, finalize_model, mutate_net, target_model, set_target_model_filters,\
-    genetic_filter_experiment_model, breed
+    genetic_filter_experiment_model, breed_filters, breed
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import logging
@@ -135,35 +135,37 @@ class NaiveNAS:
         pop_size = configuration.getint('pop_size')
         num_generations = configuration.getint('num_generations')
         mutation_rate = configuration.getfloat('mutation_rate')
-        results_dict = {'subject': [], 'generation': [], 'val_acc': []}
-
+        # results_dict = {'subject': [], 'generation': [], 'val_acc': []}
+        evolution_results = pd.DataFrame()
         weighted_population = []
         for i in range(pop_size):  # generate pop_size random models
-            weighted_population.append([genetic_filter_experiment_model(num_blocks=configuration.getint('num_conv_blocks')), None])
+            weighted_population.append([genetic_filter_experiment_model(num_blocks=configuration.getint('num_conv_blocks')), None, None])
 
         for generation in range(num_generations):
-            for i, (pop, eval) in enumerate(weighted_population):
-                final_time, _, res_val, _, _ = self.evaluate_model(pop)
+            for i, (pop, eval, state) in enumerate(weighted_population):
+                final_time, _, res_val, _, _, model_state = self.evaluate_model(pop)
                 weighted_population[i][1] = res_val
-            weighted_population = sorted(weighted_population, key=lambda x: x[1])
-            mean_fitness = np.mean([weight for (model, weight) in weighted_population])
-            print('fittest individual in generation %d has fitness %.3f'.format(generation, weighted_population[0][1]))
-            print('mean fitness of population is %.3f'.format(mean_fitness))
-            results_dict['subject'].append(self.subject_id)
-            results_dict['generation'].append(generation + 1)
-            results_dict['val_acc'].append(mean_fitness)
-
-
-            for index, model, res_val in enumerate(weighted_population):
-                if random.uniform(0,1) < (index / pop_size):
+                weighted_population[i][2] = model_state
+            weighted_population = sorted(weighted_population, key=lambda x: x[1], reverse=True)
+            mean_fitness = np.mean([weight for (_, weight, _) in weighted_population])
+            print('fittest individual in generation %d has fitness %.3f' % (generation, weighted_population[0][1]))
+            print('mean fitness of population is %.3f' % (mean_fitness))
+            # results_dict['subject'].append(self.subject_id)
+            # results_dict['generation'].append(generation + 1)
+            # results_dict['val_acc'].append(mean_fitness)
+            results_dict = OrderedDict([('subject', self.subject_id), ('generation', generation + 1),
+                                        ('val_acc', mean_fitness)])
+            evolution_results = evolution_results.append(results_dict, ignore_index=True)
+            for index, _ in enumerate(weighted_population):
+                if random.uniform(0, 1) < (index / pop_size):
                     del weighted_population[index]  # kill models according to their performance
 
             while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
-                breeders = random.sample(range(pop_size), 2)
-                new_model = breed(first_model=weighted_population[breeders[0]][0],
-                                second_model=weighted_population[breeders[0]][0], mutation_rate=mutation_rate)
+                breeders = random.sample(range(len(weighted_population)), 2)
+                new_model = breed_filters(first=weighted_population[breeders[0]],
+                                second=weighted_population[breeders[0]], mutation_rate=mutation_rate)
                 weighted_population.append((new_model, None))
-        return results_dict
+        return evolution_results
 
     def evaluate_model(self, model):
         self.epochs_df = pd.DataFrame()
@@ -175,7 +177,7 @@ class NaiveNAS:
         self.optimizer = optim.Adam(finalized_model.model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
-            self.finalized_model.model.cuda()
+            finalized_model.model.cuda()
 
         start = time.time()
 
@@ -192,7 +194,7 @@ class NaiveNAS:
         res_train = 1 - self.epochs_df.iloc[-1]['train_misclass']
         end = time.time()
         final_time = end-start
-        return final_time, res_test, res_val, res_train, finalized_model
+        return final_time, res_test, res_val, res_train, finalized_model, self.rememberer.model_state_dict
 
     def run_one_epoch(self, datasets, model):
         model.train()
