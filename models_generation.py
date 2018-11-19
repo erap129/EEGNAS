@@ -103,6 +103,9 @@ class PoolingLayer(Layer):
         self.pool_eeg_chan = pool_eeg_chan
 
 
+class IdentityLayer(Layer):
+    def __init__(self):
+        Layer.__init__(self)
 
 
 # class CroppingLayer(Layer):
@@ -213,43 +216,7 @@ class MyModel:
 def random_model(n_chans, input_time_len):
     layer_collection = {}
 
-    # random variables
-    filter_time_length = random.randint(1, 50)
-    n_filters_time = random.randint(1, 25)
-    n_filters_spat = random.randint(1, 25)
-    batchnorm_prob = random.random()
-    activation_prob = random.random()
-    pool_prob = random.random()
 
-    inputs = InputLayer(shape_height=n_chans, shape_width=input_time_len)
-    layer_collection[inputs.id] = inputs
-    conv_time = ConvLayer(kernel_width=filter_time_length, kernel_height=1, filter_num=n_filters_time)
-    layer_collection[conv_time.id] = conv_time
-    inputs.make_connection(conv_time)
-    conv_spat = ConvLayer(kernel_width=1, kernel_height=n_chans, filter_num=n_filters_spat)
-    layer_collection[conv_spat.id] = conv_spat
-    conv_time.make_connection(conv_spat)
-
-    if random.random() > batchnorm_prob:
-        batchnorm = BatchNormLayer()
-        layer_collection[batchnorm.id] = batchnorm
-        conv_spat.make_connection(batchnorm)
-    else:
-        batchnorm = conv_spat
-
-    if random.random() > activation_prob:
-        elu = ActivationLayer()
-        layer_collection[elu.id] = elu
-        batchnorm.make_connection(elu)
-    else:
-        elu = batchnorm
-
-    if random.random() > pool_prob:
-        maxpool = PoolingLayer(pool_width=3, stride_width=3, mode='MAX')
-        layer_collection[maxpool.id] = maxpool
-        elu.make_connection(maxpool)
-
-    return MyModel.new_model_from_structure(layer_collection=layer_collection, name='base')
 
 
 def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25,
