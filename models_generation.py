@@ -1,3 +1,6 @@
+import traceback
+from collections import OrderedDict
+
 import numpy as np
 from toposort import toposort_flatten
 from keras_models import dilation_pool, mean_layer
@@ -85,8 +88,14 @@ class ActivationLayer(Layer):
 
 class ConvLayer(Layer):
     # @initializer
-    def __init__(self, kernel_eeg_chan, kernel_time, filter_num, name=None):
+    def __init__(self, kernel_eeg_chan=None, kernel_time=None, filter_num=None, name=None):
         Layer.__init__(self, name)
+        if kernel_eeg_chan is None:
+            kernel_eeg_chan = random.randint(1, globals.config['DEFAULT'].getint('eeg_chans'))
+        if kernel_time is None:
+            kernel_time = random.randint(1, 20)
+        if filter_num is None:
+            filter_num = random.randint(1, 50)
         self.kernel_eeg_chan = kernel_eeg_chan
         self.kernel_time = kernel_time
         self.filter_num = filter_num
@@ -94,8 +103,12 @@ class ConvLayer(Layer):
 
 class PoolingLayer(Layer):
     # @initializer
-    def __init__(self, pool_time, stride_time, mode, stride_eeg_chan=1, pool_eeg_chan=1):
+    def __init__(self, pool_time=None, stride_time=None, mode='max', stride_eeg_chan=1, pool_eeg_chan=1):
         Layer.__init__(self)
+        if pool_time is None:
+            pool_time = random.randint(1, 3)
+        if stride_time is None:
+            stride_time = random.randint(1, 3)
         self.pool_time = pool_time
         self.stride_time = stride_time
         self.mode = mode
@@ -214,18 +227,67 @@ class MyModel:
         return x.permute(0, 3, 2, 1)
 
 
-def random_model(n_chans, input_time_len):
-    layer_collection = {}
+def check_legal_model(layer_collection):
+    try:
+        finalize_model(layer_collection)
+        return True
+    except Exception as e:
+        print('check legal model failed. Exception message: %s' % (str(e)))
+        print(traceback.format_exc())
+        return False
 
 
+def random_model(n_layers):
+    layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
+    layer_collection = OrderedDict([])
+    prev_layer = None
+    for i in range(n_layers):
+        layer = layers[random.randint(0, 5)]()
+        layer_collection[layer.id] = layer
+        if prev_layer is not None:
+            prev_layer.make_connection(layer)
+        prev_layer = layer
+    if check_legal_model(layer_collection):
+        return layer_collection
+    else:
+        return random_model(n_layers)
 
+
+def breed_layers(first, second, mutation_rate):
+    first_model = first[0]
+    second_model = second[0]
+    if random.random() < globals.config['evolution'].getfloat('breed_rate'):
+        cut_point = random.randint(0, len(first_model.values()) - 1)
+        for i in range(cut_point):
+            first_model_index = list(second_model.items())[i][0]
+            second_model_index = list(first_model.items())[i][0]
+            second_model[second_model_index] = first_model[first_model_index]
+            if i == cut_point - 1:
+                cut_point_index = list(first_model.items())[cut_point][0]
+                second_model[second_model_index].connections = []
+                second_model[second_model_index].make_connection(second_model[cut_point_index])
+
+    if random.random() < mutation_rate:
+        random_rate = random.uniform(0.1,3)
+        random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
+        second_model[random_index].filter_num = \
+            np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
+    first_weights = first[2]
+    second_weights = second[2]
+    combined_weights = []
+    for i in range(cut_point):
+        combined_weights.append(first_weights.data[i])
+    if check_legal_model(second_model):
+        return second_model
+    else:
+        return breed_layers(first, second, mutation_rate)
 
 def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25,
                filter_time_length=10, random_filters=False):
     if random_filters:
         min_filt = globals.config['evolution'].getint('random_filter_range_min')
         max_filt = globals.config['evolution'].getint('random_filter_range_max')
-    layer_collection = {}
+    layer_collection = OrderedDict([])
     conv_time = ConvLayer(kernel_time=filter_time_length, kernel_eeg_chan=1, filter_num=
                 random.randint(min_filt, max_filt) if random_filters else n_filters_time)
     layer_collection[conv_time.id] = conv_time
@@ -295,50 +357,29 @@ def breed_filters(first, second, mutation_rate):
             np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
     return second_model
 
-def breed(first, second, mutation_rate):
-    first_model = first[0]
-    second_model = second[0]
-    if random.random() < globals.config['evolution'].getfloat('breed_rate'):
-        cut_point = random.randint(0, len(first_model.values()) - 1)
-        for i in range(cut_point):
-            second_model[i] = first_model[conv_indices_first[i]].filter_num
-    if random.random() < mutation_rate:
-        random_rate = random.uniform(0.1,3)
-        random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
-        second_model[random_index].filter_num = \
-            np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
-    first_weights = first[2]
-    second_weights = second[2]
-    combined_weights = []
-    for i in range(cut_point):
-        combined_weights.append(first_weights.data[i])
 
-    return second_model
-
-
-def finalize_model(layer_collection, naive_nas):
-    # for layer in layer_collection.values():
-    #     layer.keras_layer = None
+def finalize_model(layer_collection):
     layer_collection = copy.deepcopy(layer_collection)
     topo_layers = create_topo_layers(layer_collection.values())
     last_layer_id = topo_layers[-1]
-    if naive_nas.cropping:
+    if globals.config['DEFAULT'].getboolean('cropping'):
         final_conv_time = 2
     else:
         final_conv_time = 'down_to_one'
-    conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1, filter_num=naive_nas.n_classes)
+    conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
+                           filter_num=globals.config['DEFAULT'].getint('n_classes'))
     layer_collection[conv_layer.id] = conv_layer
     layer_collection[last_layer_id].make_connection(conv_layer)
     softmax = ActivationLayer('softmax')
     layer_collection[softmax.id] = softmax
     conv_layer.make_connection(softmax)
-    if naive_nas.cropping:
+    if globals.config['DEFAULT'].getboolean('cropping'):
         mean = LambdaLayer(mean_layer)
         layer_collection[mean.id] = mean
         softmax.make_connection(mean)
     flatten = FlattenLayer()
     layer_collection[flatten.id] = flatten
-    if naive_nas.cropping:
+    if globals.config['DEFAULT'].getboolean('cropping'):
         mean.make_connection(flatten)
     else:
         softmax.make_connection(flatten)
