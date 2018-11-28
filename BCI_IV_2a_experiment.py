@@ -93,8 +93,9 @@ try:
             naiveNAS.run_target_model(csv_file)
 
 except Exception as e:
-    print('experiment failed. Exception message: %s' % (str(e)))
-    print(traceback.format_exc())
+    with open(exp_folder + "/error_log.txt", "w") as err_file:
+        print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
+        print(traceback.format_exc(), file=err_file)
 
 finally:
     try:

@@ -294,11 +294,11 @@ def breed_layers(first, second, mutation_rate):
         random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
         second_model[random_index].filter_num = \
             np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
-    first_weights = first[2]
-    second_weights = second[2]
-    combined_weights = []
-    for i in range(cut_point):
-        combined_weights.append(first_weights.data[i])
+    # first_weights = first[2]
+    # second_weights = second[2]
+    # combined_weights = []
+    # for i in range(cut_point):
+    #     combined_weights.append(first_weights.data[i])
     if check_legal_model(second_model):
         return second_model
     else:
