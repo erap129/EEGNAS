@@ -33,6 +33,11 @@ def create_topo_layers(layers):
     return list(reversed(toposort_flatten(layer_dict)))
 
 
+class IdentityModule(nn.Module):
+    def forward(self, inputs):
+        return inputs
+
+
 class Layer:
     running_id = 0
 
@@ -184,11 +189,24 @@ class MyModel:
                     layer.kernel_time = prev_time
                     layer.kernel_eeg_chan = prev_eeg_channels
                     conv_name = 'conv_classifier'
+                    if globals.config['DEFAULT'].getboolean('split_final_conv'):
+                        model.add_module(conv_name+'_pre', nn.Conv2d(prev_channels, 1,
+                                                              (layer.kernel_time, 1),
+                                                              stride=1))
+                        model.add_module(conv_name, nn.Conv2d(1, layer.filter_num,
+                                                              (1, layer.kernel_eeg_chan),
+                                                              stride=1))
+                    else:
+                        model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
+                                                              (layer.kernel_time, layer.kernel_eeg_chan),
+                                                              stride=1))
+
                 else:
                     conv_name = 'conv_%d' % (layer.id)
-                model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
-                                                    (layer.kernel_time, layer.kernel_eeg_chan),
-                                                    stride=1))
+                    model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
+                                                        (layer.kernel_time, layer.kernel_eeg_chan),
+                                                        stride=1))
+
 
             elif isinstance(layer, BatchNormLayer):
                 model.add_module('bnorm_%d' % (layer.id), nn.BatchNorm2d(prev_channels,
@@ -203,8 +221,12 @@ class MyModel:
             elif isinstance(layer, DropoutLayer):
                 model.add_module('dropout_%d' % (layer.id), nn.Dropout(p=config['DEFAULT'].getfloat('dropout_p')))
 
+            elif isinstance(layer, IdentityLayer):
+                model.add_module('id_%d', IdentityModule())
+
             elif isinstance(layer, FlattenLayer):
                 model.add_module('squeeze', Expression(MyModel._squeeze_final_output))
+
 
         init.xavier_uniform_(model.conv_classifier.weight, gain=1)
         init.constant_(model.conv_classifier.bias, 0)

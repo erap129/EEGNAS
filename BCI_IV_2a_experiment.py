@@ -32,6 +32,17 @@ data_folder = 'data/'
 low_cut_hz = 0
 valid_set_fraction = 0.2
 
+
+def garbage_time():
+    print('ENTERING GARBAGE TIME')
+    train_set, val_set, test_set = get_train_val_test(data_folder, 1, 0)
+    garbageNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
+                        train_set=train_set, val_set=val_set, test_set=test_set,
+                        stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
+                        config=globals.config, subject_id=subject_id, cropping=False)
+    garbageNAS.garbage_time()
+
+
 field_names = ['exp_id', 'generation', 'avg_fitness']
 
 experiments = {
@@ -50,19 +61,19 @@ else:
     subdir_print = [x[0] for x in subdirs[1:]]
     print(subdir_print)
     try:
-        subdir_names = [int(x[0].split('/')[1][0]) for x in subdirs[1:]]
+        subdir_names = [int(x[0].split('/')[1].split('_')[0][0:]) for x in subdirs[1:]]
     except IndexError:
-        subdir_names = [int(x[0].split('\\')[1][0]) for x in subdirs[1:]]
+        subdir_names = [int(x[0].split('\\')[1].split('_')[0][0:]) for x in subdirs[1:]]
     subdir_names.sort()
     exp_id = subdir_names[-1] + 1
 
 subjects = random.sample(range(1, 10), globals.config['evolution'].getint('num_subjects'))
-exp_folder = 'results/' + str(exp_id)
+exp_folder = 'results/' + str(exp_id) + '_' + globals.config['DEFAULT']['exp_type']
 createFolder(exp_folder)
-csv_file = exp_folder + '/evolution_' + '_'.join(globals.config['evolution'].values()) + '.csv'
+csv_file = exp_folder + '/' + str(exp_id) + '_' + globals.config['DEFAULT']['exp_type'] + '.csv'
 merged_results_dict = {'subject': [], 'generation': [], 'val_acc': []}
 total_results = pd.DataFrame(columns=['subject', 'generation', 'val_acc'])
-with open(csv_file, 'a') as csvfile:
+with open(csv_file, 'a', newline='') as csvfile:
     fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc']
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
@@ -74,16 +85,28 @@ try:
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, cropping=False)
-        naiveNAS.evolution_layers(csv_file)
+        if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
+            naiveNAS.evolution_layers(csv_file)
+        elif globals.config['DEFAULT']['exp_type'] == 'evolution_filters':
+            naiveNAS.evolution_filters(csv_file)
+        elif globals.config['DEFAULT']['exp_type'] == 'target':
+            naiveNAS.run_target_model(csv_file)
 
 except Exception as e:
     print('experiment failed. Exception message: %s' % (str(e)))
     print(traceback.format_exc())
 
 finally:
-    if not globals.config['DEFAULT'].getboolean('success'):
-        new_exp_folder = exp_folder + '_fail'
-    else:
-        new_exp_folder = exp_folder
-    os.rename(exp_folder, new_exp_folder)
-    shutil.copy('config.ini', new_exp_folder + '/config_%s.ini' % (globals.config['DEFAULT']['success']))
+    try:
+        if not globals.config['DEFAULT'].getboolean('success'):
+            new_exp_folder = exp_folder + '_fail'
+        else:
+            new_exp_folder = exp_folder
+        os.rename(exp_folder, new_exp_folder)
+        shutil.copy('config.ini', new_exp_folder + '/config_%s.ini' % (globals.config['DEFAULT']['success']))
+        garbage_time()
+    except Exception:
+        garbage_time()
+
+
+

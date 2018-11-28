@@ -104,7 +104,6 @@ def delete_from_folder(folder):
         try:
             if os.path.isfile(file_path):
                 os.unlink(file_path)
-            #elif os.path.isdir(file_path): shutil.rmtree(file_path)
         except Exception as e:
             print(e)
 
@@ -132,6 +131,12 @@ class NaiveNAS:
         self.loggers = [Printer()]
         self.epochs_df = None
 
+    def run_target_model(self, csv_file):
+        model = target_model()
+        final_time, res_test, res_val, res_train, model, model_state = self.evaluate_model(model)
+        self.write_to_csv(csv_file, str(self.subject_id), '1',
+                          str(res_train), str(res_val), str(res_test))
+
     def evolution_layers(self, csv_file):
         configuration = self.config['evolution']
         pop_size = configuration.getint('pop_size')
@@ -157,15 +162,11 @@ class NaiveNAS:
             mean_fitness_test = np.mean([test_fitness for [_, _, _, test_fitness, _] in weighted_population])
 
             print('fittest individual in generation %d has validation fitness %.3f' % (
-            generation, weighted_population[0][1]))
+                        generation, weighted_population[0][1]))
             print('mean validation fitness of population is %.3f' % (mean_fitness_val))
 
-            with open(csv_file, 'a') as csvfile:
-                fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writerow({'subject': str(self.subject_id), 'generation': str(generation + 1),
-                                 'train_acc': str(mean_fitness_train),
-                                 'val_acc': str(mean_fitness_val), 'test_acc': str(mean_fitness_test)})
+            self.write_to_csv(csv_file, str(self.subject_id), str(generation + 1),
+                         str(mean_fitness_train), str(mean_fitness_val), str(mean_fitness_test))
 
             for index, _ in enumerate(weighted_population):
                 if random.uniform(0, 1) < (index / pop_size):
@@ -192,6 +193,7 @@ class NaiveNAS:
 
         for generation in range(num_generations):
             for i, [pop, _, _, _, _] in enumerate(weighted_population):
+                print('evaluating model %d in generation %d' % (i, generation))
                 final_time, res_test, res_val, res_train, model, model_state = self.evaluate_model(pop)
                 weighted_population[i][1] = res_train
                 weighted_population[i][2] = res_val
@@ -375,6 +377,20 @@ class NaiveNAS:
             #     val_loss, correct, len(data.X),
             #     100. * correct / len(data.X)))
         return correct / len(data.X)
+
+    def write_to_csv(self, csv_file, subject, gen, train_acc, val_acc, test_acc):
+        with open(csv_file, 'a', newline='') as csvfile:
+            fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writerow({'subject': subject, 'generation': gen,
+                             'train_acc': train_acc,
+                             'val_acc': val_acc, 'test_acc': test_acc})
+
+    def garbage_time(self):
+        model = target_model()
+        while 1:
+            print('GARBAGE TIME GARBAGE TIME GARBAGE TIME')
+            self.evaluate_model(model)
 
 
 
