@@ -276,8 +276,8 @@ def random_model(n_layers):
 
 
 def breed_layers(first, second, mutation_rate):
-    first_model = first[0]
-    second_model = second[0]
+    first_model = first['model']
+    second_model = second['model']
     if random.random() < globals.config['evolution'].getfloat('breed_rate'):
         cut_point = random.randint(0, len(first_model.values()) - 1)
         for i in range(cut_point):
@@ -294,15 +294,28 @@ def breed_layers(first, second, mutation_rate):
         random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
         second_model[random_index].filter_num = \
             np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
-    # first_weights = first[2]
-    # second_weights = second[2]
-    # combined_weights = []
-    # for i in range(cut_point):
-    #     combined_weights.append(first_weights.data[i])
     if check_legal_model(second_model):
         return second_model
     else:
         return breed_layers(first, second, mutation_rate)
+
+
+def breed_filters(first, second, mutation_rate):
+    first_model = first['model']
+    second_model = second['model']
+    conv_indices_first = [layer.id for layer in first_model.values() if isinstance(layer, ConvLayer)]
+    conv_indices_second = [layer.id for layer in second_model.values() if isinstance(layer, ConvLayer)]
+    if random.random() < globals.config['evolution'].getfloat('breed_rate'):
+        cut_point = random.randint(0, len(conv_indices_first) - 1)
+        for i in range(cut_point):
+            second_model[conv_indices_second[i]].filter_num = first_model[conv_indices_first[i]].filter_num
+    if random.random() < mutation_rate:
+        random_rate = random.uniform(0.1,3)
+        random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
+        second_model[random_index].filter_num = \
+            np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
+    return second_model
+
 
 def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25,
                filter_time_length=10, random_filters=False):
@@ -361,23 +374,6 @@ def add_layer(layer_collection, layer_to_add, in_place=False):
     layer_collection[layer_to_add.id] = layer_to_add
     layer_collection[last_layer_id].make_connection(layer_to_add)
     return layer_collection
-
-
-def breed_filters(first, second, mutation_rate):
-    first_model = first[0]
-    second_model = second[0]
-    conv_indices_first = [layer.id for layer in first_model.values() if isinstance(layer, ConvLayer)]
-    conv_indices_second = [layer.id for layer in second_model.values() if isinstance(layer, ConvLayer)]
-    if random.random() < globals.config['evolution'].getfloat('breed_rate'):
-        cut_point = random.randint(0, len(conv_indices_first) - 1)
-        for i in range(cut_point):
-            second_model[conv_indices_second[i]].filter_num = first_model[conv_indices_first[i]].filter_num
-    if random.random() < mutation_rate:
-        random_rate = random.uniform(0.1,3)
-        random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
-        second_model[random_index].filter_num = \
-            np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
-    return second_model
 
 
 def finalize_model(layer_collection):

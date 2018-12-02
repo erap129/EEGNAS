@@ -17,8 +17,9 @@ import globals
 import random
 import sys
 import csv
-import shutil
 import traceback
+import atexit
+import time
 
 global data_folder, valid_set_fraction, config
 init_config()
@@ -74,23 +75,27 @@ csv_file = exp_folder + '/' + str(exp_id) + '_' + globals.config['DEFAULT']['exp
 merged_results_dict = {'subject': [], 'generation': [], 'val_acc': []}
 total_results = pd.DataFrame(columns=['subject', 'generation', 'val_acc'])
 with open(csv_file, 'a', newline='') as csvfile:
-    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc']
+    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
 
 try:
+    start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         naiveNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, cropping=False)
+        evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
-            naiveNAS.evolution_layers(csv_file)
+            naiveNAS.evolution_layers(csv_file, evolution_file)
         elif globals.config['DEFAULT']['exp_type'] == 'evolution_filters':
-            naiveNAS.evolution_filters(csv_file)
+            naiveNAS.evolution_filters(csv_file, evolution_file)
         elif globals.config['DEFAULT']['exp_type'] == 'target':
             naiveNAS.run_target_model(csv_file)
+    globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
+    globals.config.set('DEFAULT', 'success', 'True')
 
 except Exception as e:
     with open(exp_folder + "/error_log.txt", "w") as err_file:
@@ -98,16 +103,29 @@ except Exception as e:
         print(traceback.format_exc(), file=err_file)
 
 finally:
+    if not globals.config['DEFAULT'].getboolean('success'):
+        new_exp_folder = exp_folder + '_fail'
+    else:
+        new_exp_folder = exp_folder
+    os.rename(exp_folder, new_exp_folder)
+    with open(new_exp_folder + '/final_config.ini', 'w') as configfile:
+        globals.config.write(configfile)
     try:
-        if not globals.config['DEFAULT'].getboolean('success'):
-            new_exp_folder = exp_folder + '_fail'
-        else:
-            new_exp_folder = exp_folder
-        os.rename(exp_folder, new_exp_folder)
-        shutil.copy('config.ini', new_exp_folder + '/config_%s.ini' % (globals.config['DEFAULT']['success']))
         garbage_time()
     except Exception:
         garbage_time()
+
+
+def folder_renamer():
+    if not globals.config['DEFAULT'].getboolean('success'):
+        new_exp_folder = exp_folder + '_fail'
+    else:
+        new_exp_folder = exp_folder
+    os.rename(exp_folder, new_exp_folder)
+
+
+atexit.register(folder_renamer())
+
 
 
 
