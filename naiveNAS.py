@@ -179,8 +179,8 @@ class NaiveNAS:
 
             while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
                 breeders = random.sample(range(len(weighted_population)), 2)
-                new_model = breeding_method(first=weighted_population[breeders[0]]['model'],
-                                         second=weighted_population[breeders[1]]['model'], mutation_rate=mutation_rate)
+                new_model = breeding_method(first_model=weighted_population[breeders[0]]['model'],
+                                         second_model=weighted_population[breeders[1]]['model'], mutation_rate=mutation_rate)
                 weighted_population.append({'model': new_model, 'model_state': None})
         return evolution_results
 
