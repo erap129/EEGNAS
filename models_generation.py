@@ -9,12 +9,12 @@ from braindecode.torch_ext.util import np_to_var
 import os
 from torch import nn
 from torch.nn import init
-from torchsummary import summary
 import configparser
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import copy
 import globals
+from torchsummary import summary
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 
@@ -275,20 +275,19 @@ def random_model(n_layers):
         return random_model(n_layers)
 
 
-def breed_layers(first, second, mutation_rate):
-    first_model = first['model']
-    second_model = second['model']
+def breed_layers(first_model, second_model, mutation_rate):
+    second_model = copy.deepcopy(second_model)
     if random.random() < globals.config['evolution'].getfloat('breed_rate'):
         cut_point = random.randint(0, len(first_model.values()) - 1)
         for i in range(cut_point):
-            first_model_index = list(second_model.items())[i][0]
-            second_model_index = list(first_model.items())[i][0]
+            second_model_index = list(second_model.items())[i][0]
+            first_model_index = list(first_model.items())[i][0]
             second_model[second_model_index] = first_model[first_model_index]
+            second_model[second_model_index].id = second_model_index
             if i == cut_point - 1:
-                cut_point_index = list(first_model.items())[cut_point][0]
+                cut_point_index = list(second_model.items())[cut_point][0]
                 second_model[second_model_index].connections = []
                 second_model[second_model_index].make_connection(second_model[cut_point_index])
-
     if random.random() < mutation_rate:
         random_rate = random.uniform(0.1,3)
         random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
@@ -297,7 +296,7 @@ def breed_layers(first, second, mutation_rate):
     if check_legal_model(second_model):
         return second_model
     else:
-        return breed_layers(first, second, mutation_rate)
+        return breed_layers(first_model, second_model, mutation_rate)
 
 
 def breed_filters(first, second, mutation_rate):

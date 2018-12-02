@@ -171,3 +171,14 @@ def grid_search_kernel_size(self, lo, hi, jumps):
     results.to_csv('results/kernel_size_gridsearch_' + now + '.csv', mode='a')
 
 
+
+
+# def folder_renamer():
+#     if not globals.config['DEFAULT'].getboolean('success'):
+#         new_exp_folder = exp_folder + '_fail'
+#     else:
+#         new_exp_folder = exp_folder
+#     os.rename(exp_folder, new_exp_folder)
+#
+#
+# atexit.register(folder_renamer())
