@@ -341,23 +341,19 @@ def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spa
     if random_filters:
         min_filt = globals.config['evolution'].getint('random_filter_range_min')
         max_filt = globals.config['evolution'].getint('random_filter_range_max')
-    layer_collection = OrderedDict([])
+    layer_collection = []
     conv_time = ConvLayer(kernel_time=filter_time_length, kernel_eeg_chan=1, filter_num=
                 random.randint(min_filt, max_filt) if random_filters else n_filters_time)
-    layer_collection[conv_time.id] = conv_time
+    layer_collection.append(conv_time)
     conv_spat = ConvLayer(kernel_time=1, kernel_eeg_chan=n_chans, filter_num=
         random.randint(min_filt, max_filt) if random_filters else n_filters_spat)
-    layer_collection[conv_spat.id] = conv_spat
-    conv_time.make_connection(conv_spat)
+    layer_collection.append(conv_spat)
     batchnorm = BatchNormLayer()
-    layer_collection[batchnorm.id] = batchnorm
-    conv_spat.make_connection(batchnorm)
+    layer_collection.append(batchnorm)
     elu = ActivationLayer()
-    layer_collection[elu.id] = elu
-    batchnorm.make_connection(elu)
+    layer_collection.append(elu)
     maxpool = PoolingLayer(pool_time=3, stride_time=3, mode='MAX')
-    layer_collection[maxpool.id] = maxpool
-    elu.make_connection(maxpool)
+    layer_collection.append(maxpool)
     return layer_collection
 
 
@@ -415,4 +411,27 @@ def finalize_model(layer_collection):
     layer_collection.append(flatten)
     return MyModel.new_model_from_structure_pytorch(layer_collection)
 
+
+def add_conv_maxpool_block(layer_collection, conv_width=10, conv_filter_num=50, dropout=False,
+                           pool_width=3, pool_stride=3, conv_layer_name=None, random_values=True):
+    layer_collection = copy.deepcopy(layer_collection)
+    if random_values:
+        conv_time = random.randint(5, 10)
+        conv_filter_num = random.randint(0, 50)
+        pool_time = 2
+        pool_stride = 2
+
+    if dropout:
+        dropout = DropoutLayer()
+        layer_collection.append(dropout)
+    conv_layer = ConvLayer(kernel_time=conv_width, kernel_eeg_chan=1,
+                           filter_num=conv_filter_num, name=conv_layer_name)
+    layer_collection.append(conv_layer)
+    batchnorm_layer = BatchNormLayer()
+    layer_collection.append(batchnorm_layer)
+    activation_layer = ActivationLayer()
+    layer_collection.append(activation_layer)
+    maxpool_layer = PoolingLayer(pool_time=pool_width, stride_time=pool_stride, mode='MAX')
+    layer_collection.append(maxpool_layer)
+    return layer_collection
 
