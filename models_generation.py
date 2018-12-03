@@ -27,11 +27,14 @@ def print_structure(structure):
 
 
 def create_topo_layers(layers):
-    layer_dict = {}
+    # layer_dict = {}
+    # for layer in layers:
+    #     layer_dict[layer.id] = {x.id for x in layer.connections}
+    # return list(reversed(toposort_flatten(layer_dict)))
+    ans = []
     for layer in layers:
-        layer_dict[layer.id] = {x.id for x in layer.connections}
-    return list(reversed(toposort_flatten(layer_dict)))
-
+        ans.append(layer.id)
+    return ans
 
 class IdentityModule(nn.Module):
     def forward(self, inputs):
@@ -39,15 +42,18 @@ class IdentityModule(nn.Module):
 
 
 class Layer:
-    running_id = 0
+    # running_id = 0
 
     def __init__(self, name=None):
-        self.id = Layer.running_id
+        # self.id = Layer.running_id
         self.connections = []
         self.parent = None
         self.keras_layer = None
         self.name = name
-        Layer.running_id += 1
+        # Layer.running_id += 1
+
+    def __cmp__(self, other):
+        return self.__dict__ == other.__dict__
 
     def make_connection(self, other):
         self.connections.append(other)
@@ -126,13 +132,6 @@ class IdentityLayer(Layer):
         Layer.__init__(self)
 
 
-# class CroppingLayer(Layer):
-#     @initializer
-#     def __init__(self, height_crop_top, height_crop_bottom, width_crop_left, width_crop_right):
-#         Layer.__init__(self)
-
-
-
 class ZeroPadLayer(Layer):
     def __init__(self, height_pad_top, height_pad_bottom, width_pad_left, width_pad_right):
         Layer.__init__(self)
@@ -162,13 +161,14 @@ class MyModel:
     def new_model_from_structure_pytorch(layer_collection, name=None):
         config = configparser.ConfigParser()
         config.read('config.ini')
-        topo_layers = create_topo_layers(layer_collection.values())
+        # topo_layers = create_topo_layers(layer_collection.values())
         model = nn.Sequential()
         model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
         activations = {'elu': nn.ELU, 'softmax': nn.Softmax}
-        for index, i in enumerate(topo_layers):
+        # for index, i in enumerate(topo_layers):
+        for i in range(len(layer_collection)):
             layer = layer_collection[i]
-            if index > 0:
+            if i > 0:
                 out = model.forward(np_to_var(np.ones(
                     (1, MyModel.n_chans, MyModel.input_time, 1),
                     dtype=np.float32)))
@@ -181,7 +181,7 @@ class MyModel:
                 prev_channels = 1
 
             if isinstance(layer, PoolingLayer):
-                model.add_module('pool_%d' % (layer.id), nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
+                model.add_module('pool_%d' % i, nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
                                                                           stride=(layer.stride_time, 1)))
 
             elif isinstance(layer, ConvLayer):
@@ -202,24 +202,24 @@ class MyModel:
                                                               stride=1))
 
                 else:
-                    conv_name = 'conv_%d' % (layer.id)
+                    conv_name = 'conv_%d' % i
                     model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
                                                         (layer.kernel_time, layer.kernel_eeg_chan),
                                                         stride=1))
 
 
             elif isinstance(layer, BatchNormLayer):
-                model.add_module('bnorm_%d' % (layer.id), nn.BatchNorm2d(prev_channels,
+                model.add_module('bnorm_%d' % i, nn.BatchNorm2d(prev_channels,
                                                                             momentum=config['DEFAULT'].getfloat(
                                                                                 'batch_norm_alpha'),
                                                                             affine=True, eps=1e-5), )
 
             elif isinstance(layer, ActivationLayer):
-                model.add_module('%s_%d' % (layer.activation_type, layer.id), activations[layer.activation_type]())
+                model.add_module('%s_%d' % (layer.activation_type, i), activations[layer.activation_type]())
 
 
             elif isinstance(layer, DropoutLayer):
-                model.add_module('dropout_%d' % (layer.id), nn.Dropout(p=config['DEFAULT'].getfloat('dropout_p')))
+                model.add_module('dropout_%d' % i, nn.Dropout(p=config['DEFAULT'].getfloat('dropout_p')))
 
             elif isinstance(layer, IdentityLayer):
                 model.add_module('id_%d', IdentityModule())
@@ -261,33 +261,53 @@ def check_legal_model(layer_collection):
 
 def random_model(n_layers):
     layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
-    layer_collection = OrderedDict([])
+    layer_collection = []
     prev_layer = None
     for i in range(n_layers):
         layer = layers[random.randint(0, 5)]()
-        layer_collection[layer.id] = layer
-        if prev_layer is not None:
-            prev_layer.make_connection(layer)
-        prev_layer = layer
+        layer_collection.append(layer)
+        # if prev_layer is not None:
+        #     prev_layer.make_connection(layer)
+        # prev_layer = layer
     if check_legal_model(layer_collection):
         return layer_collection
     else:
         return random_model(n_layers)
 
 
-def breed_layers(first_model, second_model, mutation_rate):
+def uniform_model(n_layers, layer_type):
+    layer_collection = []
+    prev_layer = None
+    for i in range(n_layers):
+        layer = layer_type()
+        layer_collection.append(layer)
+        # layer_collection[layer.id] = layer
+        # if prev_layer is not None:
+        #     prev_layer.make_connection(layer)
+        # prev_layer = layer
+    if check_legal_model(layer_collection):
+        return layer_collection
+    else:
+        return random_model(n_layers)
+
+
+def breed_layers(first_model, second_model, mutation_rate, cut_point=None):
     second_model = copy.deepcopy(second_model)
     if random.random() < globals.config['evolution'].getfloat('breed_rate'):
-        cut_point = random.randint(0, len(first_model.values()) - 1)
+        if cut_point is None:
+            cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
-            second_model_index = list(second_model.items())[i][0]
-            first_model_index = list(first_model.items())[i][0]
-            second_model[second_model_index] = first_model[first_model_index]
-            second_model[second_model_index].id = second_model_index
-            if i == cut_point - 1:
-                cut_point_index = list(second_model.items())[cut_point][0]
-                second_model[second_model_index].connections = []
-                second_model[second_model_index].make_connection(second_model[cut_point_index])
+            # second_model_index = list(second_model.items())[i][0]
+            # first_model_index = list(first_model.items())[i][0]
+            # second_model[second_model_index] = first_model[first_model_index]
+            # second_model[second_model_index].id = second_model_index
+            second_model[i] = first_model[i]
+        # for i in range(cut_point):
+            # second_model_index = list(second_model.items())[i][0]
+            # second_model_second_index = list(second_model.items())[i+1][0]
+            # second_model[second_model_index].connections = []
+            # second_model[second_model_index].make_connection(second_model[second_model_second_index])
+            # second_model[i].make_connection(second_model[i+1])
     if random.random() < mutation_rate:
         random_rate = random.uniform(0.1,3)
         random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
@@ -377,170 +397,22 @@ def add_layer(layer_collection, layer_to_add, in_place=False):
 
 def finalize_model(layer_collection):
     layer_collection = copy.deepcopy(layer_collection)
-    topo_layers = create_topo_layers(layer_collection.values())
-    last_layer_id = topo_layers[-1]
+    # topo_layers = create_topo_layers(layer_collection.values())
+    # last_layer_id = topo_layers[-1]
     if globals.config['DEFAULT'].getboolean('cropping'):
         final_conv_time = 2
     else:
         final_conv_time = 'down_to_one'
     conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
                            filter_num=globals.config['DEFAULT'].getint('n_classes'))
-    layer_collection[conv_layer.id] = conv_layer
-    layer_collection[last_layer_id].make_connection(conv_layer)
+    layer_collection.append(conv_layer)
     softmax = ActivationLayer('softmax')
-    layer_collection[softmax.id] = softmax
-    conv_layer.make_connection(softmax)
+    layer_collection.append(softmax)
     if globals.config['DEFAULT'].getboolean('cropping'):
         mean = LambdaLayer(mean_layer)
-        layer_collection[mean.id] = mean
-        softmax.make_connection(mean)
+        layer_collection.append(mean)
     flatten = FlattenLayer()
-    layer_collection[flatten.id] = flatten
-    if globals.config['DEFAULT'].getboolean('cropping'):
-        mean.make_connection(flatten)
-    else:
-        softmax.make_connection(flatten)
+    layer_collection.append(flatten)
     return MyModel.new_model_from_structure_pytorch(layer_collection)
 
-
-def add_conv_maxpool_block(layer_collection, conv_width=10, conv_filter_num=50, dropout=False,
-                           pool_width=3, pool_stride=3, conv_layer_name=None, random_values=True):
-    layer_collection = copy.deepcopy(layer_collection)
-    if random_values:
-        conv_time = random.randint(5, 10)
-        conv_filter_num = random.randint(0, 50)
-        pool_time = 2
-        pool_stride = 2
-
-    topo_layers = create_topo_layers(layer_collection.values())
-    last_layer_id = topo_layers[-1]
-    if dropout:
-        dropout = DropoutLayer()
-        layer_collection[dropout.id] = dropout
-        layer_collection[last_layer_id].make_connection(dropout)
-        last_layer_id = dropout.id
-    conv_layer = ConvLayer(kernel_time=conv_width, kernel_eeg_chan=1,
-                           filter_num=conv_filter_num, name=conv_layer_name)
-    layer_collection[conv_layer.id] = conv_layer
-    layer_collection[last_layer_id].make_connection(conv_layer)
-    batchnorm_layer = BatchNormLayer()
-    layer_collection[batchnorm_layer.id] = batchnorm_layer
-    conv_layer.make_connection(batchnorm_layer)
-    activation_layer = ActivationLayer()
-    layer_collection[activation_layer.id] = activation_layer
-    batchnorm_layer.make_connection(activation_layer)
-    maxpool_layer = PoolingLayer(pool_time=pool_width, stride_time=pool_stride, mode='MAX')
-    layer_collection[maxpool_layer.id] = maxpool_layer
-    activation_layer.make_connection(maxpool_layer)
-    return layer_collection
-    # return MyModel.new_model_from_structure(layer_collection, name=model.name + '->add_conv_maxpool')
-
-def add_skip_connection_concat(model):
-    topo_layers = create_topo_layers(model.layer_collection.values())
-    to_concat = random.sample(model.layer_collection.keys(), 2)  # choose 2 random layer id's
-    # first_layer_index = topo_layers.index(np.min(to_concat))
-    # second_layer_index = topo_layers.index(np.max(to_concat))
-    # first_layer_index = topo_layers[first_layer_index]
-    # second_layer_index = topo_layers[second_layer_index]
-    first_layer_index = np.min(to_concat)
-    second_layer_index = np.max(to_concat)
-    first_shape = model.model.get_layer(str(first_layer_index)).output.shape
-    second_shape = model.model.get_layer(str(second_layer_index)).output.shape
-    print('first layer shape is:', first_shape)
-    print('second layer shape is:', second_shape)
-
-    height_diff = int(first_shape[1]) - int(second_shape[1])
-    width_diff = int(first_shape[2]) - int(second_shape[2])
-    height_crop_top = height_crop_bottom = np.abs(int(height_diff / 2))
-    width_crop_left = width_crop_right = np.abs(int(width_diff / 2))
-    if height_diff % 2 == 1:
-        height_crop_top += 1
-    if width_diff % 2 == 1:
-        width_crop_left += 1
-    if height_diff < 0:
-        ChosenHeightClass = ZeroPadLayer
-    else:
-        ChosenHeightClass = CroppingLayer
-    if width_diff < 0:
-        ChosenWidthClass = ZeroPadLayer
-    else:
-        ChosenWidthClass = CroppingLayer
-    first_layer = model.layer_collection[first_layer_index]
-    second_layer = model.layer_collection[second_layer_index]
-    next_layer = first_layer
-    if height_diff != 0:
-        heightChanger = ChosenHeightClass(height_crop_top, height_crop_bottom, 0, 0)
-        model.layer_collection[heightChanger.id] = heightChanger
-        first_layer.make_connection(heightChanger)
-        next_layer = heightChanger
-    if width_diff != 0:
-        widthChanger = ChosenWidthClass(0, 0, width_crop_left, width_crop_right)
-        model.layer_collection[widthChanger.id] = widthChanger
-        next_layer.make_connection(widthChanger)
-        next_layer = widthChanger
-    concat = ConcatLayer(next_layer.id, second_layer_index)
-    model.layer_collection[concat.id] = concat
-    next_layer.connections.append(concat)
-    for lay in second_layer.connections:
-        concat.connections.append(lay)
-        if not isinstance(lay, ConcatLayer):
-            lay.parent = concat
-        else:
-            if lay.second_layer_index == second_layer_index:
-                lay.second_layer_index = concat.id
-            if lay.first_layer_index == second_layer_index:
-                lay.first_layer_index = concat.id
-    second_layer.connections = []
-    second_layer.connections.append(concat)
-    return model
-
-def edit_conv_layer(model, mode):
-    layer_collection = copy.deepcopy(model.layer_collection)
-    conv_indices = [layer.id for layer in layer_collection.values() if isinstance(layer, ConvLayer)]
-    try:
-        random_conv_index = random.randint(2, len(conv_indices) - 2) # don't include last conv
-    except ValueError:
-        return model
-    factor = 1 + random.uniform(0,1)
-    if mode == 'filters':
-        layer_collection[conv_indices[random_conv_index]].filter_num = \
-            int(layer_collection[conv_indices[random_conv_index]].filter_num * factor)
-    elif mode == 'kernels':
-        layer_collection[conv_indices[random_conv_index]].kernel_width = \
-            int(layer_collection[conv_indices[random_conv_index]].kernel_width * factor)
-    return MyModel.new_model_from_structure(layer_collection, name=model.name + '->factor_filters')
-
-def factor_filters(model):
-    return edit_conv_layer(model, mode='filters')
-
-def factor_kernels(model):
-    return edit_conv_layer(model, mode='kernels')
-
-def set_target_model_filters(model, filt1, filt2, filt3):
-    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
-    conv_indices = conv_indices[2:len(conv_indices)]  # take only relevant indices
-    model.layer_collection[conv_indices[0]].filter_num = filt1
-    model.layer_collection[conv_indices[1]].filter_num = filt2
-    model.layer_collection[conv_indices[2]].filter_num = filt3
-    return model.new_model_from_structure(model.layer_collection)
-
-def set_target_model_kernel_sizes(model, size1, size2, size3):
-    conv_indices = [layer.id for layer in model.layer_collection.values() if isinstance(layer, ConvLayer)]
-    conv_indices = conv_indices[2:len(conv_indices)]  # take only relevant indices
-    model.layer_collection[conv_indices[0]].kernel_width = size1
-    model.layer_collection[conv_indices[1]].kernel_width = size2
-    model.layer_collection[conv_indices[2]].kernel_width = size3
-    return model.new_model_from_structure(model.layer_collection)
-
-def mutate_net(model):
-    operations = [add_conv_maxpool_block, factor_filters, factor_kernels, add_skip_connection_concat]
-    op_index = random.randint(0, len(operations) - 1)
-    try:
-        model = operations[op_index](model)
-    except ValueError as e:
-        print('exception occured while performing ', operations[op_index].__name__)
-        print('error message: ', str(e))
-        print('trying another mutation...')
-        return mutate_net(model)
-    return model
 

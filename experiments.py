@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import keras_models
 from naiveNAS import NaiveNAS
-import test_skip_connection
 import matplotlib
 matplotlib.use('Agg')
 from generator import four_class_example_generator
@@ -204,10 +203,3 @@ def run_grid_search(subject_id, cropping=False):
                         X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
                         X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
     naiveNAS.grid_search_filters(1, 21, 1)
-
-
-def test_skip_connections():
-    train_set, test_set = get_train_test(data_folder, 1, 0)
-    train_set, valid_set = split_into_two_sets(
-        train_set, first_set_fraction=1 - valid_set_fraction)
-    skip_model = test_skip_connection.skip_model(train_set.X.shape[1], train_set.X.shape[2], 4)
