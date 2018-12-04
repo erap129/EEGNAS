@@ -158,7 +158,7 @@ class MyModel:
         self.name = name
 
     @staticmethod
-    def new_model_from_structure_pytorch(layer_collection, name=None):
+    def new_model_from_structure_pytorch(layer_collection, applyFix=False):
         config = configparser.ConfigParser()
         config.read('config.ini')
         # topo_layers = create_topo_layers(layer_collection.values())
@@ -181,6 +181,11 @@ class MyModel:
                 prev_channels = 1
 
             if isinstance(layer, PoolingLayer):
+                while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
+                    if random.uniform(0,1) < 0.5 and layer.pool_time > 1:
+                        layer.pool_time -= 1
+                    elif layer.stride_time > 1:
+                        layer.stride_time -=1
                 model.add_module('pool_%d' % i, nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
                                                                           stride=(layer.stride_time, 1)))
 
@@ -189,23 +194,15 @@ class MyModel:
                     layer.kernel_time = prev_time
                     layer.kernel_eeg_chan = prev_eeg_channels
                     conv_name = 'conv_classifier'
-                    if globals.config['DEFAULT'].getboolean('split_final_conv'):
-                        model.add_module(conv_name+'_pre', nn.Conv2d(prev_channels, 1,
-                                                              (layer.kernel_time, 1),
-                                                              stride=1))
-                        model.add_module(conv_name, nn.Conv2d(1, layer.filter_num,
-                                                              (1, layer.kernel_eeg_chan),
-                                                              stride=1))
-                    else:
-                        model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
-                                                              (layer.kernel_time, layer.kernel_eeg_chan),
-                                                              stride=1))
-
                 else:
                     conv_name = 'conv_%d' % i
-                    model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
-                                                        (layer.kernel_time, layer.kernel_eeg_chan),
-                                                        stride=1))
+                    if applyFix and layer.kernel_eeg_chan > prev_eeg_channels:
+                        layer.kernel_eeg_chan = prev_eeg_channels
+                    if applyFix and layer.kernel_time > prev_time:
+                        layer.kernel_time = prev_time
+                model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
+                                                    (layer.kernel_time, layer.kernel_eeg_chan),
+                                                    stride=1))
 
 
             elif isinstance(layer, BatchNormLayer):
@@ -227,6 +224,8 @@ class MyModel:
             elif isinstance(layer, FlattenLayer):
                 model.add_module('squeeze', Expression(MyModel._squeeze_final_output))
 
+        if applyFix:
+            return layer_collection
 
         init.xavier_uniform_(model.conv_classifier.weight, gain=1)
         init.constant_(model.conv_classifier.bias, 0)
@@ -262,13 +261,9 @@ def check_legal_model(layer_collection):
 def random_model(n_layers):
     layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
     layer_collection = []
-    prev_layer = None
     for i in range(n_layers):
         layer = layers[random.randint(0, 5)]()
         layer_collection.append(layer)
-        # if prev_layer is not None:
-        #     prev_layer.make_connection(layer)
-        # prev_layer = layer
     if check_legal_model(layer_collection):
         return layer_collection
     else:
@@ -277,18 +272,10 @@ def random_model(n_layers):
 
 def uniform_model(n_layers, layer_type):
     layer_collection = []
-    prev_layer = None
     for i in range(n_layers):
         layer = layer_type()
         layer_collection.append(layer)
-        # layer_collection[layer.id] = layer
-        # if prev_layer is not None:
-        #     prev_layer.make_connection(layer)
-        # prev_layer = layer
-    if check_legal_model(layer_collection):
-        return layer_collection
-    else:
-        return random_model(n_layers)
+    return layer_collection
 
 
 def breed_layers(first_model, second_model, mutation_rate, cut_point=None):
@@ -297,26 +284,8 @@ def breed_layers(first_model, second_model, mutation_rate, cut_point=None):
         if cut_point is None:
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
-            # second_model_index = list(second_model.items())[i][0]
-            # first_model_index = list(first_model.items())[i][0]
-            # second_model[second_model_index] = first_model[first_model_index]
-            # second_model[second_model_index].id = second_model_index
             second_model[i] = first_model[i]
-        # for i in range(cut_point):
-            # second_model_index = list(second_model.items())[i][0]
-            # second_model_second_index = list(second_model.items())[i+1][0]
-            # second_model[second_model_index].connections = []
-            # second_model[second_model_index].make_connection(second_model[second_model_second_index])
-            # second_model[i].make_connection(second_model[i+1])
-    if random.random() < mutation_rate:
-        random_rate = random.uniform(0.1,3)
-        random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
-        second_model[random_index].filter_num = \
-            np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
-    if check_legal_model(second_model):
-        return second_model
-    else:
-        return breed_layers(first_model, second_model, mutation_rate)
+    return MyModel.new_model_from_structure_pytorch(second_model, applyFix=True)
 
 
 def breed_filters(first, second, mutation_rate):

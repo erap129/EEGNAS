@@ -1,7 +1,7 @@
 import unittest
 from models_generation import uniform_model, breed_layers,\
-    finalize_model, DropoutLayer, BatchNormLayer, Layer, create_topo_layers,\
-    random_model
+    finalize_model, DropoutLayer, BatchNormLayer, Layer, ConvLayer,\
+    MyModel
 import globals
 
 class TestModelGeneration(unittest.TestCase):
@@ -21,6 +21,18 @@ class TestModelGeneration(unittest.TestCase):
         finalize_model(model3)
         pass
 
+    def test_fix_model(self):
+        model1 = uniform_model(10, ConvLayer)
+        try:
+            MyModel.new_model_from_structure_pytorch(model1)
+            assert False
+        except Exception:
+            assert True
+        try:
+            MyModel.new_model_from_structure_pytorch(model1, applyFix=True)
+            assert True
+        except Exception:
+            assert False
 
 if __name__ == '__main__':
     unittest.main()
