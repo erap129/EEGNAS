@@ -102,7 +102,7 @@ class ConvLayer(Layer):
     def __init__(self, kernel_eeg_chan=None, kernel_time=None, filter_num=None, name=None):
         Layer.__init__(self, name)
         if kernel_eeg_chan is None:
-            kernel_eeg_chan = random.randint(1, globals.config['DEFAULT'].getint('eeg_chans'))
+            kernel_eeg_chan = random.randint(1, globals.config['DEFAULT']['eeg_chans'])
         if kernel_time is None:
             kernel_time = random.randint(1, 20)
         if filter_num is None:
@@ -159,13 +159,11 @@ class MyModel:
 
     @staticmethod
     def new_model_from_structure_pytorch(layer_collection, applyFix=False):
-        config = configparser.ConfigParser()
-        config.read('config.ini')
-        # topo_layers = create_topo_layers(layer_collection.values())
+        config = globals.config
         model = nn.Sequential()
-        model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
+        if globals.config['DEFAULT']['channel_dim'] != 'channels' or globals.config['DEFAULT']['exp_type'] == 'target':
+            model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
         activations = {'elu': nn.ELU, 'softmax': nn.Softmax}
-        # for index, i in enumerate(topo_layers):
         for i in range(len(layer_collection)):
             layer = layer_collection[i]
             if i > 0:
@@ -186,6 +184,8 @@ class MyModel:
                         layer.pool_time -= 1
                     elif layer.stride_time > 1:
                         layer.stride_time -=1
+                if globals.config['DEFAULT']['channel_dim'] == 'channels':
+                    layer.pool_eeg_chan = 1
                 model.add_module('pool_%d' % i, nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
                                                                           stride=(layer.stride_time, 1)))
 
@@ -200,23 +200,23 @@ class MyModel:
                         layer.kernel_eeg_chan = prev_eeg_channels
                     if applyFix and layer.kernel_time > prev_time:
                         layer.kernel_time = prev_time
+                if globals.config['DEFAULT']['channel_dim'] == 'channels':
+                    layer.kernel_eeg_chan = 1
                 model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
                                                     (layer.kernel_time, layer.kernel_eeg_chan),
                                                     stride=1))
 
-
             elif isinstance(layer, BatchNormLayer):
                 model.add_module('bnorm_%d' % i, nn.BatchNorm2d(prev_channels,
-                                                                            momentum=config['DEFAULT'].getfloat(
-                                                                                'batch_norm_alpha'),
-                                                                            affine=True, eps=1e-5), )
+                                                                    momentum=config['DEFAULT']['batch_norm_alpha'],
+                                                                    affine=True, eps=1e-5), )
 
             elif isinstance(layer, ActivationLayer):
                 model.add_module('%s_%d' % (layer.activation_type, i), activations[layer.activation_type]())
 
 
             elif isinstance(layer, DropoutLayer):
-                model.add_module('dropout_%d' % i, nn.Dropout(p=config['DEFAULT'].getfloat('dropout_p')))
+                model.add_module('dropout_%d' % i, nn.Dropout(p=config['DEFAULT']['dropout_p']))
 
             elif isinstance(layer, IdentityLayer):
                 model.add_module('id_%d', IdentityModule())
@@ -229,7 +229,7 @@ class MyModel:
 
         init.xavier_uniform_(model.conv_classifier.weight, gain=1)
         init.constant_(model.conv_classifier.bias, 0)
-        if not globals.config['DEFAULT'].getboolean('cuda'):
+        if not globals.config['DEFAULT']['cuda']:
             summary(model, (22, 1125, 1))
         return MyModel(layer_collection=layer_collection, model=model)
 
@@ -258,12 +258,15 @@ def check_legal_model(layer_collection):
         return False
 
 
-def random_model(n_layers):
+def random_layer():
     layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
+    return layers[random.randint(0, 5)]()
+
+
+def random_model(n_layers):
     layer_collection = []
     for i in range(n_layers):
-        layer = layers[random.randint(0, 5)]()
-        layer_collection.append(layer)
+        layer_collection.append(random_layer())
     if check_legal_model(layer_collection):
         return layer_collection
     else:
@@ -278,26 +281,32 @@ def uniform_model(n_layers, layer_type):
     return layer_collection
 
 
-def breed_layers(first_model, second_model, mutation_rate, cut_point=None):
+def breed_layers(first_model, second_model, cut_point=None):
     second_model = copy.deepcopy(second_model)
-    if random.random() < globals.config['evolution'].getfloat('breed_rate'):
+    if random.random() < globals.config['evolution']['breed_rate']:
         if cut_point is None:
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
             second_model[i] = first_model[i]
+    if random.random() < globals.config['evolution']['mutation_rate']:
+        while True:
+            rand_layer = random.randint(0, globals.config['DEFAULT']['network_size'] - 1)
+            second_model[rand_layer] = random_layer()
+            if check_legal_model(second_model):
+                break
     return MyModel.new_model_from_structure_pytorch(second_model, applyFix=True)
 
 
-def breed_filters(first, second, mutation_rate):
+def breed_filters(first, second):
     first_model = first['model']
     second_model = second['model']
     conv_indices_first = [layer.id for layer in first_model.values() if isinstance(layer, ConvLayer)]
     conv_indices_second = [layer.id for layer in second_model.values() if isinstance(layer, ConvLayer)]
-    if random.random() < globals.config['evolution'].getfloat('breed_rate'):
+    if random.random() < globals.config['evolution']['breed_rate']:
         cut_point = random.randint(0, len(conv_indices_first) - 1)
         for i in range(cut_point):
             second_model[conv_indices_second[i]].filter_num = first_model[conv_indices_first[i]].filter_num
-    if random.random() < mutation_rate:
+    if random.random() < globals.config['DEFAULT']['mutation_rate']:
         random_rate = random.uniform(0.1,3)
         random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
         second_model[random_index].filter_num = \
@@ -308,8 +317,8 @@ def breed_filters(first, second, mutation_rate):
 def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25,
                filter_time_length=10, random_filters=False):
     if random_filters:
-        min_filt = globals.config['evolution'].getint('random_filter_range_min')
-        max_filt = globals.config['evolution'].getint('random_filter_range_max')
+        min_filt = globals.config['evolution']['random_filter_range_min']
+        max_filt = globals.config['evolution']['random_filter_range_max']
     layer_collection = []
     conv_time = ConvLayer(kernel_time=filter_time_length, kernel_eeg_chan=1, filter_num=
                 random.randint(min_filt, max_filt) if random_filters else n_filters_time)
@@ -337,8 +346,8 @@ def target_model():
 
 def genetic_filter_experiment_model(num_blocks):
     layer_collection = base_model(random_filters=True)
-    min_filt = globals.config['evolution'].getint('random_filter_range_min')
-    max_filt = globals.config['evolution'].getint('random_filter_range_max')
+    min_filt = globals.config['evolution']['random_filter_range_min']
+    max_filt = globals.config['evolution']['random_filter_range_max']
     for block in range(num_blocks):
         add_layer(layer_collection, DropoutLayer(), in_place=True)
         add_layer(layer_collection, ConvLayer(filter_num=random.randint(min_filt, max_filt), kernel_eeg_chan=1, kernel_time=10),
@@ -364,16 +373,16 @@ def finalize_model(layer_collection):
     layer_collection = copy.deepcopy(layer_collection)
     # topo_layers = create_topo_layers(layer_collection.values())
     # last_layer_id = topo_layers[-1]
-    if globals.config['DEFAULT'].getboolean('cropping'):
+    if globals.config['DEFAULT']['cropping']:
         final_conv_time = 2
     else:
         final_conv_time = 'down_to_one'
     conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
-                           filter_num=globals.config['DEFAULT'].getint('n_classes'))
+                           filter_num=globals.config['DEFAULT']['n_classes'])
     layer_collection.append(conv_layer)
     softmax = ActivationLayer('softmax')
     layer_collection.append(softmax)
-    if globals.config['DEFAULT'].getboolean('cropping'):
+    if globals.config['DEFAULT']['cropping']:
         mean = LambdaLayer(mean_layer)
         layer_collection.append(mean)
     flatten = FlattenLayer()

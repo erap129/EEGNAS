@@ -73,7 +73,7 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
     train_set = create_signal_target_from_raw_mne(train_cnt, marker_def, ival)
     test_set = create_signal_target_from_raw_mne(test_cnt, marker_def, ival)
     train_set, valid_set = split_into_two_sets(
-        train_set, first_set_fraction=1 - globals.config['DEFAULT'].getfloat('valid_set_fraction'))
+        train_set, first_set_fraction=1 - globals.config['DEFAULT']['valid_set_fraction'])
 
     return train_set, valid_set, test_set
 

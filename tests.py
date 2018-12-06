@@ -1,8 +1,12 @@
 import unittest
+from collections import OrderedDict
+
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, Layer, ConvLayer,\
     MyModel
+import json
 import globals
+from itertools import product
 
 class TestModelGeneration(unittest.TestCase):
     def setUp(self):
@@ -33,6 +37,16 @@ class TestModelGeneration(unittest.TestCase):
             assert True
         except Exception:
             assert False
+
+    def test_cartesian_product(self):
+        default_config = globals.config._defaults
+        for key in default_config.keys():
+            default_config[key] = json.loads(default_config[key])
+        b = list(product(*list(default_config.values())))
+        new_dict = OrderedDict([])
+        for i, key in enumerate(default_config.keys()):
+            new_dict[key] = b[0][i]
+        print(new_dict)
 
 if __name__ == '__main__':
     unittest.main()

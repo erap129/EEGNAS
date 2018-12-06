@@ -128,7 +128,7 @@ class NaiveNAS:
         self.loggers = [Printer()]
         self.stop_criterion = stop_criterion
         self.monitors = monitors
-        self.cuda = globals.config['DEFAULT'].getboolean('cuda')
+        self.cuda = globals.config['DEFAULT']['cuda']
         self.loggers = [Printer()]
         self.epochs_df = None
 
@@ -138,15 +138,67 @@ class NaiveNAS:
         self.write_to_csv(csv_file, str(self.subject_id), '1',
                           str(res_train), str(res_val), str(res_test), str(final_time))
 
-    def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration):
+    def evolution_all(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration):
         configuration = self.config['evolution']
-        pop_size = configuration.getint('pop_size')
-        num_generations = configuration.getint('num_generations')
-        mutation_rate = configuration.getfloat('mutation_rate')
+        pop_size = configuration['pop_size']
+        num_generations = configuration['num_generations']
         evolution_results = pd.DataFrame()
         weighted_population = []
         for i in range(pop_size):  # generate pop_size random models
-            weighted_population.append({'model': model_init(configuration.getint(model_init_configuration)),
+            weighted_population.append({'model': model_init(configuration[model_init_configuration]),
+                                        'model_state': None})
+
+        for generation in range(num_generations):
+            for i, pop in enumerate(weighted_population):
+                weighted_population[i]['res_train'] = 0
+                weighted_population[i]['res_val'] = 0
+                weighted_population[i]['res_test'] = 0
+                weighted_population[i]['train_time'] = 0
+                for subject in range(1, 10):
+                    final_time, res_test, res_val, res_train, model, model_state =\
+                        self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
+                    weighted_population[i]['res_train'] += res_train
+                    weighted_population[i]['res_val'] += res_val
+                    weighted_population[i]['res_test'] += res_test
+                    weighted_population[i]['train_time'] += final_time
+                weighted_population[i]['res_train'] /= 9
+                weighted_population[i]['res_val'] /= 9
+                weighted_population[i]['res_test'] /= 9
+                weighted_population[i]['train_time'] /= 9
+            weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
+            mean_fitness_train = np.mean([sample['res_train'] for sample in weighted_population])
+            mean_fitness_val = np.mean([sample['res_val'] for sample in weighted_population])
+            mean_fitness_test = np.mean([sample['res_test'] for sample in weighted_population])
+            mean_train_time = np.mean([sample['train_time'] for sample in weighted_population])
+            print('fittest individual in generation %d has validation fitness %.3f' % (
+                generation, weighted_population[0]['res_val']))
+            print('mean validation fitness of population is %.3f' % (mean_fitness_val))
+
+            self.write_to_csv(csv_file, str(self.subject_id), str(generation + 1),
+                              str(mean_fitness_train), str(mean_fitness_val), str(mean_fitness_test), str(mean_train_time))
+
+            self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
+
+            for index, _ in enumerate(weighted_population):
+                if random.uniform(0, 1) < (index / pop_size):
+                    del weighted_population[index]  # kill models according to their performance
+
+            while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
+                breeders = random.sample(range(len(weighted_population)), 2)
+                new_model = breeding_method(first_model=weighted_population[breeders[0]]['model'],
+                                         second_model=weighted_population[breeders[1]]['model'])
+                weighted_population.append({'model': new_model, 'model_state': None})
+        return evolution_results
+
+    def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration):
+        configuration = self.config['evolution']
+        pop_size = configuration['pop_size']
+        num_generations = configuration['num_generations']
+        mutation_rate = configuration['mutation_rate']
+        evolution_results = pd.DataFrame()
+        weighted_population = []
+        for i in range(pop_size):  # generate pop_size random models
+            weighted_population.append({'model': model_init(configuration[model_init_configuration]),
                                         'model_state': None})
 
         for generation in range(num_generations):
@@ -180,7 +232,7 @@ class NaiveNAS:
             while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
                 breeders = random.sample(range(len(weighted_population)), 2)
                 new_model = breeding_method(first_model=weighted_population[breeders[0]]['model'],
-                                         second_model=weighted_population[breeders[1]]['model'], mutation_rate=mutation_rate)
+                                         second_model=weighted_population[breeders[1]]['model'])
                 weighted_population.append({'model': new_model, 'model_state': None})
         return evolution_results
 
@@ -190,11 +242,13 @@ class NaiveNAS:
     def evolution_layers(self, csv_file, evolution_file):
         return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers')
 
-    def evaluate_model(self, model, state=None):
+    def evaluate_model(self, model, state=None, subject=None):
         self.epochs_df = pd.DataFrame()
-        if globals.config['DEFAULT'].getboolean('do_early_stop'):
+        if globals.config['DEFAULT']['do_early_stop']:
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
         finalized_model = finalize_model(model)
+        if state is not None:
+            finalized_model.model.load_state_dict(state)
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
@@ -203,11 +257,17 @@ class NaiveNAS:
             finalized_model.model.cuda()
         self.monitor_epoch(self.datasets, finalized_model.model)
         self.log_epoch()
-        if globals.config['DEFAULT'].getboolean('remember_best'):
+        if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
         start = time.time()
         while not self.stop_criterion.should_stop(self.epochs_df):
-            self.run_one_epoch(self.datasets, finalized_model.model)
+            if subject is None:
+                self.run_one_epoch(self.datasets, finalized_model.model)
+            else:
+                single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject-1]),
+                                                   ('valid', self.datasets['valid'][subject-1]),
+                                                   ('test', self.datasets['test'][subject-1])))
+                self.run_one_epoch(single_subj_dataset, finalized_model.model)
         self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
         end = time.time()
         res_test = 1 - self.epochs_df.iloc[-1]['test_misclass']
@@ -220,8 +280,8 @@ class NaiveNAS:
         model.train()
         batch_generator = self.iterator.get_batches(datasets['train'], shuffle=True)
         for inputs, targets in batch_generator:
-            input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT']['pin_memory'])
+            target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT']['pin_memory'])
             if self.cuda:
                 input_vars = input_vars.cuda()
                 target_vars = target_vars.cuda()
@@ -232,7 +292,7 @@ class NaiveNAS:
             self.optimizer.step()
         self.monitor_epoch(datasets, model)
         self.log_epoch()
-        if globals.config['DEFAULT'].getboolean('remember_best'):
+        if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
 
     def monitor_epoch(self, datasets, model):
@@ -287,8 +347,8 @@ class NaiveNAS:
         """
         model.eval()
         with torch.no_grad():
-            input_vars = np_to_var(inputs, pin_memory=globals.config['DEFAULT'].getboolean('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=globals.config['DEFAULT'].getboolean('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=globals.config['DEFAULT']['pin_memory'])
+            target_vars = np_to_var(targets, pin_memory=globals.config['DEFAULT']['pin_memory'])
             if self.cuda:
                 input_vars = input_vars.cuda()
                 target_vars = target_vars.cuda()
@@ -314,8 +374,8 @@ class NaiveNAS:
         batch_generator = self.iterator.get_batches(self.train_set, shuffle=True)
         optimizer = optim.Adam(model.parameters())
         for inputs, targets in batch_generator:
-            input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT']['pin_memory'])
+            target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT']['pin_memory'])
             optimizer.zero_grad()
             outputs = model(input_vars)
             loss = F.nll_loss(outputs, target_vars)
@@ -328,8 +388,8 @@ class NaiveNAS:
         correct = 0
         with torch.no_grad():
             for inputs, targets in self.iterator.get_batches(data, shuffle=False):
-                input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
-                target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT'].getboolean('pin_memory'))
+                input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT']['pin_memory'])
+                target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT']['pin_memory'])
                 outputs = model(input_vars)
                 val_loss += F.nll_loss(outputs, target_vars)
                 pred = outputs.max(1, keepdim=True)[1]  # get the index of the max log-probability
