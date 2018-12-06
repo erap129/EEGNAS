@@ -26,9 +26,6 @@ global data_folder, valid_set_fraction, config
 init_config()
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                         level=logging.DEBUG, stream=sys.stdout)
-if platform.node() == 'nvidia':
-    globals.config.set('DEFAULT', 'cuda', 'True')
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 data_folder = 'data/'
 low_cut_hz = 0
@@ -112,9 +109,7 @@ def cross_subject_exp():
                         config=globals.config, subject_id='all', cropping=False)
     evolution_file = '%s/archs.txt' % (exp_folder)
     if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
-        naiveNAS.evolution_layers(csv_file, evolution_file)
-    elif globals.config['DEFAULT']['exp_type'] == 'evolution_filters':
-        naiveNAS.evolution_filters(csv_file, evolution_file)
+        naiveNAS.evolution_layers_all(csv_file, evolution_file)
     elif globals.config['DEFAULT']['exp_type'] == 'target':
         naiveNAS.run_target_model(csv_file)
     globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
@@ -125,6 +120,9 @@ configurations = get_configurations()
 try:
     for configuration in configurations:
         globals.set_config(configuration)
+        if platform.node() == 'nvidia':
+            globals.config['DEFAULT']['cuda'] = True
+            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
                              NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
         monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]

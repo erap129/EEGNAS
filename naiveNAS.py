@@ -147,7 +147,6 @@ class NaiveNAS:
         for i in range(pop_size):  # generate pop_size random models
             weighted_population.append({'model': model_init(configuration[model_init_configuration]),
                                         'model_state': None})
-
         for generation in range(num_generations):
             for i, pop in enumerate(weighted_population):
                 weighted_population[i]['res_train'] = 0
@@ -161,6 +160,7 @@ class NaiveNAS:
                     weighted_population[i]['res_val'] += res_val
                     weighted_population[i]['res_test'] += res_test
                     weighted_population[i]['train_time'] += final_time
+                    weighted_population[i]['finalized_model'] = model
                 weighted_population[i]['res_train'] /= 9
                 weighted_population[i]['res_val'] /= 9
                 weighted_population[i]['res_test'] /= 9
@@ -242,7 +242,14 @@ class NaiveNAS:
     def evolution_layers(self, csv_file, evolution_file):
         return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers')
 
+    def evolution_layers_all(self, csv_file, evolution_file):
+        return self.evolution_all(csv_file, evolution_file, breed_layers, random_model, 'num_layers')
+
     def evaluate_model(self, model, state=None, subject=None):
+        if subject is not None:
+            single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject - 1]),
+                                               ('valid', self.datasets['valid'][subject - 1]),
+                                               ('test', self.datasets['test'][subject - 1])))
         self.epochs_df = pd.DataFrame()
         if globals.config['DEFAULT']['do_early_stop']:
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
@@ -255,7 +262,10 @@ class NaiveNAS:
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
             finalized_model.model.cuda()
-        self.monitor_epoch(self.datasets, finalized_model.model)
+        if subject is not None:
+            self.monitor_epoch(single_subj_dataset, finalized_model.model)
+        else:
+            self.monitor_epoch(self.datasets, finalized_model.model)
         self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
@@ -264,9 +274,6 @@ class NaiveNAS:
             if subject is None:
                 self.run_one_epoch(self.datasets, finalized_model.model)
             else:
-                single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject-1]),
-                                                   ('valid', self.datasets['valid'][subject-1]),
-                                                   ('test', self.datasets['test'][subject-1])))
                 self.run_one_epoch(single_subj_dataset, finalized_model.model)
         self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
         end = time.time()
@@ -419,7 +426,7 @@ class NaiveNAS:
         global text_file
         with open(evolution_file, "a") as text_file_local:
             text_file = text_file_local
-            print('Architectures for Subject %d, Generation %d\n' % (self.subject_id, generation), file=text_file)
+            print('Architectures for Subject %s, Generation %d\n' % (str(self.subject_id), generation), file=text_file)
             for model in models:
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
                 print_model = model['finalized_model'].to(device)
