@@ -115,54 +115,52 @@ def cross_subject_exp():
     globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
+subdirs = [x for x in os.walk('results')]
+if len(subdirs) == 1:
+    exp_id = 1
+else:
+    subdir_print = [x[0] for x in subdirs[1:]]
+    print(subdir_print)
+    try:
+        subdir_names = [int(x[0].split('/')[1].split('_')[0][0:]) for x in subdirs[1:]]
+    except IndexError:
+        subdir_names = [int(x[0].split('\\')[1].split('_')[0][0:]) for x in subdirs[1:]]
+    subdir_names.sort()
+    exp_id = subdir_names[-1] + 1
 
 configurations = get_configurations()
 try:
-    for configuration in configurations:
-        globals.set_config(configuration)
-        if platform.node() == 'nvidia':
-            globals.config['DEFAULT']['cuda'] = True
-            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-        stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
-                             NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
-        monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
-        iterator = BalancedBatchSizeIterator(batch_size=globals.config['DEFAULT']['batch_size'])
-        loss_function = F.nll_loss
-        subdirs = [x for x in os.walk('results')]
-        if len(subdirs) == 1:
-            exp_id = 1
-        else:
-            subdir_print = [x[0] for x in subdirs[1:]]
-            print(subdir_print)
-            try:
-                subdir_names = [int(x[0].split('/')[1].split('_')[0][0:]) for x in subdirs[1:]]
-            except IndexError:
-                subdir_names = [int(x[0].split('\\')[1].split('_')[0][0:]) for x in subdirs[1:]]
-            subdir_names.sort()
-            exp_id = subdir_names[-1] + 1
+    for index, configuration in enumerate(configurations):
+        try:
+            globals.set_config(configuration)
+            if platform.node() == 'nvidia':
+                globals.config['DEFAULT']['cuda'] = True
+                os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+            stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
+                                 NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
+            monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
+            iterator = BalancedBatchSizeIterator(batch_size=globals.config['DEFAULT']['batch_size'])
+            loss_function = F.nll_loss
+            subjects = random.sample(range(1, 10), globals.config['evolution']['num_subjects'])
+            exp_folder = 'results/' + str(exp_id) + '_' + str(index+1) + '_' + globals.config['DEFAULT']['exp_type']
+            createFolder(exp_folder)
+            csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1)  '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
+            with open(csv_file, 'a', newline='') as csvfile:
+                fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
 
-        subjects = random.sample(range(1, 10), globals.config['evolution']['num_subjects'])
-        exp_folder = 'results/' + str(exp_id) + '_' + globals.config['DEFAULT']['exp_type']
-        createFolder(exp_folder)
-        csv_file = exp_folder + '/' + str(exp_id) + '_' + globals.config['DEFAULT']['exp_type'] + '.csv'
-        with open(csv_file, 'a', newline='') as csvfile:
-            fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-
-        if globals.config['DEFAULT']['cross_subject']:
-            cross_subject_exp()
-        else:
-            per_subject_exp()
-
-except Exception as e:
-    with open(exp_folder + "/error_log.txt", "w") as err_file:
-        print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
-        print(traceback.format_exc(), file=err_file)
-    new_exp_folder = exp_folder + '_fail'
-    os.rename(exp_folder, new_exp_folder)
-    write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
-
+            if globals.config['DEFAULT']['cross_subject']:
+                cross_subject_exp()
+            else:
+                per_subject_exp()
+        except Exception as e:
+            with open(exp_folder + "/error_log.txt", "w") as err_file:
+                print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
+                print(traceback.format_exc(), file=err_file)
+            new_exp_folder = exp_folder + '_fail'
+            os.rename(exp_folder, new_exp_folder)
+            write_dict(dict=globals.config, filename=str(new_exp_folder) + '/final_config.ini')
 finally:
     garbage_time()
 

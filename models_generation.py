@@ -1,15 +1,13 @@
 import traceback
-from collections import OrderedDict
-
+import json
+from json import JSONEncoder
 import numpy as np
-from toposort import toposort_flatten
 from keras_models import dilation_pool, mean_layer
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 import os
 from torch import nn
 from torch.nn import init
-import configparser
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import copy
@@ -26,29 +24,18 @@ def print_structure(structure):
     print('-----------------------------------------------')
 
 
-def create_topo_layers(layers):
-    # layer_dict = {}
-    # for layer in layers:
-    #     layer_dict[layer.id] = {x.id for x in layer.connections}
-    # return list(reversed(toposort_flatten(layer_dict)))
-    ans = []
-    for layer in layers:
-        ans.append(layer.id)
-    return ans
-
 class IdentityModule(nn.Module):
     def forward(self, inputs):
         return inputs
 
 
-class Layer:
+class Layer():
     # running_id = 0
 
     def __init__(self, name=None):
         # self.id = Layer.running_id
         self.connections = []
         self.parent = None
-        self.keras_layer = None
         self.name = name
         # Layer.running_id += 1
 
@@ -58,6 +45,9 @@ class Layer:
     def make_connection(self, other):
         self.connections.append(other)
         other.parent = self
+
+    def to_string(self):
+        return type(self).__name__ + '_' + str(self.__dict__)
 
 
 class LambdaLayer(Layer):

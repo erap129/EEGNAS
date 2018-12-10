@@ -332,3 +332,14 @@ def mutate_net(model):
 #     @initializer
 #     def __init__(self, height_crop_top, height_crop_bottom, width_crop_left, width_crop_right):
 #         Layer.__init__(self)
+
+
+def create_topo_layers(layers):
+    # layer_dict = {}
+    # for layer in layers:
+    #     layer_dict[layer.id] = {x.id for x in layer.connections}
+    # return list(reversed(toposort_flatten(layer_dict)))
+    ans = []
+    for layer in layers:
+        ans.append(layer.id)
+    return ans
