@@ -5,6 +5,7 @@ from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, Layer, ConvLayer,\
     MyModel, ActivationLayer
 import json
+import pickle
 import globals
 from itertools import product
 
@@ -101,7 +102,7 @@ class TestModelGeneration(unittest.TestCase):
         NaiveNAS.hash_model(model2, model_set, genome_set)
         NaiveNAS.hash_model(model3, model_set, genome_set)
         assert(len(model_set)) == 2
-        assert(len(genome_set)) == 1 or 1
+        assert(len(genome_set)) == 1 or 2
 
     def test_hash_model_same_type(self):
         model1 = [ConvLayer(kernel_eeg_chan=1), ConvLayer(kernel_eeg_chan=2)]
@@ -112,6 +113,43 @@ class TestModelGeneration(unittest.TestCase):
         NaiveNAS.hash_model(model2, model_set, genome_set)
         assert (len(model_set)) == 2
         assert (len(genome_set)) >= 2
+
+    def test_remove_from_hash(self):
+        model1 = [ConvLayer(kernel_eeg_chan=1), ConvLayer(kernel_eeg_chan=2), ActivationLayer()]
+        model2 = [ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1), ActivationLayer()]
+        model_set = set()
+        genome_set = set()
+        NaiveNAS.hash_model(model1, model_set, genome_set)
+        NaiveNAS.hash_model(model2, model_set, genome_set)
+        assert(len(genome_set)) <= 5
+        NaiveNAS.remove_from_models_hash(model1, model_set, genome_set)
+        assert(len(genome_set)) >= 3
+        NaiveNAS.remove_from_models_hash(model2, model_set, genome_set)
+        assert(len(genome_set)) == 0
+
+    def test_check_pickle(self):
+        test1 = pickle.dumps(ConvLayer(kernel_eeg_chan=2))
+        test2 = pickle.dumps(ConvLayer(kernel_eeg_chan=1))
+        test3 = pickle.dumps(ActivationLayer())
+        test4 = pickle.dumps(ActivationLayer())
+        assert(test3 == test4)
+        assert(test1 != test2)
+
+        model1 = pickle.dumps(uniform_model(10, ActivationLayer))
+        model2 = pickle.dumps(uniform_model(10, ActivationLayer))
+        model_set = set()
+        model_set.add(model1)
+        model_set.add(model2)
+        assert(len(model_set) == 1)
+        model3 = pickle.dumps([ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1), ActivationLayer()])
+        model_set.add(model3)
+        assert(len(model_set) == 2)
+
+        model1 = pickle.loads(model1)
+        for layer in model1:
+            assert(pickle.dumps(layer) == pickle.dumps(ActivationLayer()))
+
+
 
 
 

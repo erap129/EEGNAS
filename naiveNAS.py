@@ -15,7 +15,7 @@ from keras_models import convert_to_dilated
 import os
 import globals
 import csv
-import json
+import pickle
 from torchsummary import summary
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
@@ -163,6 +163,7 @@ class NaiveNAS:
                     weighted_population[i]['res_test'] += res_test
                     weighted_population[i]['train_time'] += final_time
                     weighted_population[i]['finalized_model'] = model
+                    print('trained model %d in subject %d in generation %d' % (i+1, subject, generation))
                 for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                     weighted_population[i][key] /= globals.config['DEFAULT']['num_subjects']
             weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
@@ -172,7 +173,6 @@ class NaiveNAS:
             mean_train_time = np.mean([sample['train_time'] for sample in weighted_population])
             print('fittest individual in generation %d has validation fitness %.3f' % (
                 generation, weighted_population[0]['res_val']))
-            print('mean validation fitness of population is %.3f' % (mean_fitness_val))
 
             self.write_to_csv(csv_file, str(self.subject_id), str(generation + 1),
                               str(mean_fitness_train), str(mean_fitness_val), str(mean_fitness_test), str(mean_train_time))
@@ -181,6 +181,7 @@ class NaiveNAS:
 
             for index, _ in enumerate(weighted_population):
                 if random.uniform(0, 1) < (index / pop_size):
+                    self.remove_from_models_hash(weighted_population[index]['model'], self.models_set, self.genome_set)
                     del weighted_population[index]  # kill models according to their performance
 
             while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
@@ -212,6 +213,7 @@ class NaiveNAS:
                 weighted_population[i]['model_state'] = model_state
                 weighted_population[i]['finalized_model'] = model
                 weighted_population[i]['train_time'] = final_time
+                print('trained model %d in generation %d' % (i+1, generation))
             weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
             mean_fitness_train = np.mean([sample['res_train'] for sample in weighted_population])
             mean_fitness_val = np.mean([sample['res_val'] for sample in weighted_population])
@@ -219,7 +221,6 @@ class NaiveNAS:
             mean_train_time = np.mean([sample['train_time'] for sample in weighted_population])
             print('fittest individual in generation %d has validation fitness %.3f' % (
                 generation, weighted_population[0]['res_val']))
-            print('mean validation fitness of population is %.3f' % (mean_fitness_val))
 
             self.write_to_csv(csv_file, str(self.subject_id), str(generation + 1),
                               str(mean_fitness_train), str(mean_fitness_val), str(mean_fitness_test), str(mean_train_time))
@@ -228,7 +229,8 @@ class NaiveNAS:
 
             for index, _ in enumerate(weighted_population):
                 if random.uniform(0, 1) < (index / pop_size):
-                    del weighted_population[index]  # kill models according to their performance
+                    self.remove_from_models_hash(weighted_population[index]['model'], self.models_set, self.genome_set)
+                    del weighted_population[index]
 
             while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
                 breeders = random.sample(range(len(weighted_population)), 2)
@@ -248,10 +250,27 @@ class NaiveNAS:
         return self.evolution_all(csv_file, evolution_file, breed_layers, random_model, 'num_layers')
 
     @staticmethod
-    def hash_model(model, model_set, genome_set):
-        model_set.add(','.join(x.to_string() for x in model))
+    def remove_from_models_hash(model, model_set, genome_set):
+        pickled_model = pickle.dumps(model)
         for layer in model:
-            genome_set.add(layer.to_string())
+            remove_layer = True
+            for other_model in model_set:
+                if pickled_model != other_model:
+                    for other_layer in pickle.loads(other_model):
+                        if pickle.dumps(layer) == pickle.dumps(other_layer):
+                            remove_layer = False
+                            break
+                if not remove_layer:
+                    break
+            if remove_layer:
+                genome_set.remove(pickle.dumps(layer))
+        model_set.remove(pickled_model)
+
+    @staticmethod
+    def hash_model(model, model_set, genome_set):
+        model_set.add(pickle.dumps(model))
+        for layer in model:
+            genome_set.add(pickle.dumps(layer))
 
     def evaluate_model(self, model, state=None, subject=None):
         if subject is not None:
@@ -274,7 +293,8 @@ class NaiveNAS:
             self.monitor_epoch(single_subj_dataset, finalized_model.model)
         else:
             self.monitor_epoch(self.datasets, finalized_model.model)
-        self.log_epoch()
+        if globals.config['DEFAULT']['log_epochs']:
+            self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
         start = time.time()
@@ -306,7 +326,8 @@ class NaiveNAS:
             loss.backward()
             self.optimizer.step()
         self.monitor_epoch(datasets, model)
-        self.log_epoch()
+        if globals.config['DEFAULT']['log_epochs']:
+            self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
 

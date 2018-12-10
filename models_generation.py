@@ -30,14 +30,11 @@ class IdentityModule(nn.Module):
 
 
 class Layer():
-    # running_id = 0
 
     def __init__(self, name=None):
-        # self.id = Layer.running_id
         self.connections = []
         self.parent = None
         self.name = name
-        # Layer.running_id += 1
 
     def __cmp__(self, other):
         return self.__dict__ == other.__dict__
@@ -45,9 +42,6 @@ class Layer():
     def make_connection(self, other):
         self.connections.append(other)
         other.parent = self
-
-    def to_string(self):
-        return type(self).__name__ + '_' + str(self.__dict__)
 
 
 class LambdaLayer(Layer):
@@ -280,7 +274,7 @@ def breed_layers(first_model, second_model, cut_point=None):
             second_model[i] = first_model[i]
     if random.random() < globals.config['evolution']['mutation_rate']:
         while True:
-            rand_layer = random.randint(0, globals.config['DEFAULT']['network_size'] - 1)
+            rand_layer = random.randint(0, globals.config['evolution']['num_layers'] - 1)
             second_model[rand_layer] = random_layer()
             if check_legal_model(second_model):
                 break

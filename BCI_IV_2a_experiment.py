@@ -144,7 +144,7 @@ try:
             subjects = random.sample(range(1, 10), globals.config['evolution']['num_subjects'])
             exp_folder = 'results/' + str(exp_id) + '_' + str(index+1) + '_' + globals.config['DEFAULT']['exp_type']
             createFolder(exp_folder)
-            csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1)  '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
+            csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
             with open(csv_file, 'a', newline='') as csvfile:
                 fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
