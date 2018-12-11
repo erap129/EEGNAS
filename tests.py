@@ -149,6 +149,12 @@ class TestModelGeneration(unittest.TestCase):
         for layer in model1:
             assert(pickle.dumps(layer) == pickle.dumps(ActivationLayer()))
 
+    def test_regular_set(self):
+        genome_set = set()
+        genome_set.add(ActivationLayer())
+        genome_set.add(ActivationLayer())
+        assert(len(genome_set) == 1)
+
 
 
 

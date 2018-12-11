@@ -36,8 +36,11 @@ class Layer():
         self.parent = None
         self.name = name
 
-    def __cmp__(self, other):
+    def __eq__(self, other):
         return self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return self.__dict__ != other.__dict__
 
     def make_connection(self, other):
         self.connections.append(other)
