@@ -10,7 +10,6 @@ from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
     RuntimeMonitor
-from braindecode.datautil.splitters import concatenate_sets
 from globals import init_config
 from utils import createFolder
 import logging
@@ -141,9 +140,14 @@ try:
             monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
             iterator = BalancedBatchSizeIterator(batch_size=globals.config['DEFAULT']['batch_size'])
             loss_function = F.nll_loss
-            subjects = random.sample(range(1, 10), globals.config['evolution']['num_subjects'])
+            if type(globals.config['evolution']['subjects_to_check']) == list:
+                subjects = globals.config['evolution']['subjects_to_check']
+            else:
+                subjects = random.sample(range(1, globals.config['DEFAULT']['num_subjects']),
+                                         globals.config['evolution']['subjects_to_check'])
             exp_folder = 'results/' + str(exp_id) + '_' + str(index+1) + '_' + globals.config['DEFAULT']['exp_type']
             createFolder(exp_folder)
+            write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
             csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
             with open(csv_file, 'a', newline='') as csvfile:
                 fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes']

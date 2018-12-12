@@ -2,10 +2,10 @@ import unittest
 from collections import OrderedDict
 from naiveNAS import NaiveNAS
 from models_generation import uniform_model, breed_layers,\
-    finalize_model, DropoutLayer, BatchNormLayer, Layer, ConvLayer,\
-    MyModel, ActivationLayer
+    finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
+    MyModel, ActivationLayer, random_model
 import json
-import pickle
+import random
 import globals
 from itertools import product
 
@@ -84,8 +84,8 @@ class TestModelGeneration(unittest.TestCase):
     def test_hash_model_nochange(self):
         model1 = uniform_model(10, ActivationLayer)
         model2 = uniform_model(10, ActivationLayer)
-        model_set = set()
-        genome_set = set()
+        model_set = []
+        genome_set = []
         NaiveNAS.hash_model(model1, model_set, genome_set)
         NaiveNAS.hash_model(model2, model_set, genome_set)
         assert(len(model_set)) == 1
@@ -96,8 +96,8 @@ class TestModelGeneration(unittest.TestCase):
         model2 = uniform_model(10, ActivationLayer)
         globals.config['evolution']['mutation_rate'] = 1
         model3 = breed_layers(model1, model2)
-        model_set = set()
-        genome_set = set()
+        model_set = []
+        genome_set = []
         NaiveNAS.hash_model(model1, model_set, genome_set)
         NaiveNAS.hash_model(model2, model_set, genome_set)
         NaiveNAS.hash_model(model3, model_set, genome_set)
@@ -107,8 +107,8 @@ class TestModelGeneration(unittest.TestCase):
     def test_hash_model_same_type(self):
         model1 = [ConvLayer(kernel_eeg_chan=1), ConvLayer(kernel_eeg_chan=2)]
         model2 = [ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1)]
-        model_set = set()
-        genome_set = set()
+        model_set = []
+        genome_set = []
         NaiveNAS.hash_model(model1, model_set, genome_set)
         NaiveNAS.hash_model(model2, model_set, genome_set)
         assert (len(model_set)) == 2
@@ -117,8 +117,8 @@ class TestModelGeneration(unittest.TestCase):
     def test_remove_from_hash(self):
         model1 = [ConvLayer(kernel_eeg_chan=1), ConvLayer(kernel_eeg_chan=2), ActivationLayer()]
         model2 = [ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1), ActivationLayer()]
-        model_set = set()
-        genome_set = set()
+        model_set = []
+        genome_set = []
         NaiveNAS.hash_model(model1, model_set, genome_set)
         NaiveNAS.hash_model(model2, model_set, genome_set)
         assert(len(genome_set)) <= 5
@@ -127,33 +127,35 @@ class TestModelGeneration(unittest.TestCase):
         NaiveNAS.remove_from_models_hash(model2, model_set, genome_set)
         assert(len(genome_set)) == 0
 
-    def test_check_pickle(self):
-        test1 = pickle.dumps(ConvLayer(kernel_eeg_chan=2))
-        test2 = pickle.dumps(ConvLayer(kernel_eeg_chan=1))
-        test3 = pickle.dumps(ActivationLayer())
-        test4 = pickle.dumps(ActivationLayer())
-        assert(test3 == test4)
-        assert(test1 != test2)
+    def test_layer_equality(self):
+        assert(ActivationLayer() == ActivationLayer())
+        check_list = [ActivationLayer()]
+        assert(ActivationLayer() in check_list)
+        check_list.remove(ActivationLayer())
+        assert(len(check_list) == 0)
 
-        model1 = pickle.dumps(uniform_model(10, ActivationLayer))
-        model2 = pickle.dumps(uniform_model(10, ActivationLayer))
-        model_set = set()
-        model_set.add(model1)
-        model_set.add(model2)
-        assert(len(model_set) == 1)
-        model3 = pickle.dumps([ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1), ActivationLayer()])
-        model_set.add(model3)
-        assert(len(model_set) == 2)
+    def test_massive_breed(self):
+        models = []
+        model_set = []
+        genome_set = []
+        for i in range(50):
+            rand_mod = random_model(10)
+            NaiveNAS.hash_model(rand_mod, model_set, genome_set)
+            models.append(rand_mod)
+        old_model_len = len(model_set)
+        old_genome_len = len(genome_set)
+        while(len(models) < 100):
+            breeders = random.sample(range(len(models)), 2)
+            new_mod = breed_layers(models[breeders[0]], models[breeders[1]])
+            if(new_mod == models[breeders[0]] or new_mod == models[breeders[1]]):
+                print('new mod is the same')
+            NaiveNAS.hash_model(new_mod, model_set, genome_set)
+            models.append(new_mod)
+        print('new model length: %d' % (len(model_set)))
+        print('new genome length: %d' % (len(genome_set)))
+        print('old model length: %d' % (old_model_len))
+        print('old genome length: %d' % (old_genome_len))
 
-        model1 = pickle.loads(model1)
-        for layer in model1:
-            assert(pickle.dumps(layer) == pickle.dumps(ActivationLayer()))
-
-    def test_regular_set(self):
-        genome_set = set()
-        genome_set.add(ActivationLayer())
-        genome_set.add(ActivationLayer())
-        assert(len(genome_set) == 1)
 
 
 

@@ -343,3 +343,25 @@ def create_topo_layers(layers):
     for layer in layers:
         ans.append(layer.id)
     return ans
+
+    def test_check_pickle(self):
+        test1 = pickle.dumps(ConvLayer(kernel_eeg_chan=2))
+        test2 = pickle.dumps(ConvLayer(kernel_eeg_chan=1))
+        test3 = pickle.dumps(ActivationLayer())
+        test4 = pickle.dumps(ActivationLayer())
+        assert(test3 == test4)
+        assert(test1 != test2)
+
+        model1 = pickle.dumps(uniform_model(10, ActivationLayer))
+        model2 = pickle.dumps(uniform_model(10, ActivationLayer))
+        model_set = set()
+        model_set.add(model1)
+        model_set.add(model2)
+        assert(len(model_set) == 1)
+        model3 = pickle.dumps([ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1), ActivationLayer()])
+        model_set.add(model3)
+        assert(len(model_set) == 2)
+
+        model1 = pickle.loads(model1)
+        for layer in model1:
+            assert(pickle.dumps(layer) == pickle.dumps(ActivationLayer()))

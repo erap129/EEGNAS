@@ -132,8 +132,8 @@ class NaiveNAS:
         self.cuda = globals.config['DEFAULT']['cuda']
         self.loggers = [Printer()]
         self.epochs_df = None
-        self.models_set = set()
-        self.genome_set = set()
+        self.models_set = []
+        self.genome_set = []
 
     def run_target_model(self, csv_file):
         model = target_model()
@@ -251,26 +251,28 @@ class NaiveNAS:
 
     @staticmethod
     def remove_from_models_hash(model, model_set, genome_set):
-        pickled_model = pickle.dumps(model)
         for layer in model:
             remove_layer = True
             for other_model in model_set:
-                if pickled_model != other_model:
-                    for other_layer in pickle.loads(other_model):
-                        if pickle.dumps(layer) == pickle.dumps(other_layer):
+                if model != other_model:
+                    for other_layer in other_model:
+                        if layer == other_layer:
                             remove_layer = False
                             break
                 if not remove_layer:
                     break
-            if remove_layer:
-                genome_set.remove(pickle.dumps(layer))
-        model_set.remove(pickled_model)
+            if remove_layer and layer in genome_set:
+                genome_set.remove(layer)
+        if model in model_set:
+            model_set.remove(model)
 
     @staticmethod
     def hash_model(model, model_set, genome_set):
-        model_set.add(pickle.dumps(model))
+        if model not in model_set:
+            model_set.append(model)
         for layer in model:
-            genome_set.add(pickle.dumps(layer))
+            if layer not in genome_set:
+                genome_set.append(layer)
 
     def evaluate_model(self, model, state=None, subject=None):
         if subject is not None:
