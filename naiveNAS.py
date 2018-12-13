@@ -2,6 +2,7 @@ from models_generation import random_model, finalize_model, target_model,\
     genetic_filter_experiment_model, breed_filters, breed_layers
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
+import models_generation
 import logging
 import torch.optim as optim
 import torch.nn.functional as F
@@ -141,90 +142,69 @@ class NaiveNAS:
         self.write_to_csv(csv_file, str(self.subject_id), '1',
                           str(res_train), str(res_val), str(res_test), str(final_time))
 
-    def evolution_all(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration):
-        configuration = self.config['evolution']
-        pop_size = configuration['pop_size']
-        num_generations = configuration['num_generations']
-        evolution_results = pd.DataFrame()
-        weighted_population = []
-        for i in range(pop_size):  # generate pop_size random models
-            new_rand_model = model_init(configuration[model_init_configuration])
-            NaiveNAS.hash_model(new_rand_model, self.models_set, self.genome_set)
-            weighted_population.append({'model': new_rand_model, 'model_state': None})
-        for generation in range(num_generations):
-            for i, pop in enumerate(weighted_population):
-                for key in ['res_train', 'res_val', 'res_test', 'train_time']:
-                    weighted_population[i][key] =0
-                for subject in range(1, 10):
-                    final_time, res_test, res_val, res_train, model, model_state =\
-                        self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
-                    weighted_population[i]['res_train'] += res_train
-                    weighted_population[i]['res_val'] += res_val
-                    weighted_population[i]['res_test'] += res_test
-                    weighted_population[i]['train_time'] += final_time
-                    weighted_population[i]['finalized_model'] = model
-                    print('trained model %d in subject %d in generation %d' % (i+1, subject, generation))
-                for key in ['res_train', 'res_val', 'res_test', 'train_time']:
-                    weighted_population[i][key] /= globals.config['DEFAULT']['num_subjects']
-            weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
-            mean_fitness_train = np.mean([sample['res_train'] for sample in weighted_population])
-            mean_fitness_val = np.mean([sample['res_val'] for sample in weighted_population])
-            mean_fitness_test = np.mean([sample['res_test'] for sample in weighted_population])
-            mean_train_time = np.mean([sample['train_time'] for sample in weighted_population])
-            print('fittest individual in generation %d has validation fitness %.3f' % (
-                generation, weighted_population[0]['res_val']))
+    def one_strategy(self, weighted_population, generation):
+        for i, pop in enumerate(weighted_population):
+            final_time, res_test, res_val, res_train, model, model_state = \
+                self.evaluate_model(pop['model'], pop['model_state'])
+            weighted_population[i]['res_train'] = res_train
+            weighted_population[i]['res_val'] = res_val
+            weighted_population[i]['res_test'] = res_test
+            weighted_population[i]['model_state'] = model_state
+            weighted_population[i]['finalized_model'] = model
+            weighted_population[i]['train_time'] = final_time
+            print('trained model %d in generation %d' % (i + 1, generation))
 
-            self.write_to_csv(csv_file, str(self.subject_id), str(generation + 1),
-                              str(mean_fitness_train), str(mean_fitness_val), str(mean_fitness_test), str(mean_train_time))
-
-            self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
-
-            for index, _ in enumerate(weighted_population):
-                if random.uniform(0, 1) < (index / pop_size):
-                    self.remove_from_models_hash(weighted_population[index]['model'], self.models_set, self.genome_set)
-                    del weighted_population[index]  # kill models according to their performance
-
-            while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
-                breeders = random.sample(range(len(weighted_population)), 2)
-                new_model = breeding_method(first_model=weighted_population[breeders[0]]['model'],
-                                         second_model=weighted_population[breeders[1]]['model'])
-                NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
-                weighted_population.append({'model': new_model, 'model_state': None})
-        return evolution_results
-
-    def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration):
-        configuration = self.config['evolution']
-        pop_size = configuration['pop_size']
-        num_generations = configuration['num_generations']
-        evolution_results = pd.DataFrame()
-        weighted_population = []
-        for i in range(pop_size):  # generate pop_size random models
-            new_rand_model = model_init(configuration[model_init_configuration])
-            NaiveNAS.hash_model(new_rand_model, self.models_set, self.genome_set)
-            weighted_population.append({'model': new_rand_model, 'model_state': None})
-
-        for generation in range(num_generations):
-            for i, pop in enumerate(weighted_population):
-                final_time, res_test, res_val, res_train, model, model_state =\
-                    self.evaluate_model(pop['model'], pop['model_state'])
-                weighted_population[i]['res_train'] = res_train
-                weighted_population[i]['res_val'] = res_val
-                weighted_population[i]['res_test'] = res_test
-                weighted_population[i]['model_state'] = model_state
+    def all_strategy(self, weighted_population, generation):
+        for i, pop in enumerate(weighted_population):
+            for key in ['res_train', 'res_val', 'res_test', 'train_time']:
+                weighted_population[i][key] = 0
+            for subject in range(1, 10):
+                final_time, res_test, res_val, res_train, model, model_state = \
+                    self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
+                weighted_population[i]['res_train'] += res_train
+                weighted_population[i]['res_val'] += res_val
+                weighted_population[i]['res_test'] += res_test
+                weighted_population[i]['train_time'] += final_time
                 weighted_population[i]['finalized_model'] = model
-                weighted_population[i]['train_time'] = final_time
-                print('trained model %d in generation %d' % (i+1, generation))
+                print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
+            for key in ['res_train', 'res_val', 'res_test', 'train_time']:
+                weighted_population[i][key] /= globals.config['DEFAULT']['num_subjects']
+
+    def calculate_stats(self, weighted_population, generation):
+        stats = {}
+        stats['subject'] = self.subject_id
+        stats['generation'] = generation + 1
+        stats['train_acc'] = np.mean([sample['res_train'] for sample in weighted_population])
+        stats['val_acc'] = np.mean([sample['res_val'] for sample in weighted_population])
+        stats['test_acc'] = np.mean([sample['res_test'] for sample in weighted_population])
+        stats['train_time'] = np.mean([sample['train_time'] for sample in weighted_population])
+        stats['unique_models'] = len(self.models_set)
+        stats['unique_genomes'] = len(self.genome_set)
+        for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
+                           models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
+            stats['%s_count' % layer_type.__name__] = \
+                NaiveNAS.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
+        return stats
+
+    def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
+        configuration = self.config['evolution']
+        pop_size = configuration['pop_size']
+        num_generations = configuration['num_generations']
+        evolution_results = pd.DataFrame()
+        weighted_population = []
+        for i in range(pop_size):  # generate pop_size random models
+            new_rand_model = model_init(configuration[model_init_configuration])
+            NaiveNAS.hash_model(new_rand_model, self.models_set, self.genome_set)
+            weighted_population.append({'model': new_rand_model, 'model_state': None})
+
+        for generation in range(num_generations):
+            evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
-            mean_fitness_train = np.mean([sample['res_train'] for sample in weighted_population])
-            mean_fitness_val = np.mean([sample['res_val'] for sample in weighted_population])
-            mean_fitness_test = np.mean([sample['res_test'] for sample in weighted_population])
-            mean_train_time = np.mean([sample['train_time'] for sample in weighted_population])
+            stats = self.calculate_stats(weighted_population, generation)
             print('fittest individual in generation %d has validation fitness %.3f' % (
                 generation, weighted_population[0]['res_val']))
 
-            self.write_to_csv(csv_file, str(self.subject_id), str(generation + 1),
-                              str(mean_fitness_train), str(mean_fitness_val), str(mean_fitness_test), str(mean_train_time))
-
+            self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()})
             self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
 
             for index, _ in enumerate(weighted_population):
@@ -241,13 +221,14 @@ class NaiveNAS:
         return evolution_results
 
     def evolution_filters(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, breed_filters, genetic_filter_experiment_model, 'num_conv_blocks')
+        return self.evolution(csv_file, evolution_file, breed_filters, genetic_filter_experiment_model,
+                              'num_conv_blocks', self.one_strategy)
 
     def evolution_layers(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers')
+        return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers', self.one_strategy)
 
     def evolution_layers_all(self, csv_file, evolution_file):
-        return self.evolution_all(csv_file, evolution_file, breed_layers, random_model, 'num_layers')
+        return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers', self.all_strategy)
 
     @staticmethod
     def remove_from_models_hash(model, model_set, genome_set):
@@ -434,21 +415,24 @@ class NaiveNAS:
                 correct += pred.eq(target_vars.view_as(pred)).sum().item()
 
             val_loss /= len(data.X)
-            # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            #     val_loss, correct, len(data.X),
-            #     100. * correct / len(data.X)))
         return correct / len(data.X)
 
-    def write_to_csv(self, csv_file, subject, gen, train_acc, val_acc, test_acc, train_time):
+    def write_to_csv(self, csv_file, stats):
         with open(csv_file, 'a', newline='') as csvfile:
-            fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models',
-                          'unique_genomes']
+            fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes',
+                              'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
+                              'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writerow({'subject': subject, 'generation': gen,
-                             'train_acc': train_acc, 'val_acc': val_acc,
-                             'test_acc': test_acc, 'train_time': train_time,
-                             'unique_models': str(len(self.models_set)),
-                             'unique_genomes': str(len(self.genome_set))})
+            writer.writerow(stats)
+
+    @staticmethod
+    def count_layer_type_in_pop(models, layer_type):
+        count = 0
+        for model in models:
+            for layer in model:
+                if isinstance(layer, layer_type):
+                    count += 1
+        return count
 
     def garbage_time(self):
         model = target_model()

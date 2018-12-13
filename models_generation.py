@@ -1,6 +1,4 @@
 import traceback
-import json
-from json import JSONEncoder
 import numpy as np
 from keras_models import dilation_pool, mean_layer
 from braindecode.torch_ext.modules import Expression

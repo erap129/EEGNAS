@@ -134,7 +134,7 @@ try:
             globals.set_config(configuration)
             if platform.node() == 'nvidia':
                 globals.config['DEFAULT']['cuda'] = True
-                os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+                os.environ["CUDA_VISIBLE_DEVICES"] = "1"
             stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
                                  NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
             monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
@@ -150,7 +150,9 @@ try:
             write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
             csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
             with open(csv_file, 'a', newline='') as csvfile:
-                fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes']
+                fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes',
+                              'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
+                              'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
 
