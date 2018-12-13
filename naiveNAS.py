@@ -113,7 +113,7 @@ def delete_from_folder(folder):
 class NaiveNAS:
     def __init__(self, iterator, n_classes, input_time_len, n_chans, loss_function,
                  train_set, val_set, test_set, stop_criterion, monitors,
-                 config, subject_id, cropping=False):
+                 config, subject_id, fieldnames, cropping=False):
         self.iterator = iterator
         self.n_classes = n_classes
         self.n_chans = n_chans
@@ -133,6 +133,7 @@ class NaiveNAS:
         self.cuda = globals.config['DEFAULT']['cuda']
         self.loggers = [Printer()]
         self.epochs_df = None
+        self.fieldnames = fieldnames
         self.models_set = []
         self.genome_set = []
 
@@ -161,9 +162,13 @@ class NaiveNAS:
             for subject in range(1, 10):
                 final_time, res_test, res_val, res_train, model, model_state = \
                     self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
+                weighted_population[i]['%d_res_train' % subject] = res_train
                 weighted_population[i]['res_train'] += res_train
+                weighted_population[i]['%d_res_val' % subject] = res_train
                 weighted_population[i]['res_val'] += res_val
+                weighted_population[i]['%d_res_test' % subject] = res_test
                 weighted_population[i]['res_test'] += res_test
+                weighted_population[i]['%d_train_time' % subject] = final_time
                 weighted_population[i]['train_time'] += final_time
                 weighted_population[i]['finalized_model'] = model
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))

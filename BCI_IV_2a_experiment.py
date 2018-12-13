@@ -74,13 +74,19 @@ def get_configurations():
 
 
 def per_subject_exp():
+    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models',
+                  'unique_genomes', 'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
+                  'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
+    with open(csv_file, 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
     start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         naiveNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            config=globals.config, subject_id=subject_id, cropping=False)
+                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames, cropping=False)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
             naiveNAS.evolution_layers(csv_file, evolution_file)
@@ -93,6 +99,18 @@ def per_subject_exp():
 
 
 def cross_subject_exp():
+    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
+    for subject in range(1, globals.config['DEFAULT']['num_subjects'] + 1):
+        fieldnames.append('%d_train_acc' % subject)
+        fieldnames.append('%d_train_acc' % subject)
+        fieldnames.append('%d_val_acc' % subject)
+        fieldnames.append('%d_test_acc' % subject)
+        fieldnames.append('%d_train_time' % subject)
+    fieldnames.extend(['unique_genomes', 'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
+                       'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count'])
+    with open(csv_file, 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
     start_time = time.time()
     train_set_all = []
     val_set_all = []
@@ -105,7 +123,7 @@ def cross_subject_exp():
     naiveNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
                         train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id='all', cropping=False)
+                        config=globals.config, subject_id='all', fieldnames=fieldnames, cropping=False)
     evolution_file = '%s/archs.txt' % (exp_folder)
     if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
         naiveNAS.evolution_layers_all(csv_file, evolution_file)
@@ -134,7 +152,7 @@ try:
             globals.set_config(configuration)
             if platform.node() == 'nvidia':
                 globals.config['DEFAULT']['cuda'] = True
-                os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+                os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
             stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
                                  NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
             monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
@@ -149,13 +167,6 @@ try:
             createFolder(exp_folder)
             write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
             csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
-            with open(csv_file, 'a', newline='') as csvfile:
-                fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes',
-                              'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
-                              'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-
             if globals.config['DEFAULT']['cross_subject']:
                 cross_subject_exp()
             else:

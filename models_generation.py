@@ -1,3 +1,4 @@
+import torch
 import traceback
 import numpy as np
 from keras_models import dilation_pool, mean_layer
@@ -216,6 +217,10 @@ class MyModel:
         init.constant_(model.conv_classifier.bias, 0)
         if not globals.config['DEFAULT']['cuda']:
             summary(model, (22, 1125, 1))
+        if torch.cuda.device_count() > 1:
+            model = nn.DataParallel(model)
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model.to(device)
         return MyModel(layer_collection=layer_collection, model=model)
 
     # remove empty dim at end and potentially remove empty time dim
