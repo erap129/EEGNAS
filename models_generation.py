@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 import torch
 import traceback
 import numpy as np
@@ -172,7 +174,7 @@ class MyModel:
                         layer.stride_time -=1
                 if globals.config['DEFAULT']['channel_dim'] == 'channels':
                     layer.pool_eeg_chan = 1
-                model.add_module('pool_%d' % i, nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
+                model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
                                                                           stride=(layer.stride_time, 1)))
 
             elif isinstance(layer, ConvLayer):
@@ -181,7 +183,7 @@ class MyModel:
                     layer.kernel_eeg_chan = prev_eeg_channels
                     conv_name = 'conv_classifier'
                 else:
-                    conv_name = 'conv_%d' % i
+                    conv_name = '%s_%d' % (type(layer).__name__, i)
                     if applyFix and layer.kernel_eeg_chan > prev_eeg_channels:
                         layer.kernel_eeg_chan = prev_eeg_channels
                     if applyFix and layer.kernel_time > prev_time:
@@ -193,7 +195,7 @@ class MyModel:
                                                     stride=1))
 
             elif isinstance(layer, BatchNormLayer):
-                model.add_module('bnorm_%d' % i, nn.BatchNorm2d(prev_channels,
+                model.add_module('%s_%d' % (type(layer).__name__, i), nn.BatchNorm2d(prev_channels,
                                                                     momentum=config['DEFAULT']['batch_norm_alpha'],
                                                                     affine=True, eps=1e-5), )
 
@@ -202,10 +204,10 @@ class MyModel:
 
 
             elif isinstance(layer, DropoutLayer):
-                model.add_module('dropout_%d' % i, nn.Dropout(p=config['DEFAULT']['dropout_p']))
+                model.add_module('%s_%d' % (type(layer).__name__, i), nn.Dropout(p=config['DEFAULT']['dropout_p']))
 
             elif isinstance(layer, IdentityLayer):
-                model.add_module('id_%d', IdentityModule())
+                model.add_module('%s_%d' % (type(layer).__name__, i), IdentityModule())
 
             elif isinstance(layer, FlattenLayer):
                 model.add_module('squeeze', Expression(MyModel._squeeze_final_output))
@@ -268,23 +270,47 @@ def uniform_model(n_layers, layer_type):
     for i in range(n_layers):
         layer = layer_type()
         layer_collection.append(layer)
-    return layer_collection
+    if check_legal_model(layer_collection):
+        return layer_collection
+    else:
+        return uniform_model(n_layers, layer_type)
 
 
-def breed_layers(first_model, second_model, cut_point=None):
+def add_layer_to_state(new_model_state, layer, index, old_model_state):
+    if type(layer).__name__ in ['BatchNormLayer', 'ConvLayer', 'PoolingLayer']:
+        for k, v in old_model_state.items():
+            if k.startswith('%s_%d' % (type(layer).__name__, index)) and \
+                    k in new_model_state.keys() and new_model_state[k].shape == v.shape:
+                new_model_state[k] = v
+
+
+def breed_layers(first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
+    save_weights = False
     if random.random() < globals.config['evolution']['breed_rate']:
         if cut_point is None:
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
             second_model[i] = first_model[i]
+        if globals.config['evolution']['inherit_breeding_weights']:
+            save_weights = True
     if random.random() < globals.config['evolution']['mutation_rate']:
         while True:
             rand_layer = random.randint(0, globals.config['evolution']['num_layers'] - 1)
             second_model[rand_layer] = random_layer()
             if check_legal_model(second_model):
                 break
-    return MyModel.new_model_from_structure_pytorch(second_model, applyFix=True)
+    new_model = MyModel.new_model_from_structure_pytorch(second_model, applyFix=True)
+    if save_weights:
+        finalized_new_model = finalize_model(new_model)
+        finalized_new_model_state = finalized_new_model.model.state_dict()
+        for i in range(cut_point):
+            add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)
+        for i in range(cut_point+1, globals.config['evolution']['num_layers']):
+            add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
+    else:
+        finalized_new_model_state = None
+    return new_model, finalized_new_model_state
 
 
 def breed_filters(first, second):
@@ -361,8 +387,6 @@ def add_layer(layer_collection, layer_to_add, in_place=False):
 
 def finalize_model(layer_collection):
     layer_collection = copy.deepcopy(layer_collection)
-    # topo_layers = create_topo_layers(layer_collection.values())
-    # last_layer_id = topo_layers[-1]
     if globals.config['DEFAULT']['cropping']:
         final_conv_time = 2
     else:

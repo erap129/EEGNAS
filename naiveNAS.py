@@ -170,6 +170,7 @@ class NaiveNAS:
                 weighted_population[i]['res_test'] += res_test
                 weighted_population[i]['%d_train_time' % subject] = final_time
                 weighted_population[i]['train_time'] += final_time
+                weighted_population[i]['%d_model_state' % subject] = model_state
                 weighted_population[i]['finalized_model'] = model
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
@@ -183,6 +184,12 @@ class NaiveNAS:
         stats['val_acc'] = np.mean([sample['res_val'] for sample in weighted_population])
         stats['test_acc'] = np.mean([sample['res_test'] for sample in weighted_population])
         stats['train_time'] = np.mean([sample['train_time'] for sample in weighted_population])
+        if(self.subject_id == 'all'):
+            for subject in range(1, globals.config['DEFAULT']['num_subjects'] + 1):
+                stats['%d_train_acc' % subject] = np.mean([sample['%d_res_train' % subject] for sample in weighted_population])
+                stats['%d_val_acc' % subject] = np.mean([sample['%d_res_val' % subject] for sample in weighted_population])
+                stats['%d_test_acc' % subject] = np.mean([sample['%d_res_test' % subject] for sample in weighted_population])
+                stats['%d_train_time' % subject] = np.mean([sample['%d_train_time' % subject] for sample in weighted_population])
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
@@ -219,10 +226,12 @@ class NaiveNAS:
 
             while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
                 breeders = random.sample(range(len(weighted_population)), 2)
-                new_model = breeding_method(first_model=weighted_population[breeders[0]]['model'],
-                                         second_model=weighted_population[breeders[1]]['model'])
+                new_model, new_model_state = breeding_method(first_model=weighted_population[breeders[0]]['model'],
+                                         second_model=weighted_population[breeders[1]]['model'],
+                                            first_model_state=weighted_population[breeders[0]['model_state']],
+                                            second_model_state=weighted_population[breeders[1]['model_state']])
                 NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
-                weighted_population.append({'model': new_model, 'model_state': None})
+                weighted_population.append({'model': new_model, 'model_state': new_model_state})
         return evolution_results
 
     def evolution_filters(self, csv_file, evolution_file):
@@ -424,10 +433,7 @@ class NaiveNAS:
 
     def write_to_csv(self, csv_file, stats):
         with open(csv_file, 'a', newline='') as csvfile:
-            fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models', 'unique_genomes',
-                              'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
-                              'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer = csv.DictWriter(csvfile, fieldnames=self.fieldnames)
             writer.writerow(stats)
 
     @staticmethod

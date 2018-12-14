@@ -1,9 +1,10 @@
+import torch
 import unittest
 from collections import OrderedDict
 from naiveNAS import NaiveNAS
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
-    MyModel, ActivationLayer, random_model
+    MyModel, ActivationLayer, random_model, PoolingLayer
 import json
 import random
 import globals
@@ -155,6 +156,21 @@ class TestModelGeneration(unittest.TestCase):
         print('new genome length: %d' % (len(genome_set)))
         print('old model length: %d' % (old_model_len))
         print('old genome length: %d' % (old_genome_len))
+
+    def test_state_inheritance_breeding(self):
+        globals.config['evolution']['inherit_breeding_weights'] = True
+        globals.config['evolution']['num_layers'] = 4
+        globals.config['evolution']['mutation_rate'] = 0
+        model1 = uniform_model(4, ConvLayer)
+        model1_state = finalize_model(model1).model.state_dict()
+        model2 = uniform_model(4, ConvLayer)
+        model2_state = finalize_model(model2).model.state_dict()
+        model3, model3_state = breed_layers(model1, model2, model1_state, model2_state, 2)
+        for s1, s3 in zip(list(model1_state.values())[:4], list(model3_state.values())[:4]):
+            assert((s1==s3).all())
+        for s2, s3 in zip(list(model2_state.values())[6:8], list(model3_state.values())[6:8]):
+            assert((s2==s3).all())
+
 
 
 

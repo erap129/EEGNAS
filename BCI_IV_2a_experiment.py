@@ -46,7 +46,7 @@ def garbage_time():
     garbageNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
                         train_set=train_set, val_set=val_set, test_set=test_set,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id=1, cropping=False)
+                        config=globals.config, subject_id=1, fieldnames=None, cropping=False)
     garbageNAS.garbage_time()
 
 
@@ -102,7 +102,6 @@ def cross_subject_exp():
     fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
     for subject in range(1, globals.config['DEFAULT']['num_subjects'] + 1):
         fieldnames.append('%d_train_acc' % subject)
-        fieldnames.append('%d_train_acc' % subject)
         fieldnames.append('%d_val_acc' % subject)
         fieldnames.append('%d_test_acc' % subject)
         fieldnames.append('%d_train_time' % subject)
@@ -152,7 +151,7 @@ try:
             globals.set_config(configuration)
             if platform.node() == 'nvidia':
                 globals.config['DEFAULT']['cuda'] = True
-                os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+                os.environ["CUDA_VISIBLE_DEVICES"] = "0"
             stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
                                  NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
             monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
