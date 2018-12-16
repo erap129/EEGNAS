@@ -1,9 +1,7 @@
-from collections import OrderedDict
-
 import torch
 import traceback
 import numpy as np
-from keras_models import dilation_pool, mean_layer
+from keras_models import mean_layer
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 import os
@@ -151,6 +149,8 @@ class MyModel:
         model = nn.Sequential()
         if globals.config['DEFAULT']['channel_dim'] != 'channels' or globals.config['DEFAULT']['exp_type'] == 'target':
             model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
+        if globals.config['DEFAULT']['time_factor'] != -1:
+            model.add_module('stack_by_time', Expression(MyModel._stack_input_by_time))
         activations = {'elu': nn.ELU, 'softmax': nn.Softmax}
         for i in range(len(layer_collection)):
             layer = layer_collection[i]
@@ -238,6 +238,13 @@ class MyModel:
     @staticmethod
     def _transpose_time_to_spat(x):
         return x.permute(0, 3, 2, 1)
+
+    @staticmethod
+    def _stack_input_by_time(x):
+        if globals.config['DEFAULT']['channel_dim'] == 'one':
+            return x.view(x.shape[0], -1, int(x.shape[2] / globals.config['DEFAULT']['time_factor']), x.shape[3])
+        else:
+            return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.config['DEFAULT']['time_factor']), -1)
 
 
 def check_legal_model(layer_collection):

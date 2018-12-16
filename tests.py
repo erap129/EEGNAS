@@ -5,6 +5,7 @@ from naiveNAS import NaiveNAS
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
     MyModel, ActivationLayer, random_model, PoolingLayer
+from braindecode.models.util import to_dense_prediction_model
 import json
 import random
 import globals
@@ -38,6 +39,7 @@ class TestModelGeneration(unittest.TestCase):
         dummy_config['DEFAULT']['network_size'] = 10
         dummy_config['DEFAULT']['cross_subject'] = False
         dummy_config['DEFAULT']['num_subjects'] = 9
+        dummy_config['DEFAULT']['time_factor'] = -1
         dummy_config['evolution']['pop_size'] = 100
         dummy_config['evolution']['num_generations'] = 100
         dummy_config['evolution']['num_subjects'] = 3
@@ -170,9 +172,6 @@ class TestModelGeneration(unittest.TestCase):
             assert((s1==s3).all())
         for s2, s3 in zip(list(model2_state.values())[6:8], list(model3_state.values())[6:8]):
             assert((s2==s3).all())
-
-
-
 
 
 
