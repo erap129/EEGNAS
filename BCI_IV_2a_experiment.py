@@ -75,8 +75,9 @@ def get_configurations():
 
 def per_subject_exp():
     fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models',
-                  'unique_genomes', 'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
-                  'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
+                  'unique_genomes', 'average_conv_width', 'average_conv_height', 'average_conv_filters',
+                  'average_pool_width', 'average_pool_stride', 'DropoutLayer_count', 'BatchNormLayer_count',
+                  'ActivationLayer_count', 'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -105,8 +106,9 @@ def cross_subject_exp():
         fieldnames.append('%d_val_acc' % subject)
         fieldnames.append('%d_test_acc' % subject)
         fieldnames.append('%d_train_time' % subject)
-    fieldnames.extend(['unique_genomes', 'DropoutLayer_count', 'BatchNormLayer_count', 'ActivationLayer_count',
-                       'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count'])
+    fieldnames.extend(['unique_models', 'unique_genomes', 'average_conv_width', 'average_conv_height', 'average_conv_filters',
+                        'average_pool_width', 'average_pool_stride', 'DropoutLayer_count', 'BatchNormLayer_count',
+                       'ActivationLayer_count', 'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count'])
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()

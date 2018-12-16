@@ -330,7 +330,7 @@ def breed_filters(first, second):
     return second_model
 
 
-def base_model(n_chans=22, input_time_len=1125, n_filters_time=25, n_filters_spat=25,
+def base_model(n_chans=22, n_filters_time=25, n_filters_spat=25,
                filter_time_length=10, random_filters=False):
     if random_filters:
         min_filt = globals.config['evolution']['random_filter_range_min']

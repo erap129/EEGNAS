@@ -176,6 +176,16 @@ class NaiveNAS:
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                 weighted_population[i][key] /= globals.config['DEFAULT']['num_subjects']
 
+    def get_average_param(models, layer_type, attribute):
+        attr_count = 0
+        count = 0
+        for model in models:
+            for layer in model:
+                if isinstance(layer, layer_type):
+                    attr_count += getattr(layer, attribute)
+                    count += 1
+        return attr_count / count
+
     def calculate_stats(self, weighted_population, generation):
         stats = {}
         stats['subject'] = self.subject_id
@@ -192,6 +202,16 @@ class NaiveNAS:
                 stats['%d_train_time' % subject] = np.mean([sample['%d_train_time' % subject] for sample in weighted_population])
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
+        stats['average_conv_width'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population], models_generation.ConvLayer,
+                                                                 'kernel_eeg_chan')
+        stats['average_conv_height'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
+                                                                 models_generation.ConvLayer, 'kernel_time')
+        stats['average_conv_filters'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
+                                                                 models_generation.ConvLayer, 'filter_num')
+        stats['average_pool_width'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
+                                                                   models_generation.PoolingLayer, 'pool_time')
+        stats['average_pool_stride'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
+                                                                   models_generation.PoolingLayer, 'stride_time')
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
             stats['%s_count' % layer_type.__name__] = \
@@ -228,8 +248,8 @@ class NaiveNAS:
                 breeders = random.sample(range(len(weighted_population)), 2)
                 new_model, new_model_state = breeding_method(first_model=weighted_population[breeders[0]]['model'],
                                          second_model=weighted_population[breeders[1]]['model'],
-                                            first_model_state=weighted_population[breeders[0]['model_state']],
-                                            second_model_state=weighted_population[breeders[1]['model_state']])
+                                            first_model_state=weighted_population[breeders[0]]['model_state'],
+                                            second_model_state=weighted_population[breeders[1]]['model_state'])
                 NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
                 weighted_population.append({'model': new_model, 'model_state': new_model_state})
         return evolution_results
@@ -278,7 +298,7 @@ class NaiveNAS:
         if globals.config['DEFAULT']['do_early_stop']:
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
         finalized_model = finalize_model(model)
-        if state is not None:
+        if state is not None and globals.config['evolution']['inherit_non_breeding_weights']:
             finalized_model.model.load_state_dict(state)
         if self.cropping:
             finalized_model.model = convert_to_dilated(model.model)
