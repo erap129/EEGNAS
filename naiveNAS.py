@@ -12,11 +12,10 @@ from collections import OrderedDict
 import numpy as np
 import time
 import torch
-from keras_models import convert_to_dilated
+from braindecode.models.util import to_dense_prediction_model
 import os
 import globals
 import csv
-import pickle
 from torchsummary import summary
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
@@ -111,13 +110,10 @@ def delete_from_folder(folder):
             print(e)
 
 class NaiveNAS:
-    def __init__(self, iterator, n_classes, input_time_len, n_chans, loss_function,
+    def __init__(self, iterator, loss_function,
                  train_set, val_set, test_set, stop_criterion, monitors,
                  config, subject_id, fieldnames, cropping=False):
         self.iterator = iterator
-        self.n_classes = n_classes
-        self.n_chans = n_chans
-        self.input_time_len = input_time_len
         self.subject_id = subject_id
         self.cropping = cropping
         self.config = config
@@ -300,8 +296,6 @@ class NaiveNAS:
         finalized_model = finalize_model(model)
         if state is not None and globals.config['evolution']['inherit_non_breeding_weights']:
             finalized_model.model.load_state_dict(state)
-        if self.cropping:
-            finalized_model.model = convert_to_dilated(model.model)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
@@ -314,6 +308,10 @@ class NaiveNAS:
             self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
+        if globals.config['DEFAULT']['cropping']:
+            to_dense_prediction_model(finalized_model.model)
+            if not globals.config['DEFAULT']['cuda']:
+                summary(finalized_model.model, (22, globals.config['DEFAULT']['input_time_len'], 1))
         start = time.time()
         while not self.stop_criterion.should_stop(self.epochs_df):
             if subject is None:
@@ -339,7 +337,7 @@ class NaiveNAS:
                 target_vars = target_vars.cuda()
             self.optimizer.zero_grad()
             outputs = model(input_vars)
-            loss = F.nll_loss(outputs, target_vars)
+            loss = self.loss_function(outputs, target_vars)
             loss.backward()
             self.optimizer.step()
         self.monitor_epoch(datasets, model)
@@ -431,7 +429,7 @@ class NaiveNAS:
             target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT']['pin_memory'])
             optimizer.zero_grad()
             outputs = model(input_vars)
-            loss = F.nll_loss(outputs, target_vars)
+            loss = self.loss_function(outputs, target_vars)
             loss.backward()
             optimizer.step()
 
@@ -444,7 +442,7 @@ class NaiveNAS:
                 input_vars = np_to_var(inputs, pin_memory=self.config['DEFAULT']['pin_memory'])
                 target_vars = np_to_var(targets, pin_memory=self.config['DEFAULT']['pin_memory'])
                 outputs = model(input_vars)
-                val_loss += F.nll_loss(outputs, target_vars)
+                val_loss += self.loss_function(outputs, target_vars)
                 pred = outputs.max(1, keepdim=True)[1]  # get the index of the max log-probability
                 correct += pred.eq(target_vars.view_as(pred)).sum().item()
 
@@ -479,7 +477,7 @@ class NaiveNAS:
             for model in models:
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
                 print_model = model['finalized_model'].to(device)
-                summary(print_model, (22, 1125, 1), file=text_file)
+                summary(print_model, (22, globals.config['DEFAULT']['input_time_len'], 1), file=text_file)
 
 
 

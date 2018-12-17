@@ -1,15 +1,16 @@
 #%%
 import os
 import platform
+import torch
 from collections import OrderedDict
 from itertools import product
 import torch.nn.functional as F
 from data_preprocessing import get_train_val_test
 from naiveNAS import NaiveNAS
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
-from braindecode.datautil.iterators import BalancedBatchSizeIterator
+from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
-    RuntimeMonitor
+    RuntimeMonitor, CroppedTrialMisclassMonitor
 from globals import init_config
 from utils import createFolder
 import logging
@@ -84,7 +85,7 @@ def per_subject_exp():
     start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
-        naiveNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
+        naiveNAS = NaiveNAS(iterator=iterator,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames, cropping=False)
@@ -121,7 +122,7 @@ def cross_subject_exp():
         train_set_all.append(train_set)
         val_set_all.append(val_set)
         test_set_all.append(test_set)
-    naiveNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
+    naiveNAS = NaiveNAS(iterator=iterator,
                         train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=globals.config, subject_id='all', fieldnames=fieldnames, cropping=False)
@@ -156,9 +157,19 @@ try:
                 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
             stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
                                  NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
-            monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
-            iterator = BalancedBatchSizeIterator(batch_size=globals.config['DEFAULT']['batch_size'])
-            loss_function = F.nll_loss
+            if globals.config['DEFAULT']['cropping']:
+                globals.config['DEFAULT']['input_time_len'] = globals.config['DEFAULT']['input_time_cropping']
+                iterator = CropsFromTrialsIterator(batch_size=globals.config['DEFAULT']['batch_size'],
+                                                   input_time_length=globals.config['DEFAULT']['input_time_len'],
+                                                   n_preds_per_input=globals.config['DEFAULT']['n_preds_per_input'])
+                loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
+                monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
+                            CroppedTrialMisclassMonitor(
+                                input_time_length=globals.config['DEFAULT']['input_time_len']), RuntimeMonitor()]
+            else:
+                iterator = BalancedBatchSizeIterator(batch_size=globals.config['DEFAULT']['batch_size'])
+                loss_function = F.nll_loss
+                monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
             if type(globals.config['evolution']['subjects_to_check']) == list:
                 subjects = globals.config['evolution']['subjects_to_check']
             else:

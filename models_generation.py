@@ -4,6 +4,7 @@ import numpy as np
 from keras_models import mean_layer
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
+from braindecode.models.util import to_dense_prediction_model
 import os
 from torch import nn
 from torch.nn import init
@@ -136,7 +137,6 @@ class ConcatLayer(Layer):
 
 class MyModel:
     n_chans = 22
-    input_time = 1125
 
     def __init__(self, model, layer_collection={}, name=None):
         self.layer_collection = layer_collection
@@ -156,14 +156,14 @@ class MyModel:
             layer = layer_collection[i]
             if i > 0:
                 out = model.forward(np_to_var(np.ones(
-                    (1, MyModel.n_chans, MyModel.input_time, 1),
+                    (1, MyModel.n_chans, globals.config['DEFAULT']['input_time_len'], 1),
                     dtype=np.float32)))
                 prev_channels = out.cpu().data.numpy().shape[1]
                 prev_time = out.cpu().data.numpy().shape[2]
                 prev_eeg_channels = out.cpu().data.numpy().shape[3]
             else:
                 prev_eeg_channels = MyModel.n_chans
-                prev_time = MyModel.input_time
+                prev_time = globals.config['DEFAULT']['input_time_len']
                 prev_channels = 1
 
             if isinstance(layer, PoolingLayer):
@@ -215,10 +215,10 @@ class MyModel:
         if applyFix:
             return layer_collection
 
-        init.xavier_uniform_(model.conv_classifier.weight, gain=1)
-        init.constant_(model.conv_classifier.bias, 0)
+        init.xavier_uniform_(list(model._modules.items())[-3][1].weight, gain=1)
+        init.constant_(list(model._modules.items())[-3][1].bias, 0)
         if not globals.config['DEFAULT']['cuda']:
-            summary(model, (22, 1125, 1))
+            summary(model, (22, globals.config['DEFAULT']['input_time_len'], 1))
         if torch.cuda.device_count() > 1:
             model = nn.DataParallel(model)
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -395,7 +395,7 @@ def add_layer(layer_collection, layer_to_add, in_place=False):
 def finalize_model(layer_collection):
     layer_collection = copy.deepcopy(layer_collection)
     if globals.config['DEFAULT']['cropping']:
-        final_conv_time = 2
+        final_conv_time = globals.config['DEFAULT']['final_conv_size']
     else:
         final_conv_time = 'down_to_one'
     conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
