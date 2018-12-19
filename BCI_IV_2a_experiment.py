@@ -74,6 +74,23 @@ def get_configurations():
     return configurations
 
 
+def target_exp():
+    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
+    with open(csv_file, 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+    start_time = time.time()
+    for subject_id in subjects:
+        train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
+        naiveNAS = NaiveNAS(iterator=iterator,
+                            train_set=train_set, val_set=val_set, test_set=test_set,
+                            stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
+                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames, cropping=False)
+        naiveNAS.run_target_model(csv_file)
+    globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
+    write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
+
+
 def per_subject_exp():
     fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models',
                   'unique_genomes', 'average_conv_width', 'average_conv_height', 'average_conv_filters',
@@ -94,8 +111,6 @@ def per_subject_exp():
             naiveNAS.evolution_layers(csv_file, evolution_file)
         elif globals.config['DEFAULT']['exp_type'] == 'evolution_filters':
             naiveNAS.evolution_filters(csv_file, evolution_file)
-        elif globals.config['DEFAULT']['exp_type'] == 'target':
-            naiveNAS.run_target_model(csv_file)
     globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
@@ -179,7 +194,9 @@ try:
             createFolder(exp_folder)
             write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
             csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
-            if globals.config['DEFAULT']['cross_subject']:
+            if globals.config['DEFAULT']['exp_type'] == 'target':
+                target_exp()
+            elif globals.config['DEFAULT']['cross_subject']:
                 cross_subject_exp()
             else:
                 per_subject_exp()

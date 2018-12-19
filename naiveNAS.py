@@ -5,7 +5,6 @@ from braindecode.experiments.loggers import Printer
 import models_generation
 import logging
 import torch.optim as optim
-import torch.nn.functional as F
 from copy import deepcopy
 import pandas as pd
 from collections import OrderedDict
@@ -136,8 +135,9 @@ class NaiveNAS:
     def run_target_model(self, csv_file):
         model = target_model()
         final_time, res_test, res_val, res_train, model, model_state = self.evaluate_model(model)
-        self.write_to_csv(csv_file, str(self.subject_id), '1',
-                          str(res_train), str(res_val), str(res_test), str(final_time))
+        stats = {'subject': str(self.subject_id), 'generation': '1', 'train_acc': str(res_train),
+                 'val_acc': str(res_val), 'test_acc': str(res_test), 'train_time': str(final_time)}
+        self.write_to_csv(csv_file, stats)
 
     def one_strategy(self, weighted_population, generation):
         for i, pop in enumerate(weighted_population):
@@ -294,6 +294,10 @@ class NaiveNAS:
         if globals.config['DEFAULT']['do_early_stop']:
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
         finalized_model = finalize_model(model)
+        if globals.config['DEFAULT']['cropping']:
+            to_dense_prediction_model(finalized_model.model)
+            if not globals.config['DEFAULT']['cuda']:
+                summary(finalized_model.model, (22, globals.config['DEFAULT']['input_time_len'], 1))
         if state is not None and globals.config['evolution']['inherit_non_breeding_weights']:
             finalized_model.model.load_state_dict(state)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
@@ -308,10 +312,6 @@ class NaiveNAS:
             self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
-        if globals.config['DEFAULT']['cropping']:
-            to_dense_prediction_model(finalized_model.model)
-            if not globals.config['DEFAULT']['cuda']:
-                summary(finalized_model.model, (22, globals.config['DEFAULT']['input_time_len'], 1))
         start = time.time()
         while not self.stop_criterion.should_stop(self.epochs_df):
             if subject is None:
