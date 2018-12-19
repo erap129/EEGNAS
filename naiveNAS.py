@@ -109,14 +109,15 @@ def delete_from_folder(folder):
             print(e)
 
 class NaiveNAS:
-    def __init__(self, iterator, loss_function,
+    def __init__(self, iterator, exp_folder, loss_function,
                  train_set, val_set, test_set, stop_criterion, monitors,
-                 config, subject_id, fieldnames, cropping=False):
+                 config, subject_id, fieldnames, model_from_file=None):
         self.iterator = iterator
+        self.exp_folder = exp_folder
         self.subject_id = subject_id
-        self.cropping = cropping
         self.config = config
         self.loss_function = loss_function
+        self.model_from_file = model_from_file
         self.optimizer = None
         self.datasets = OrderedDict(
             (('train', train_set), ('valid', val_set), ('test', test_set))
@@ -133,7 +134,10 @@ class NaiveNAS:
         self.genome_set = []
 
     def run_target_model(self, csv_file):
-        model = target_model()
+        if self.model_from_file is not None:
+            model = torch.load(self.model_from_file)
+        else:
+            model = target_model()
         final_time, res_test, res_val, res_train, model, model_state = self.evaluate_model(model)
         stats = {'subject': str(self.subject_id), 'generation': '1', 'train_acc': str(res_train),
                  'val_acc': str(res_val), 'test_acc': str(res_test), 'train_time': str(final_time)}
@@ -235,19 +239,23 @@ class NaiveNAS:
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()})
             self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
 
-            for index, _ in enumerate(weighted_population):
-                if random.uniform(0, 1) < (index / pop_size):
-                    self.remove_from_models_hash(weighted_population[index]['model'], self.models_set, self.genome_set)
-                    del weighted_population[index]
+            if generation < num_generations - 1:
+                for index, _ in enumerate(weighted_population):
+                    if random.uniform(0, 1) < (index / pop_size):
+                        self.remove_from_models_hash(weighted_population[index]['model'], self.models_set, self.genome_set)
+                        del weighted_population[index]
 
-            while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
-                breeders = random.sample(range(len(weighted_population)), 2)
-                new_model, new_model_state = breeding_method(first_model=weighted_population[breeders[0]]['model'],
-                                         second_model=weighted_population[breeders[1]]['model'],
-                                            first_model_state=weighted_population[breeders[0]]['model_state'],
-                                            second_model_state=weighted_population[breeders[1]]['model_state'])
-                NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
-                weighted_population.append({'model': new_model, 'model_state': new_model_state})
+                while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
+                    breeders = random.sample(range(len(weighted_population)), 2)
+                    new_model, new_model_state = breeding_method(first_model=weighted_population[breeders[0]]['model'],
+                                             second_model=weighted_population[breeders[1]]['model'],
+                                                first_model_state=weighted_population[breeders[0]]['model_state'],
+                                                second_model_state=weighted_population[breeders[1]]['model_state'])
+                    NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
+                    weighted_population.append({'model': new_model, 'model_state': new_model_state})
+            else:  # last generation
+                torch.save(weighted_population[0]['finalized_model'], "%s/best_model_" % self.exp_folder
+                           + str(self.subject_id) + ".th")
         return evolution_results
 
     def evolution_filters(self, csv_file, evolution_file):

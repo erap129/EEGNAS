@@ -32,7 +32,6 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
     train_loader = BCI_IV_2a(train_filepath, train_label_filepath)
     test_loader = BCI_IV_2a(test_filepath, test_label_filepath)
     train_cnt = train_loader.load()
-    print('raw training data is:', train_cnt.get_data())
     test_cnt = test_loader.load()
 
     train_cnt = train_cnt.drop_channels(['STI 014', 'EOG-left',
@@ -89,7 +88,6 @@ def show_spectrogram(data):
     plt.show()
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    print('data.shape is:', data.shape)
 
 
 def create_all_spectrograms(dataset, im_size=256):

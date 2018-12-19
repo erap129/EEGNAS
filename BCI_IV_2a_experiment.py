@@ -44,10 +44,10 @@ def garbage_time():
     globals.config['DEFAULT']['exp_type'] = 'target'
     globals.config['DEFAULT']['channel_dim'] = 'one'
     train_set, val_set, test_set = get_train_val_test(data_folder, 1, 0)
-    garbageNAS = NaiveNAS(iterator=iterator, n_classes=4, input_time_len=1125, n_chans=22,
+    garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
                         train_set=train_set, val_set=val_set, test_set=test_set,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id=1, fieldnames=None, cropping=False)
+                        config=globals.config, subject_id=1, fieldnames=None)
     garbageNAS.garbage_time()
 
 
@@ -74,7 +74,7 @@ def get_configurations():
     return configurations
 
 
-def target_exp():
+def target_exp(model_from_file=None):
     fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -82,10 +82,11 @@ def target_exp():
     start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
-        naiveNAS = NaiveNAS(iterator=iterator,
+        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames, cropping=False)
+                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
+                            model_from_file=model_from_file)
         naiveNAS.run_target_model(csv_file)
     globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
@@ -102,10 +103,10 @@ def per_subject_exp():
     start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
-        naiveNAS = NaiveNAS(iterator=iterator,
+        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames, cropping=False)
+                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
             naiveNAS.evolution_layers(csv_file, evolution_file)
@@ -137,10 +138,10 @@ def cross_subject_exp():
         train_set_all.append(train_set)
         val_set_all.append(val_set)
         test_set_all.append(test_set)
-    naiveNAS = NaiveNAS(iterator=iterator,
+    naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
                         train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id='all', fieldnames=fieldnames, cropping=False)
+                        config=globals.config, subject_id='all', fieldnames=fieldnames)
     evolution_file = '%s/archs.txt' % (exp_folder)
     if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
         naiveNAS.evolution_layers_all(csv_file, evolution_file)
@@ -153,8 +154,6 @@ subdirs = [x for x in os.walk('results')]
 if len(subdirs) == 1:
     exp_id = 1
 else:
-    subdir_print = [x[0] for x in subdirs[1:]]
-    print(subdir_print)
     try:
         subdir_names = [int(x[0].split('/')[1].split('_')[0][0:]) for x in subdirs[1:]]
     except IndexError:
@@ -196,6 +195,8 @@ try:
             csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
             if globals.config['DEFAULT']['exp_type'] == 'target':
                 target_exp()
+            elif globals.config['DEFAULT']['exp_type'] == 'from_file':
+                target_exp(model_from_file=sys.argv[1])
             elif globals.config['DEFAULT']['cross_subject']:
                 cross_subject_exp()
             else:
