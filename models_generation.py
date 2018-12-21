@@ -4,7 +4,6 @@ import numpy as np
 from keras_models import mean_layer
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
-from braindecode.models.util import to_dense_prediction_model
 import os
 from torch import nn
 from torch.nn import init
@@ -91,9 +90,9 @@ class ConvLayer(Layer):
         if kernel_eeg_chan is None:
             kernel_eeg_chan = random.randint(1, globals.config['DEFAULT']['eeg_chans'])
         if kernel_time is None:
-            kernel_time = random.randint(1, 20)
+            kernel_time = random.randint(1, globals.config['evolution']['kernel_time_max'])
         if filter_num is None:
-            filter_num = random.randint(1, 50)
+            filter_num = random.randint(1, globals.config['evolution']['filter_num_max'])
         self.kernel_eeg_chan = kernel_eeg_chan
         self.kernel_time = kernel_time
         self.filter_num = filter_num
@@ -104,9 +103,9 @@ class PoolingLayer(Layer):
     def __init__(self, pool_time=None, stride_time=None, mode='max', stride_eeg_chan=1, pool_eeg_chan=1):
         Layer.__init__(self)
         if pool_time is None:
-            pool_time = random.randint(1, 3)
+            pool_time = random.randint(1, globals.config['evolution']['pool_time_max'])
         if stride_time is None:
-            stride_time = random.randint(1, 3)
+            stride_time = random.randint(1, globals.config['evolution']['pool_time_max'])
         self.pool_time = pool_time
         self.stride_time = stride_time
         self.mode = mode
@@ -291,7 +290,7 @@ def add_layer_to_state(new_model_state, layer, index, old_model_state):
                 new_model_state[k] = v
 
 
-def breed_layers(first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
+def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
     save_weights = False
     if random.random() < globals.config['evolution']['breed_rate']:
@@ -299,9 +298,9 @@ def breed_layers(first_model, second_model, first_model_state=None, second_model
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
             second_model[i] = first_model[i]
-        if globals.config['evolution']['inherit_breeding_weights']:
+        if globals.config['evolution']['inherit_weights']:
             save_weights = True
-    if random.random() < globals.config['evolution']['mutation_rate']:
+    if random.random() < mutation_rate:
         while True:
             rand_layer = random.randint(0, globals.config['evolution']['num_layers'] - 1)
             second_model[rand_layer] = random_layer()

@@ -4,9 +4,15 @@ from braindecode.models.util import to_dense_prediction_model
 import numpy as np
 
 model = nn.Sequential()
-model.add_module("conv1", nn.Conv2d(1, 1, (2, 1), stride=1))
+conv1 = nn.Conv2d(1, 1, (2, 1), stride=1)
+conv1.weight.data.fill_(1)
+conv1.bias.data.fill_(0)
+conv2 = nn.Conv2d(1, 1, (2, 1), stride=1)
+conv2.weight.data.fill_(1)
+conv2.bias.data.fill_(0)
+model.add_module("conv1", conv1)
 model.add_module("pool1", nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)))
-model.add_module("conv2", nn.Conv2d(1, 1, (2, 1), stride=1))
+model.add_module("conv2", conv2)
 model.add_module("pool2", nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)))
 
 input = np_to_var(np.arange(0, 13, 1)[np.newaxis, np.newaxis, :, np.newaxis])

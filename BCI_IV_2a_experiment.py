@@ -30,6 +30,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
 data_folder = 'data/'
 low_cut_hz = 0
 valid_set_fraction = 0.2
+multiple_values = ''
 
 
 def write_dict(dict, filename):
@@ -44,7 +45,7 @@ def garbage_time():
     globals.config['DEFAULT']['exp_type'] = 'target'
     globals.config['DEFAULT']['channel_dim'] = 'one'
     train_set, val_set, test_set = get_train_val_test(data_folder, 1, 0)
-    garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
+    garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set, val_set=val_set, test_set=test_set,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=globals.config, subject_id=1, fieldnames=None)
@@ -52,6 +53,7 @@ def garbage_time():
 
 
 def get_configurations():
+    global multiple_values
     configurations = []
     default_config = globals.init_config._defaults
     evolution_config = globals.init_config._sections['evolution']
@@ -61,6 +63,14 @@ def get_configurations():
         evolution_config[key] = json.loads(evolution_config[key])
     both_configs = list(default_config.values())
     both_configs.extend(list(evolution_config.values()))
+    multiple_value_indices = [index for index, value in enumerate(both_configs) if len(value) > 1]
+    config_keys = list(default_config.keys())
+    config_keys.extend(list(evolution_config.keys()))
+    multiple_values = [config_keys[i] for i in multiple_value_indices]
+    if len(multiple_values) > 0:
+        multiple_values = '_' + '_'.join(multiple_values)
+    else:
+        multiple_values = ''
     all_configs = list(product(*both_configs))
     for config_index in range(len(all_configs)):
         configurations.append({'DEFAULT': OrderedDict([]), 'evolution': OrderedDict([])})
@@ -75,14 +85,13 @@ def get_configurations():
 
 
 def target_exp(model_from_file=None):
-    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
     start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
-        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
+        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
@@ -93,17 +102,13 @@ def target_exp(model_from_file=None):
 
 
 def per_subject_exp():
-    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time', 'unique_models',
-                  'unique_genomes', 'average_conv_width', 'average_conv_height', 'average_conv_filters',
-                  'average_pool_width', 'average_pool_stride', 'DropoutLayer_count', 'BatchNormLayer_count',
-                  'ActivationLayer_count', 'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count']
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
     start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
-        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
+        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames)
@@ -117,15 +122,6 @@ def per_subject_exp():
 
 
 def cross_subject_exp():
-    fieldnames = ['subject', 'generation', 'train_acc', 'val_acc', 'test_acc', 'train_time']
-    for subject in range(1, globals.config['DEFAULT']['num_subjects'] + 1):
-        fieldnames.append('%d_train_acc' % subject)
-        fieldnames.append('%d_val_acc' % subject)
-        fieldnames.append('%d_test_acc' % subject)
-        fieldnames.append('%d_train_time' % subject)
-    fieldnames.extend(['unique_models', 'unique_genomes', 'average_conv_width', 'average_conv_height', 'average_conv_filters',
-                        'average_pool_width', 'average_pool_stride', 'DropoutLayer_count', 'BatchNormLayer_count',
-                       'ActivationLayer_count', 'ConvLayer_count', 'PoolingLayer_count', 'IdentityLayer_count'])
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -138,7 +134,7 @@ def cross_subject_exp():
         train_set_all.append(train_set)
         val_set_all.append(val_set)
         test_set_all.append(test_set)
-    naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder,
+    naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=globals.config, subject_id='all', fieldnames=fieldnames)
@@ -189,10 +185,13 @@ try:
             else:
                 subjects = random.sample(range(1, globals.config['DEFAULT']['num_subjects']),
                                          globals.config['evolution']['subjects_to_check'])
-            exp_folder = 'results/' + str(exp_id) + '_' + str(index+1) + '_' + globals.config['DEFAULT']['exp_type']
+
+            exp_name = str(exp_id) + '_' + str(index+1) + '_' + globals.config['DEFAULT']['exp_type'] + multiple_values
+            exp_folder = 'results/' + exp_name
             createFolder(exp_folder)
             write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
             csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
+            fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
             if globals.config['DEFAULT']['exp_type'] == 'target':
                 target_exp()
             elif globals.config['DEFAULT']['exp_type'] == 'from_file':

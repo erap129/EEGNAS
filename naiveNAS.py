@@ -11,10 +11,14 @@ from collections import OrderedDict
 import numpy as np
 import time
 import torch
+from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.models.util import to_dense_prediction_model
+from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or, ColumnBelow
+from braindecode.datautil.splitters import concatenate_sets
 import os
 import globals
 import csv
+from torch import nn
 from torchsummary import summary
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
@@ -109,11 +113,12 @@ def delete_from_folder(folder):
             print(e)
 
 class NaiveNAS:
-    def __init__(self, iterator, exp_folder, loss_function,
+    def __init__(self, iterator, exp_folder, exp_name, loss_function,
                  train_set, val_set, test_set, stop_criterion, monitors,
                  config, subject_id, fieldnames, model_from_file=None):
         self.iterator = iterator
         self.exp_folder = exp_folder
+        self.exp_name = exp_name
         self.subject_id = subject_id
         self.config = config
         self.loss_function = loss_function
@@ -132,16 +137,39 @@ class NaiveNAS:
         self.fieldnames = fieldnames
         self.models_set = []
         self.genome_set = []
+        if isinstance(self.subject_id, int):
+            self.current_chosen_population_sample = [self.subject_id]
+        else:
+            self.current_chosen_population_sample = []
+        self.mutation_rate = globals.config['evolution']['mutation_rate']
 
     def run_target_model(self, csv_file):
         if self.model_from_file is not None:
-            model = torch.load(self.model_from_file)
+            if torch.cuda.is_available():
+                model = torch.load(self.model_from_file)
+            else:
+                model = torch.load(self.model_from_file, map_location='cpu')
+            if globals.config['DEFAULT']['cropping']:
+                conv_classifier = list(model._modules.items())[-3][1]
+                model.conv_classifier =  nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
+                          (globals.config['DEFAULT']['final_conv_size'],
+                           conv_classifier.kernel_size[1]), stride=conv_classifier.stride)
+                model.cuda()
+                dummy_input = np_to_var(self.datasets['train'].X[:1, :, :, None])
+                if globals.config['DEFAULT']['cuda']:
+                    dummy_input = dummy_input.cuda()
+                out = model(dummy_input)
+                n_preds_per_input = out.cpu().data.numpy().shape[2]
+                globals.config['DEFAULT']['n_preds_per_input'] = n_preds_per_input
+                self.iterator = CropsFromTrialsIterator(batch_size=globals.config['DEFAULT']['batch_size'],
+                                                   input_time_length=globals.config['DEFAULT']['input_time_len'],
+                                                   n_preds_per_input=globals.config['DEFAULT']['n_preds_per_input'])
         else:
             model = target_model()
         final_time, res_test, res_val, res_train, model, model_state = self.evaluate_model(model)
-        stats = {'subject': str(self.subject_id), 'generation': '1', 'train_acc': str(res_train),
-                 'val_acc': str(res_val), 'test_acc': str(res_test), 'train_time': str(final_time)}
-        self.write_to_csv(csv_file, stats)
+        stats = {'train_acc': str(res_train), 'val_acc': str(res_val),
+                 'test_acc': str(res_test), 'train_time': str(final_time)}
+        self.write_to_csv(csv_file, stats, generation=1)
 
     def one_strategy(self, weighted_population, generation):
         for i, pop in enumerate(weighted_population):
@@ -159,7 +187,9 @@ class NaiveNAS:
         for i, pop in enumerate(weighted_population):
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                 weighted_population[i][key] = 0
-            for subject in range(1, 10):
+            self.current_chosen_population_sample = random.sample(range(1, globals.config['DEFAULT']['num_subjects'] + 1),
+                                         globals.config['evolution']['cross_subject_sampling_rate'])
+            for subject in self.current_chosen_population_sample:
                 final_time, res_test, res_val, res_train, model, model_state = \
                     self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
                 weighted_population[i]['%d_res_train' % subject] = res_train
@@ -186,16 +216,14 @@ class NaiveNAS:
                     count += 1
         return attr_count / count
 
-    def calculate_stats(self, weighted_population, generation):
+    def calculate_stats(self, weighted_population):
         stats = {}
-        stats['subject'] = self.subject_id
-        stats['generation'] = generation + 1
         stats['train_acc'] = np.mean([sample['res_train'] for sample in weighted_population])
         stats['val_acc'] = np.mean([sample['res_val'] for sample in weighted_population])
         stats['test_acc'] = np.mean([sample['res_test'] for sample in weighted_population])
         stats['train_time'] = np.mean([sample['train_time'] for sample in weighted_population])
-        if(self.subject_id == 'all'):
-            for subject in range(1, globals.config['DEFAULT']['num_subjects'] + 1):
+        if self.subject_id == 'all':
+            for subject in self.current_chosen_population_sample:
                 stats['%d_train_acc' % subject] = np.mean([sample['%d_res_train' % subject] for sample in weighted_population])
                 stats['%d_val_acc' % subject] = np.mean([sample['%d_res_val' % subject] for sample in weighted_population])
                 stats['%d_test_acc' % subject] = np.mean([sample['%d_res_test' % subject] for sample in weighted_population])
@@ -218,6 +246,14 @@ class NaiveNAS:
                 NaiveNAS.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
         return stats
 
+    def add_final_stats(self, stats, weighted_population):
+        for subject in self.current_chosen_population_sample:
+            _, res_test, res_val, res_train, _, _ = self.evaluate_model(
+                weighted_population[0]['model'], final_evaluation=True)
+            stats['%d_final_train_acc' % subject] = res_train
+            stats['%d_final_val_acc' % subject] = res_val
+            stats['%d_test_acc' % subject] = res_test
+
     def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
         configuration = self.config['evolution']
         pop_size = configuration['pop_size']
@@ -232,13 +268,7 @@ class NaiveNAS:
         for generation in range(num_generations):
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
-            stats = self.calculate_stats(weighted_population, generation)
-            print('fittest individual in generation %d has validation fitness %.3f' % (
-                generation, weighted_population[0]['res_val']))
-
-            self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()})
-            self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
-
+            stats = self.calculate_stats(weighted_population)
             if generation < num_generations - 1:
                 for index, _ in enumerate(weighted_population):
                     if random.uniform(0, 1) < (index / pop_size):
@@ -247,15 +277,25 @@ class NaiveNAS:
 
                 while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
                     breeders = random.sample(range(len(weighted_population)), 2)
-                    new_model, new_model_state = breeding_method(first_model=weighted_population[breeders[0]]['model'],
+                    new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
+                                                                first_model=weighted_population[breeders[0]]['model'],
                                              second_model=weighted_population[breeders[1]]['model'],
                                                 first_model_state=weighted_population[breeders[0]]['model_state'],
                                                 second_model_state=weighted_population[breeders[1]]['model_state'])
                     NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
                     weighted_population.append({'model': new_model, 'model_state': new_model_state})
+
+                if len(self.genome_set) < configuration['pop_size']:
+                    self.mutation_rate *= configuration['mutation_rate_change_factor']
+                else:
+                    self.mutation_rate = configuration['mutation_rate']
             else:  # last generation
                 torch.save(weighted_population[0]['finalized_model'], "%s/best_model_" % self.exp_folder
                            + str(self.subject_id) + ".th")
+                self.add_final_stats(stats, weighted_population)
+
+            self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
+            self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
         return evolution_results
 
     def evolution_filters(self, csv_file, evolution_file):
@@ -293,20 +333,28 @@ class NaiveNAS:
             if layer not in genome_set:
                 genome_set.append(layer)
 
-    def evaluate_model(self, model, state=None, subject=None):
+    def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
+        if final_evaluation:
+            self.stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['final_max_epochs']),
+                                 NoDecrease('valid_misclass', globals.config['DEFAULT']['final_max_increase_epochs'])])
         if subject is not None:
             single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject - 1]),
                                                ('valid', self.datasets['valid'][subject - 1]),
                                                ('test', self.datasets['test'][subject - 1])))
+        else:
+            single_subj_dataset = None
         self.epochs_df = pd.DataFrame()
         if globals.config['DEFAULT']['do_early_stop']:
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
-        finalized_model = finalize_model(model)
+        if globals.config['DEFAULT']['exp_type'] == 'from_file':
+            finalized_model = models_generation.MyModel(model=model)
+        else:
+            finalized_model = finalize_model(model)
         if globals.config['DEFAULT']['cropping']:
             to_dense_prediction_model(finalized_model.model)
             if not globals.config['DEFAULT']['cuda']:
                 summary(finalized_model.model, (22, globals.config['DEFAULT']['input_time_len'], 1))
-        if state is not None and globals.config['evolution']['inherit_non_breeding_weights']:
+        if state is not None and globals.config['evolution']['inherit_weights']:
             finalized_model.model.load_state_dict(state)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
         if self.cuda:
@@ -320,19 +368,41 @@ class NaiveNAS:
             self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
+        self.iterator.reset_rng()
         start = time.time()
-        while not self.stop_criterion.should_stop(self.epochs_df):
-            if subject is None:
-                self.run_one_epoch(self.datasets, finalized_model.model)
+        self.run_until_stop(finalized_model.model, self.datasets, single_subj_dataset)
+        self.setup_after_stop_training(finalized_model.model, final_evaluation)
+        if final_evaluation:
+            loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
+            if subject is not None:
+                datasets = single_subj_dataset
             else:
-                self.run_one_epoch(single_subj_dataset, finalized_model.model)
-        self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
+                datasets = self.datasets
+            datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
+            self.run_until_stop(finalized_model.model, datasets, single_subj_dataset)
+            if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
+                self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
         end = time.time()
         res_test = 1 - self.epochs_df.iloc[-1]['test_misclass']
         res_val = 1 - self.epochs_df.iloc[-1]['valid_misclass']
         res_train = 1 - self.epochs_df.iloc[-1]['train_misclass']
         final_time = end-start
         return final_time, res_test, res_val, res_train, finalized_model.model, self.rememberer.model_state_dict
+
+    def setup_after_stop_training(self, model, final_evaluation):
+        self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
+        if final_evaluation:
+            loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
+            self.stop_criterion = Or(stop_criteria=[
+                MaxEpochs(max_epochs=self.rememberer.best_epoch * 2),
+                ColumnBelow(column_name='valid_loss', target_value=loss_to_reach)])
+
+    def run_until_stop(self, model, datasets, single_subj_dataset):
+        while not self.stop_criterion.should_stop(self.epochs_df):
+            if single_subj_dataset is None:
+                self.run_one_epoch(datasets, model)
+            else:
+                self.run_one_epoch(single_subj_dataset, model)
 
     def run_one_epoch(self, datasets, model):
         model.train()
@@ -457,10 +527,14 @@ class NaiveNAS:
             val_loss /= len(data.X)
         return correct / len(data.X)
 
-    def write_to_csv(self, csv_file, stats):
+    fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
+
+    def write_to_csv(self, csv_file, stats, generation):
         with open(csv_file, 'a', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=self.fieldnames)
-            writer.writerow(stats)
+            for key, value in stats.items():
+                writer.writerow({'exp_name': self.exp_name, 'subject': str(self.subject_id),
+                                 'generation': str(generation), 'param_name': key, 'param_value': value})
 
     @staticmethod
     def count_layer_type_in_pop(models, layer_type):
