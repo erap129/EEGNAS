@@ -187,8 +187,6 @@ class NaiveNAS:
         for i, pop in enumerate(weighted_population):
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                 weighted_population[i][key] = 0
-            self.current_chosen_population_sample = random.sample(range(1, globals.config['DEFAULT']['num_subjects'] + 1),
-                                         globals.config['evolution']['cross_subject_sampling_rate'])
             for subject in self.current_chosen_population_sample:
                 final_time, res_test, res_val, res_train, model, model_state = \
                     self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
@@ -204,7 +202,7 @@ class NaiveNAS:
                 weighted_population[i]['finalized_model'] = model
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
-                weighted_population[i][key] /= globals.config['DEFAULT']['num_subjects']
+                weighted_population[i][key] /= globals.config['evolution']['cross_subject_sampling_rate']
 
     def get_average_param(models, layer_type, attribute):
         attr_count = 0
@@ -240,6 +238,7 @@ class NaiveNAS:
                                                                    models_generation.PoolingLayer, 'pool_time')
         stats['average_pool_stride'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
                                                                    models_generation.PoolingLayer, 'stride_time')
+        stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
             stats['%s_count' % layer_type.__name__] = \
@@ -247,12 +246,14 @@ class NaiveNAS:
         return stats
 
     def add_final_stats(self, stats, weighted_population):
+        if globals.config['DEFAULT']['cross_subject']:
+            self.current_chosen_population_sample = range(1, globals.config['DEFAULT']['num_subjects'] + 1)
         for subject in self.current_chosen_population_sample:
             _, res_test, res_val, res_train, _, _ = self.evaluate_model(
-                weighted_population[0]['model'], final_evaluation=True)
+                weighted_population[0]['model'], final_evaluation=True, subject=subject)
             stats['%d_final_train_acc' % subject] = res_train
             stats['%d_final_val_acc' % subject] = res_val
-            stats['%d_test_acc' % subject] = res_test
+            stats['%d_final_test_acc' % subject] = res_test
 
     def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
         configuration = self.config['evolution']
@@ -266,6 +267,9 @@ class NaiveNAS:
             weighted_population.append({'model': new_rand_model, 'model_state': None})
 
         for generation in range(num_generations):
+            self.current_chosen_population_sample = random.sample(
+                range(1, globals.config['DEFAULT']['num_subjects'] + 1),
+                globals.config['evolution']['cross_subject_sampling_rate'])
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
             stats = self.calculate_stats(weighted_population)
@@ -277,11 +281,15 @@ class NaiveNAS:
 
                 while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
                     breeders = random.sample(range(len(weighted_population)), 2)
+                    if globals.config['DEFAULT']['cross_subject']:
+                        model_state_str = '%d_model_state' % random.sample(self.current_chosen_population_sample, 1)[0]
+                    else:
+                        model_state_str = 'model_state'
                     new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
                                                                 first_model=weighted_population[breeders[0]]['model'],
                                              second_model=weighted_population[breeders[1]]['model'],
-                                                first_model_state=weighted_population[breeders[0]]['model_state'],
-                                                second_model_state=weighted_population[breeders[1]]['model_state'])
+                                                first_model_state=weighted_population[breeders[0]][model_state_str],
+                                                second_model_state=weighted_population[breeders[1]][model_state_str])
                     NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
                     weighted_population.append({'model': new_model, 'model_state': new_model_state})
 
@@ -291,7 +299,7 @@ class NaiveNAS:
                     self.mutation_rate = configuration['mutation_rate']
             else:  # last generation
                 torch.save(weighted_population[0]['finalized_model'], "%s/best_model_" % self.exp_folder
-                           + str(self.subject_id) + ".th")
+                           + '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th")
                 self.add_final_stats(stats, weighted_population)
 
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
@@ -532,8 +540,12 @@ class NaiveNAS:
     def write_to_csv(self, csv_file, stats, generation):
         with open(csv_file, 'a', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=self.fieldnames)
+            if self.subject_id == 'all':
+                subject = ','.join(str(x) for x in self.current_chosen_population_sample)
+            else:
+                subject = str(self.subject_id)
             for key, value in stats.items():
-                writer.writerow({'exp_name': self.exp_name, 'subject': str(self.subject_id),
+                writer.writerow({'exp_name': self.exp_name, 'subject': subject,
                                  'generation': str(generation), 'param_name': key, 'param_value': value})
 
     @staticmethod

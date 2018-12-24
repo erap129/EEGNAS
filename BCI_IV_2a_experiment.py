@@ -146,6 +146,7 @@ def cross_subject_exp():
     globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
+
 subdirs = [x for x in os.walk('results')]
 if len(subdirs) == 1:
     exp_id = 1
@@ -190,8 +191,13 @@ try:
             exp_folder = 'results/' + exp_name
             createFolder(exp_folder)
             write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
-            csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_'  + globals.config['DEFAULT']['exp_type'] + '.csv'
+            csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_' +\
+                globals.config['DEFAULT']['exp_type'] + '.csv'
             fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
+            if multiple_values.contains('cross_subject') and not globals.config['DEFAULT']['cross_subject']:
+                globals.config['evolution']['num_generations'] *= \
+                    globals.config['evolution']['cross_subject_sampling_rate']
+                # make num of generations equal for cross and per subject
             if globals.config['DEFAULT']['exp_type'] == 'target':
                 target_exp()
             elif globals.config['DEFAULT']['exp_type'] == 'from_file':
