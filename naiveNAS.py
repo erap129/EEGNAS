@@ -279,7 +279,8 @@ class NaiveNAS:
                         self.remove_from_models_hash(weighted_population[index]['model'], self.models_set, self.genome_set)
                         del weighted_population[index]
 
-                while len(weighted_population) < pop_size:  # breed with random parents until population reaches pop_size
+                children = []
+                while len(weighted_population) + len(children) < pop_size:
                     breeders = random.sample(range(len(weighted_population)), 2)
                     if globals.config['DEFAULT']['cross_subject']:
                         model_state_str = '%d_model_state' % random.sample(self.current_chosen_population_sample, 1)[0]
@@ -291,9 +292,10 @@ class NaiveNAS:
                                                 first_model_state=weighted_population[breeders[0]][model_state_str],
                                                 second_model_state=weighted_population[breeders[1]][model_state_str])
                     NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
-                    weighted_population.append({'model': new_model, 'model_state': new_model_state})
+                    children.append({'model': new_model, 'model_state': new_model_state})
+                weighted_population.extend(children)
 
-                if len(self.genome_set) < configuration['pop_size']:
+                if len(self.genome_set) < configuration['pop_size'] * configuration['unique_model_threshold']:
                     self.mutation_rate *= configuration['mutation_rate_change_factor']
                 else:
                     self.mutation_rate = configuration['mutation_rate']

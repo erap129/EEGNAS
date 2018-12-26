@@ -194,7 +194,7 @@ try:
             csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_' +\
                 globals.config['DEFAULT']['exp_type'] + '.csv'
             fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
-            if multiple_values.contains('cross_subject') and not globals.config['DEFAULT']['cross_subject']:
+            if 'cross_subject' in multiple_values and not globals.config['DEFAULT']['cross_subject']:
                 globals.config['evolution']['num_generations'] *= \
                     globals.config['evolution']['cross_subject_sampling_rate']
                 # make num of generations equal for cross and per subject
