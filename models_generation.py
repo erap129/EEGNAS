@@ -143,7 +143,7 @@ class MyModel:
         self.name = name
 
     @staticmethod
-    def new_model_from_structure_pytorch(layer_collection, applyFix=False):
+    def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
         config = globals.config
         model = nn.Sequential()
         if globals.config['DEFAULT']['channel_dim'] != 'channels' or globals.config['DEFAULT']['exp_type'] == 'target':
@@ -164,7 +164,6 @@ class MyModel:
                 prev_eeg_channels = MyModel.n_chans
                 prev_time = globals.config['DEFAULT']['input_time_len']
                 prev_channels = 1
-
             if isinstance(layer, PoolingLayer):
                 while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
                     if random.uniform(0,1) < 0.5 and layer.pool_time > 1:
@@ -213,7 +212,8 @@ class MyModel:
 
         if applyFix:
             return layer_collection
-
+        if check_model:
+            return
         init.xavier_uniform_(list(model._modules.items())[-3][1].weight, gain=1)
         init.constant_(list(model._modules.items())[-3][1].bias, 0)
         if not globals.config['DEFAULT']['cuda']:
@@ -248,7 +248,8 @@ class MyModel:
 
 def check_legal_model(layer_collection):
     try:
-        finalize_model(layer_collection)
+        MyModel.new_model_from_structure_pytorch(layer_collection, check_model=True)
+        # finalize_model(layer_collection)
         return True
     except Exception as e:
         print('check legal model failed. Exception message: %s' % (str(e)))
