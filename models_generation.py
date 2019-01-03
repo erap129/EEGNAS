@@ -248,8 +248,8 @@ class MyModel:
 
 def check_legal_model(layer_collection):
     try:
-        MyModel.new_model_from_structure_pytorch(layer_collection, check_model=True)
-        # finalize_model(layer_collection)
+        # MyModel.new_model_from_structure_pytorch(layer_collection, check_model=True)
+        finalize_model(layer_collection)
         return True
     except Exception as e:
         print('check legal model failed. Exception message: %s' % (str(e)))

@@ -300,8 +300,12 @@ class NaiveNAS:
                 else:
                     self.mutation_rate = configuration['mutation_rate']
             else:  # last generation
-                torch.save(weighted_population[0]['finalized_model'], "%s/best_model_" % self.exp_folder
-                           + '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th")
+                try:
+                    save_model = weighted_population[0]['finalized_model'].to("cpu")
+                    torch.save(save_model, "%s/best_model_" % self.exp_folder
+                               + '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th")
+                except:
+                    print("failed to save model")
                 self.add_final_stats(stats, weighted_population)
 
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
