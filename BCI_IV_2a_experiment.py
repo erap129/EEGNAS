@@ -18,10 +18,10 @@ import globals
 import random
 import sys
 import csv
-import traceback
 import time
 import json
 import code, traceback, signal
+
 
 def debug(sig, frame):
     """Interrupt running process, and provide a python prompt for
@@ -35,8 +35,11 @@ def debug(sig, frame):
     message += ''.join(traceback.format_stack(frame))
     i.interact(message)
 
+
 def listen():
-    signal.signal(signal.SIGUSR1, debug)  # Register handler
+    if sys.platform == "linux" or sys.platform == "linux2":
+        signal.signal(signal.SIGUSR1, debug)  # Register handler
+
 
 global data_folder, valid_set_fraction, config
 init_config()

@@ -1,7 +1,6 @@
 import torch
 import traceback
 import numpy as np
-from keras_models import mean_layer
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 import os
@@ -44,12 +43,6 @@ class Layer():
     def make_connection(self, other):
         self.connections.append(other)
         other.parent = self
-
-
-class LambdaLayer(Layer):
-    def __init__(self, function):
-        Layer.__init__(self)
-        self.function = function
 
 class InputLayer(Layer):
     def __init__(self, shape_height, shape_width):
@@ -405,9 +398,6 @@ def finalize_model(layer_collection):
     layer_collection.append(conv_layer)
     softmax = ActivationLayer('softmax')
     layer_collection.append(softmax)
-    if globals.config['DEFAULT']['cropping']:
-        mean = LambdaLayer(mean_layer)
-        layer_collection.append(mean)
     flatten = FlattenLayer()
     layer_collection.append(flatten)
     return MyModel.new_model_from_structure_pytorch(layer_collection)

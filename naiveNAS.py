@@ -166,7 +166,7 @@ class NaiveNAS:
                                                    n_preds_per_input=globals.config['DEFAULT']['n_preds_per_input'])
         else:
             model = target_model()
-        final_time, res_test, res_val, res_train, model, model_state = self.evaluate_model(model)
+        final_time, res_test, res_val, res_train, model, model_state, num_epochs = self.evaluate_model(model)
         stats = {'train_acc': str(res_train), 'val_acc': str(res_val),
                  'test_acc': str(res_test), 'train_time': str(final_time)}
         self.write_to_csv(csv_file, stats, generation=1)
@@ -174,7 +174,7 @@ class NaiveNAS:
     def one_strategy(self, weighted_population, generation):
         self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
-            final_time, res_test, res_val, res_train, model, model_state = \
+            final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
                 self.evaluate_model(pop['model'], pop['model_state'])
             weighted_population[i]['res_train'] = res_train
             weighted_population[i]['res_val'] = res_val
@@ -182,6 +182,7 @@ class NaiveNAS:
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
+            weighted_population[i]['num_epochs'] = num_epochs
             print('trained model %d in generation %d' % (i + 1, generation))
 
     def all_strategy(self, weighted_population, generation):
@@ -192,7 +193,7 @@ class NaiveNAS:
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
-                final_time, res_test, res_val, res_train, model, model_state = \
+                final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
                     self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
                 weighted_population[i]['%d_res_train' % subject] = res_train
                 weighted_population[i]['res_train'] += res_train
@@ -203,11 +204,14 @@ class NaiveNAS:
                 weighted_population[i]['%d_train_time' % subject] = final_time
                 weighted_population[i]['train_time'] += final_time
                 weighted_population[i]['%d_model_state' % subject] = model_state
-                weighted_population[i]['finalized_model'] = model
+                weighted_population[i]['%d_num_epochs' % subject] = num_epochs
+                weighted_population[i]['num_epochs'] += num_epochs
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
+            weighted_population[i]['finalized_model'] = model
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                 weighted_population[i][key] /= globals.config['evolution']['cross_subject_sampling_rate']
 
+    @staticmethod
     def get_average_param(models, layer_type, attribute):
         attr_count = 0
         count = 0
@@ -220,20 +224,18 @@ class NaiveNAS:
 
     def calculate_stats(self, weighted_population):
         stats = {}
-        stats['train_acc'] = np.mean([sample['res_train'] for sample in weighted_population])
-        stats['val_acc'] = np.mean([sample['res_val'] for sample in weighted_population])
-        stats['test_acc'] = np.mean([sample['res_test'] for sample in weighted_population])
-        stats['train_time'] = np.mean([sample['train_time'] for sample in weighted_population])
+        params = ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']
+        for param in params:
+            stats[param] = np.mean([sample[param] for sample in weighted_population])
         if self.subject_id == 'all':
             for subject in self.current_chosen_population_sample:
-                stats['%d_train_acc' % subject] = np.mean([sample['%d_res_train' % subject] for sample in weighted_population])
-                stats['%d_val_acc' % subject] = np.mean([sample['%d_res_val' % subject] for sample in weighted_population])
-                stats['%d_test_acc' % subject] = np.mean([sample['%d_res_test' % subject] for sample in weighted_population])
-                stats['%d_train_time' % subject] = np.mean([sample['%d_train_time' % subject] for sample in weighted_population])
+                for param in params:
+                    stats['%d_%s' % (subject, param)] = np.mean(
+                        [sample['%d_%s' % (subject, param)] for sample in weighted_population])
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
-        stats['average_conv_width'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population], models_generation.ConvLayer,
-                                                                 'kernel_eeg_chan')
+        stats['average_conv_width'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
+                                                                 models_generation.ConvLayer, 'kernel_eeg_chan')
         stats['average_conv_height'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
                                                                  models_generation.ConvLayer, 'kernel_time')
         stats['average_conv_filters'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
@@ -356,7 +358,7 @@ class NaiveNAS:
                                                ('valid', self.datasets['valid'][subject - 1]),
                                                ('test', self.datasets['test'][subject - 1])))
         else:
-            single_subj_dataset = None
+            single_subj_dataset = self.datasets
         self.epochs_df = pd.DataFrame()
         if globals.config['DEFAULT']['do_early_stop']:
             self.rememberer = RememberBest(globals.config['DEFAULT']['remember_best_column'])
@@ -366,34 +368,27 @@ class NaiveNAS:
             finalized_model = finalize_model(model)
         if globals.config['DEFAULT']['cropping']:
             to_dense_prediction_model(finalized_model.model)
-            if not globals.config['DEFAULT']['cuda']:
-                summary(finalized_model.model, (22, globals.config['DEFAULT']['input_time_len'], 1))
-        if state is not None and globals.config['evolution']['inherit_weights']:
+        if globals.config['evolution']['inherit_weights']:
+            assert(state is not None)
             finalized_model.model.load_state_dict(state)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
             finalized_model.model.cuda()
-        if subject is not None and globals.config['DEFAULT']['cross_subject']:
-            self.monitor_epoch(single_subj_dataset, finalized_model.model)
-        else:
-            self.monitor_epoch(self.datasets, finalized_model.model)
+        self.monitor_epoch(single_subj_dataset, finalized_model.model)
         if globals.config['DEFAULT']['log_epochs']:
             self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
             self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
         self.iterator.reset_rng()
         start = time.time()
-        self.run_until_stop(finalized_model.model, self.datasets, single_subj_dataset)
+        num_epochs = self.run_until_stop(finalized_model.model, single_subj_dataset)
         self.setup_after_stop_training(finalized_model.model, final_evaluation)
         if final_evaluation:
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
-            if subject is not None and globals.config['DEFAULT']['cross_subject']:
-                datasets = single_subj_dataset
-            else:
-                datasets = self.datasets
+            datasets = single_subj_dataset
             datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
-            self.run_until_stop(finalized_model.model, datasets, single_subj_dataset)
+            num_epochs += self.run_until_stop(finalized_model.model, datasets, single_subj_dataset)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
                 self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
         end = time.time()
@@ -401,7 +396,7 @@ class NaiveNAS:
         res_val = 1 - self.epochs_df.iloc[-1]['valid_misclass']
         res_train = 1 - self.epochs_df.iloc[-1]['train_misclass']
         final_time = end-start
-        return final_time, res_test, res_val, res_train, finalized_model.model, self.rememberer.model_state_dict
+        return final_time, res_test, res_val, res_train, finalized_model.model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
         self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
@@ -411,12 +406,12 @@ class NaiveNAS:
                 MaxEpochs(max_epochs=self.rememberer.best_epoch * 2),
                 ColumnBelow(column_name='valid_loss', target_value=loss_to_reach)])
 
-    def run_until_stop(self, model, datasets, single_subj_dataset):
+    def run_until_stop(self, model, single_subj_dataset):
+        num_epochs = 0
         while not self.stop_criterion.should_stop(self.epochs_df):
-            if single_subj_dataset is None:
-                self.run_one_epoch(datasets, model)
-            else:
-                self.run_one_epoch(single_subj_dataset, model)
+            self.run_one_epoch(single_subj_dataset, model)
+            num_epochs += 1
+        return num_epochs
 
     def run_one_epoch(self, datasets, model):
         model.train()

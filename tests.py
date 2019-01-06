@@ -9,11 +9,12 @@ from braindecode.models.util import to_dense_prediction_model
 import json
 import random
 import globals
+from globals import init_config
 from itertools import product
 
 class TestModelGeneration(unittest.TestCase):
     def setUp(self):
-        globals.init_config()
+        init_config()
         dummy_config = {'DEFAULT':{}, 'evolution':{}}
         globals.set_config(dummy_config)
         dummy_config['DEFAULT']['exp_type'] = "evolution_layers"
@@ -45,6 +46,7 @@ class TestModelGeneration(unittest.TestCase):
         dummy_config['evolution']['num_subjects'] = 3
         dummy_config['evolution']['mutation_rate'] = 0.1
         dummy_config['evolution']['breed_rate'] = 1
+        dummy_config['evolution']['inherit_weights'] = False
         dummy_config['evolution']['num_conv_blocks'] = 3
         dummy_config['evolution']['num_layers'] = 10
         dummy_config['evolution']['random_filter_range_min'] = 10
@@ -53,7 +55,7 @@ class TestModelGeneration(unittest.TestCase):
     def test_breed(self):
         model1 = uniform_model(10, BatchNormLayer)
         model2 = uniform_model(10, DropoutLayer)
-        model3 = breed_layers(model1, model2, cut_point=4)
+        model3 = breed_layers(0, model1, model2, cut_point=4)
         for i in range(10):
             if i < 4:
                 assert(type(model3[i]).__name__ == type(model1[i]).__name__)
@@ -172,11 +174,6 @@ class TestModelGeneration(unittest.TestCase):
             assert((s1==s3).all())
         for s2, s3 in zip(list(model2_state.values())[6:8], list(model3_state.values())[6:8]):
             assert((s2==s3).all())
-
-
-
-
-
 
 
 if __name__ == '__main__':

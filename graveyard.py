@@ -365,3 +365,496 @@ def create_topo_layers(layers):
         model1 = pickle.loads(model1)
         for layer in model1:
             assert(pickle.dumps(layer) == pickle.dumps(ActivationLayer()))
+
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+import datetime
+import numpy as np
+import pandas as pd
+import keras_models
+from naiveNAS import NaiveNAS
+import matplotlib
+matplotlib.use('Agg')
+from generator import four_class_example_generator
+import sklearn.metrics
+from autokeras import ImageClassifier
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from braindecode.datautil.splitters import split_into_two_sets
+from data_preprocessing import handle_subject_data
+from tpot import TPOTClassifier
+import time
+import random
+
+def createFolder(directory):
+    try:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    except OSError:
+        print ('Error: Creating directory. ' +  directory)
+
+
+def run_genetic_filters(exp_id, configuration):
+    subjects = random.sample(range(9), configuration.getint('num_subjects'))
+    exp_folder = str(exp_id) + '_evolution_' + '_'.join(configuration.values())
+    merged_results_dict = {'subject': [], 'generation': [], 'val_acc': []}
+    for subject_id in subjects:
+        X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id)
+        naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
+                            X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
+                            X_test=X_test, y_test=y_test, configuration=configuration, subject_id=subject_id, cropping=False)
+        results_dict = naiveNAS.evolution_filters()
+        for key in results_dict.keys():
+            merged_results_dict[key] = merged_results_dict[key], results_dict[key]
+    createFolder(exp_folder)
+    pd.DataFrame.from_dict(merged_results_dict, orient='index').to_csv(exp_folder + 'results.csv')
+
+
+def run_keras_model(X_train, y_train, X_valid, y_valid, X_test, y_test, row, cropping=False, mode='deep'):
+    print('--------------running keras model--------------')
+    earlystopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10)
+    mcp = ModelCheckpoint('best_keras_model.hdf5', save_best_only=True, monitor='val_acc', mode='max')
+    start = time.time()
+    if mode == 'deep':
+        model = keras_models.deep_model_mimic(X_train.shape[1], X_train.shape[2], 4, cropped=cropping)
+    elif mode == 'shallow':
+        model = keras_models.shallow_model_mimic(X_train.shape[1], X_train.shape[2], 4, cropped=cropping)
+    if cropping:
+        model = keras_models.convert_to_dilated(model)
+
+    model.fit(X_train, y_train, epochs=50, validation_data=(X_valid, y_valid), callbacks=[earlystopping, mcp])
+    model.load_weights('best_keras_model.hdf5')
+    end = time.time()
+    res = model.evaluate(X_test, y_test)[1] * 100
+    print('accuracy for keras model:', res)
+    print('runtime for keras model:', end - start)
+    row = np.append(row, res)
+    row = np.append(row, str(end - start))
+    return row
+
+
+def run_tpot_model(train_set, test_set, row):
+    print('--------------running tpot model--------------')
+    tpot = TPOTClassifier(generations=5, population_size=20, verbosity=2)
+    start = time.time()
+    print(train_set.X.shape)
+    print(train_set.y.shape)
+    train_set_reshpX = train_set.X.reshape(train_set.X.shape[0], -1)
+    test_set_reshpX = test_set.X.reshape(train_set.X.shape[0], -1)
+    tpot.fit(train_set_reshpX, train_set.y)
+    end = time.time()
+    row = np.append(row, tpot.score(test_set_reshpX, test_set.y))
+    row = np.append(row, str(end - start))
+    return row
+
+
+def run_autokeras_model(X_train, y_train, X_test, y_test, row=None):
+    print('--------------running auto-keras model--------------')
+    print("X_train.shape is: %s" % (str(X_train.shape)))
+    start = time.time()
+    clf = ImageClassifier(verbose=True, searcher_args={'trainer_args': {'max_iter_num': 5}})
+    clf.fit(X_train, y_train, time_limit=12 * 60 * 60)
+    clf.final_fit(X_train, y_train, X_test, y_test, retrain=False)
+    end = time.time()
+    y = clf.evaluate(X_test, y_test)
+    print('autokeras result:', row * 100)
+    if row is not None:
+        row = np.append(row, str(y * 100))
+        row = np.append(row, str(end - start))
+        return row
+
+
+def run_auto_sklearn_model(train_set, test_set, row):
+    print('--------------running auto-sklearn model--------------')
+    train_set_reshpX = train_set.X.reshape(train_set.X.shape[0], -1)
+    test_set_reshpX = test_set.X.reshape(train_set.X.shape[0], -1)
+    automl = autosklearn.classification.AutoSklearnClassifier(
+        time_left_for_this_task=120,
+        per_run_time_limit=30,
+        tmp_folder='autosklearn_cv_example_tmp',
+        output_folder='autosklearn_cv_example_out',
+        delete_tmp_folder_after_terminate=True,
+        resampling_strategy='cv',
+        resampling_strategy_arguments={'folds': 5},
+    )
+    # fit() changes the data in place, but refit needs the original data. We
+    # therefore copy the data. In practice, one should reload the data
+    start = time.time()
+    automl.fit(train_set_reshpX.copy(), train_set.y.copy(), dataset_name='digits')
+    # During fit(), models are fit on individual cross-validation folds. To use
+    # all available data, we call refit() which trains all models in the
+    # final ensemble on the whole dataset.
+    automl.refit(train_set_reshpX.copy(), train_set.y.copy())
+    end = time.time()
+    predictions = automl.predict(test_set_reshpX)
+    res = sklearn.metrics.accuracy_score(test_set.y, predictions)
+    row = np.append(row, res)
+    row = np.append(row, str(end - start))
+    return row
+
+
+def run_exp(X_train, y_train, X_valid, y_valid, X_test, y_test, subject, toggle, cropping=False):
+    now = str(datetime.datetime.now()).replace(":", "-")
+    row = np.array([])
+    row = np.append(row, now)
+    row = np.append(row, str(subject))
+    for config in toggle.keys():
+        if config == 'keras' and toggle[config]:
+            row = run_keras_model(X_train, y_train, X_valid, y_valid, X_test, y_test, row, cropping=cropping, mode='deep')
+    print('row is:', row)
+    return row
+
+
+def automl_comparison(cropping=False):
+    data_folder = 'data/'
+    low_cut_hz = 0
+    results = pd.DataFrame(columns=['date', 'subject'])
+    toggle = {'keras': True, 'tpot': False, 'auto-keras': False, 'auto-sklearn': False}
+    for setting in toggle.keys():
+        if toggle[setting]:
+            results[setting+'_acc'] = None
+            results[setting+'_runtime'] = None
+
+    for subject_id in range(1, 10):
+        X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id, cropping=cropping)
+        row = run_exp(X_train, y_train, X_valid, y_valid, X_test, y_test, subject_id, toggle, cropping=cropping)
+        results.loc[subject_id - 1] = row
+
+    now = str(datetime.datetime.now()).replace(":", "-")
+    header = True
+    if os.path.isfile('results' + now + '.csv'):
+        header = False
+    results.to_csv('results/results' + now + '.csv', mode='a', header=header)
+
+
+def spectrogram_autokeras():
+    global data_folder
+    train_set, test_set = get_train_test(data_folder, 1, 0)
+    train_specs, test_specs = create_spectrograms_from_raw(train_set=train_set, test_set=test_set)
+    print(train_specs.shape)
+    print(train_specs)
+    train_specs = train_specs[:, :, :, 0:10]
+    test_specs = test_specs[:, :, :, 0:10]
+    print('train_specs.shape is:', train_specs.shape)
+    run_autokeras_model(train_specs[:10], train_set.y[:10], test_specs[:10], test_set.y[:10])
+
+
+def run_naive_nas(real_data=True, toy_data=False):
+    global data_folder, valid_set_fraction
+    now = str(datetime.datetime.now()).replace(":", "-")
+    accuracies = np.zeros(9)
+    if real_data:
+        for subject_id in range(1, 10):
+            X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id)
+            naiveNAS = NaiveNAS(n_classes=4, input_time_len=1125, n_chans=22,
+                                X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
+                                X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
+            accuracies[subject_id-1] = naiveNAS.find_best_model_evolution()
+        np.savetxt('results/naive_nas_'+now+'.csv', accuracies, delimiter=',')
+
+    if toy_data:
+        X_train, y_train, X_val, y_val, X_test, y_test = four_class_example_generator()
+        print(X_test)
+        print(y_test)
+        naiveNAS = NaiveNAS(n_classes=4, input_time_len=1000, n_chans=4,
+                            X_train=X_train, y_train=y_train, X_valid=X_val, y_valid=y_val,
+                            X_test=X_test, y_test=y_test)
+        naiveNAS.find_best_model('filter_experiment')
+
+
+def run_grid_search(subject_id, cropping=False):
+    X_train, y_train, X_valid, y_valid, X_test, y_test = handle_subject_data(subject_id, cropping=cropping)
+    if cropping:
+        input_time_len = 1000
+    else:
+        input_time_len = 1125
+    naiveNAS = NaiveNAS(n_classes=4, input_time_len=input_time_len, n_chans=22,
+                        X_train=X_train, y_train=y_train, X_valid=X_valid, y_valid=y_valid,
+                        X_test=X_test, y_test=y_test, subject_id=subject_id, cropping=False)
+    naiveNAS.grid_search_filters(1, 21, 1)
+
+
+def show_spectrogram(data):
+    fig = plt.figure(frameon=False)
+    fig.set_size_inches(256/96, 256/96)
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+    ax.specgram(data, NFFT=256, Fs=250)
+    fig.canvas.draw()
+    plt.show()
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+
+def create_all_spectrograms(dataset, im_size=256):
+    n_chans = len(dataset.X[1])
+    specs = np.zeros((dataset.X.shape[0], im_size, im_size, n_chans * 3))
+    for i, trial in enumerate(dataset.X):
+        for j, channel in enumerate(trial):
+            fig = plt.figure(frameon=False)
+            fig.set_size_inches((im_size - 10) / 96, (im_size - 10) / 96)
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            ax.set_axis_off()
+            fig.add_axes(ax)
+            ax.specgram(channel, NFFT=256, Fs=250)
+            fig.canvas.draw()
+            data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+            data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            specs[i, :, :, 3 * j:3 * (j + 1)] = data
+            plt.close(fig)
+        if i % 10 == 0:
+            print('finished trial:', i)
+    return specs
+
+
+def create_spectrograms_from_raw(train_set, test_set):
+    return create_all_spectrograms(train_set), create_all_spectrograms(test_set)
+
+
+class cropped_set:
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+
+def create_supercrops(train_set, test_set, crop_size):
+    trial_len = train_set.X.shape[2]
+    print('trial_len is:', trial_len)
+    ncrops_per_trial = trial_len/crop_size
+    if ncrops_per_trial % crop_size != 0:
+        ncrops_per_trial += 1
+    X_train_crops = int(train_set.X.shape[0] * ncrops_per_trial)
+    X_trial_len = crop_size
+    nchans = 22
+    X_test_crops = int(test_set.X.shape[0] * ncrops_per_trial)
+    new_train_set_X = np.zeros((X_train_crops, nchans, X_trial_len))
+    new_train_set_y = np.zeros(X_train_crops)
+    new_test_set_X = np.zeros((X_test_crops, nchans, X_trial_len))
+    new_test_set_y = np.zeros(X_test_crops)
+    for i, trial in enumerate(train_set.X):
+        curr_loc = int(ncrops_per_trial * i)
+        new_train_set_X[curr_loc] = trial[:, 0:crop_size]
+        new_train_set_X[curr_loc + 1] = trial[:, trial_len - crop_size:]
+        new_train_set_y[curr_loc] = train_set.y[i]
+        new_train_set_y[curr_loc + 1] = train_set.y[i]
+    for i, trial in enumerate(test_set.X):
+        curr_loc = int(ncrops_per_trial * i)
+        new_test_set_X[curr_loc] = trial[:, 0:crop_size]
+        new_test_set_X[curr_loc + 1] = trial[:, trial_len - crop_size:]
+        new_test_set_y[curr_loc] = test_set.y[i]
+        new_test_set_y[curr_loc + 1] = test_set.y[i]
+    return cropped_set(new_train_set_X, new_train_set_y), cropped_set(new_test_set_X, new_test_set_y)
+
+
+def handle_subject_data(subject_id, cropping=False):
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+    train_set, test_set = get_train_test(config['DEFAULT']['data_folder'], subject_id, 0)
+    if cropping:
+        train_set, test_set = create_supercrops(train_set, test_set, crop_size=1000)
+        print('train_set.X.shape is:', train_set.X.shape)
+        print('train_set.y.shape is:', train_set.y.shape)
+    train_set, valid_set = split_into_two_sets(
+        train_set, first_set_fraction=1 - config['DEFAULT'].getfloat('valid_set_fraction'))
+    X_train = train_set.X[:, :, :, np.newaxis]
+    X_valid = valid_set.X[:, :, :, np.newaxis]
+    X_test = test_set.X[:, :, :, np.newaxis]
+    y_train = to_categorical(train_set.y, num_classes=4)
+    y_valid = to_categorical(valid_set.y, num_classes=4)
+    y_test = to_categorical(test_set.y, num_classes=4)
+    return X_train, y_train, X_valid, y_valid, X_test, y_test
+
+
+from keras.models import Sequential
+from keras.layers import Input, Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, BatchNormalization
+from keras.models import model_from_json, Model
+import numpy as np
+import keras.backend as K
+
+
+def shallow_model_mimic(n_chans, input_time_length, n_classes, n_filters_time=40, n_filters_spat=40,
+                        filter_time_length=25, cropped=False):
+    model = Sequential()
+    model.add(Conv2D(name='temporal_convolution', filters=n_filters_time, input_shape=(n_chans, input_time_length, 1),
+                     kernel_size=(1, filter_time_length), strides=(1, 1)))
+    model.add(Conv2D(name='spatial_filter', filters=n_filters_spat, kernel_size=(n_chans, 1), strides=(1, 1)))
+    model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
+    model.add(Lambda(lambda x: x ** 2))  # squaring layer
+    model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 75), 'strides': (1, 15), 'dilation_rate': (1, 1), 'pooling_type': 'AVG'}))
+    model.add(Lambda(lambda x: K.log(K.clip(x, min_value=1e-6, max_value=None))))
+    model.add(Dropout(0.5))
+    if cropped:
+        final_kernel_size = 30
+    else:
+        final_kernel_size = int(model.layers[-1].output_shape[2])
+    model.add(Conv2D(filters=n_classes, kernel_size=(1, final_kernel_size), strides=(1, 1)))
+    model.add(Activation('softmax'))
+    if cropped:
+        model.add(Lambda(mean_layer))
+    model.add(Flatten())
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
+
+
+def dilation_pool(x, window_shape, strides, dilation_rate, pooling_type='MAX'):
+    import tensorflow as tf
+    return tf.nn.pool(x, window_shape=window_shape, strides=strides, dilation_rate=dilation_rate,
+                      pooling_type=pooling_type, padding='VALID')
+
+
+def mean_layer(x):
+    import keras.backend as K
+    return K.mean(x, axis=2)
+
+
+# trying to mimic exactly what was done in pytorch in the paper implementation
+def deep_model_mimic(n_chans, input_time_length, n_classes, n_filters_time=25, n_filters_spat=25, filter_time_length=10,
+                  n_filters_2=50, filter_len_2=10, n_filters_3=100, filter_len_3=10, n_filters_4=200,
+                  filter_len_4=10, cropped=False):
+    model = Sequential()
+    model.add(Conv2D(name='temporal_convolution', filters=n_filters_time, input_shape=(n_chans, input_time_length, 1),
+                     kernel_size=(1, filter_time_length), strides=(1,1)))
+    model.add(Conv2D(name='spatial_filter', filters=n_filters_spat, kernel_size=(n_chans, 1), strides=(1,1)))
+    model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
+    model.add(Activation('elu'))
+    model.add(Lambda(dilation_pool, arguments={'window_shape': (1,3), 'strides': (1,3), 'dilation_rate': (1,1)}))
+
+    model.add(Conv2D(filters=n_filters_2, kernel_size=(1, filter_len_2), strides=(1, 1)))
+    model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
+    model.add(Activation('elu'))
+    model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 3), 'strides': (1, 3), 'dilation_rate': (1,1)}))
+
+    model.add(Conv2D(filters=n_filters_3, kernel_size=(1, filter_len_3), strides=(1, 1)))
+    model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
+    model.add(Activation('elu'))
+    model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 3), 'strides': (1, 3), 'dilation_rate': (1,1)}))
+
+    model.add(Dropout(0.5))
+    model.add(Conv2D(filters=n_filters_4, kernel_size=(1, filter_len_4), strides=(1, 1)))
+    model.add(BatchNormalization(axis=3, momentum=0.1, epsilon=1e-5))
+    model.add(Activation('elu'))
+    model.add(Lambda(dilation_pool, arguments={'window_shape': (1, 3), 'strides': (1, 3), 'dilation_rate': (1,1)}))
+    if cropped:
+        final_kernel_size = 2
+    else:
+        final_kernel_size = int(model.layers[-1].output_shape[2])
+    model.add(Conv2D(filters=n_classes, kernel_size=(1, final_kernel_size), strides=(1, 1)))
+    model.add(Activation('softmax'))
+    if cropped:
+        model.add(Lambda(mean_layer))
+    model.add(Flatten())
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
+
+
+def convert_to_dilated(model):
+    axis = [0,1]
+    stride_so_far = np.array([1,1])
+    for layer in model.layers:
+        if hasattr(layer, 'dilation_rate') or (hasattr(layer, 'arguments') and 'dilation_rate' in layer.arguments):
+            if hasattr(layer, 'arguments'):
+                dilation_rate = layer.arguments['dilation_rate']
+            else:
+                dilation_rate = layer.dilation_rate
+            assert dilation_rate == 1 or (dilation_rate == (1, 1)), (
+                "Dilation should equal 1 before conversion, maybe the model is "
+                "already converted?")
+            new_dilation = [1, 1]
+            for ax in axis:
+                new_dilation[ax] = int(stride_so_far[ax])
+            if hasattr(layer, 'arguments'):
+                layer.arguments['dilation_rate'] = tuple(new_dilation)
+            else:
+                layer.dilation_rate = tuple(new_dilation)
+        if hasattr(layer, 'strides') or (hasattr(layer, 'arguments') and 'strides' in layer.arguments):
+            if hasattr(layer, 'arguments'):
+                strides = layer.arguments['strides']
+            else:
+                strides = layer.strides
+            if not hasattr(strides, '__len__'):
+                strides = (strides, strides)
+            stride_so_far *= np.array(strides)
+            new_stride = list(strides)
+            for ax in axis:
+                new_stride[ax] = 1
+            if hasattr(layer, 'arguments'):
+                layer.arguments['strides'] = tuple(new_stride)
+            else:
+                layer.strides = tuple(new_stride)
+    new_model = model_from_json(model.to_json())
+    print(model.layers)
+    new_model.summary()
+    new_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return new_model
+
+
+
+def deep_model_cropped(n_chans, input_time_length, n_classes, n_filters_time=25, n_filters_spat=25, filter_time_length=10,
+                  n_filters_2=50, filter_len_2=10, n_filters_3=100, filter_len_3=10, n_filters_4=200,
+                  filter_len_4=10, n_filters_5=400, filter_len_5=4):
+    model = Sequential()
+    model.add(Conv2D(name='temporal_convolution', filters=n_filters_time, input_shape=(n_chans, input_time_length, 1),
+                     kernel_size=(1, filter_time_length), strides=(1,1), activation='elu'))
+    model.add(Conv2D(name='spatial_filter', filters=n_filters_spat, kernel_size=(n_chans, 1), strides=(1,1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1,3), strides=(1,3)))
+
+    model.add(Conv2D(filters=n_filters_2, kernel_size=(1, filter_len_2), strides=(1, 1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1,3), strides=(1,3)))
+
+    model.add(Conv2D(filters=n_filters_3, kernel_size=(1, filter_len_3), strides=(1, 1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
+
+    model.add(Conv2D(filters=n_filters_4, kernel_size=(1, filter_len_4), strides=(1, 1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
+
+    model.add(Dropout(0.5))
+
+    model.add(Conv2D(filters=n_classes, kernel_size=(1, 2), strides=(1, 1), activation='softmax'))
+    model.add(Flatten())
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
+
+
+
+
+def deep_model(n_chans, input_time_length, n_classes, n_filters_time=25, n_filters_spat=25, filter_time_length=10,
+                  n_filters_2=50, filter_len_2=10, n_filters_3=100, filter_len_3=10, n_filters_4=200,
+                  filter_len_4=10, n_filters_5=400, filter_len_5=4):
+    model = Sequential()
+    model.add(Conv2D(name='temporal_convolution', filters=n_filters_time, input_shape=(n_chans, input_time_length, 1),
+                     kernel_size=(1, filter_time_length), strides=(1,1), activation='elu'))
+
+    # note that this is a different implementation from the paper!
+    # they didn't put an activation function between the first two convolutions
+    # Also, in the paper they implemented batch-norm before each non-linearity - which I didn't do!
+    # Also, they added dropout for each input the conv layers except the first! I dropped out only in the end
+
+    model.add(Conv2D(name='spatial_filter', filters=n_filters_spat, kernel_size=(n_chans, 1), strides=(1,1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1,3), strides=(1,3)))
+
+    model.add(Conv2D(filters=n_filters_2, kernel_size=(1, filter_len_2), strides=(1, 1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1,3), strides=(1,3)))
+
+    model.add(Conv2D(filters=n_filters_3, kernel_size=(1, filter_len_3), strides=(1, 1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
+
+    model.add(Conv2D(filters=n_filters_4, kernel_size=(1, filter_len_4), strides=(1, 1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
+
+    model.add(Dropout(0.5))
+
+    model.add(Conv2D(filters=n_filters_5, kernel_size=(1, filter_len_5), strides=(1, 1), activation='elu'))
+    model.add(MaxPool2D(pool_size=(1, 3), strides=(1, 3)))
+
+    model.add(Dropout(0.5))
+
+    model.add(Conv2D(filters=n_classes, kernel_size=(1, 2), strides=(1, 1), activation='softmax'))
+    model.add(Flatten())
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
+
