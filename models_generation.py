@@ -170,6 +170,8 @@ class MyModel:
                         layer.pool_time -= 1
                     elif layer.stride_time > 1:
                         layer.stride_time -=1
+                    if layer.pool_time == 1 and layer.stride_time == 1:
+                        break
                 if globals.config['DEFAULT']['channel_dim'] == 'channels':
                     layer.pool_eeg_chan = 1
                 model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),

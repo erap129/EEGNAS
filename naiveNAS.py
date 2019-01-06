@@ -172,6 +172,7 @@ class NaiveNAS:
         self.write_to_csv(csv_file, stats, generation=1)
 
     def one_strategy(self, weighted_population, generation):
+        self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
             final_time, res_test, res_val, res_train, model, model_state = \
                 self.evaluate_model(pop['model'], pop['model_state'])
@@ -184,6 +185,9 @@ class NaiveNAS:
             print('trained model %d in generation %d' % (i + 1, generation))
 
     def all_strategy(self, weighted_population, generation):
+        self.current_chosen_population_sample = random.sample(
+            range(1, globals.config['DEFAULT']['num_subjects'] + 1),
+            globals.config['evolution']['cross_subject_sampling_rate'])
         for i, pop in enumerate(weighted_population):
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                 weighted_population[i][key] = 0
@@ -267,9 +271,6 @@ class NaiveNAS:
             weighted_population.append({'model': new_rand_model, 'model_state': None})
 
         for generation in range(num_generations):
-            self.current_chosen_population_sample = random.sample(
-                range(1, globals.config['DEFAULT']['num_subjects'] + 1),
-                globals.config['evolution']['cross_subject_sampling_rate'])
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
             stats = self.calculate_stats(weighted_population)
@@ -294,8 +295,7 @@ class NaiveNAS:
                     NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
                     children.append({'model': new_model, 'model_state': new_model_state})
                 weighted_population.extend(children)
-
-                if len(self.genome_set) < configuration['pop_size'] * configuration['unique_model_threshold']:
+                if len(self.models_set) < configuration['pop_size'] * configuration['unique_model_threshold']:
                     self.mutation_rate *= configuration['mutation_rate_change_factor']
                 else:
                     self.mutation_rate = configuration['mutation_rate']
@@ -304,7 +304,7 @@ class NaiveNAS:
                     save_model = weighted_population[0]['finalized_model'].to("cpu")
                     torch.save(save_model, "%s/best_model_" % self.exp_folder
                                + '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th")
-                except:
+                except Exception as e:
                     print("failed to save model")
                 self.add_final_stats(stats, weighted_population)
 
@@ -351,7 +351,7 @@ class NaiveNAS:
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['final_max_epochs']),
                                  NoDecrease('valid_misclass', globals.config['DEFAULT']['final_max_increase_epochs'])])
-        if subject is not None:
+        if subject is not None and globals.config['DEFAULT']['cross_subject']:
             single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject - 1]),
                                                ('valid', self.datasets['valid'][subject - 1]),
                                                ('test', self.datasets['test'][subject - 1])))
@@ -374,7 +374,7 @@ class NaiveNAS:
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
             finalized_model.model.cuda()
-        if subject is not None:
+        if subject is not None and globals.config['DEFAULT']['cross_subject']:
             self.monitor_epoch(single_subj_dataset, finalized_model.model)
         else:
             self.monitor_epoch(self.datasets, finalized_model.model)
@@ -388,7 +388,7 @@ class NaiveNAS:
         self.setup_after_stop_training(finalized_model.model, final_evaluation)
         if final_evaluation:
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
-            if subject is not None:
+            if subject is not None and globals.config['DEFAULT']['cross_subject']:
                 datasets = single_subj_dataset
             else:
                 datasets = self.datasets

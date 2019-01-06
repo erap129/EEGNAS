@@ -21,6 +21,22 @@ import csv
 import traceback
 import time
 import json
+import code, traceback, signal
+
+def debug(sig, frame):
+    """Interrupt running process, and provide a python prompt for
+    interactive debugging."""
+    d={'_frame':frame}         # Allow access to frame object.
+    d.update(frame.f_globals)  # Unless shadowed by global
+    d.update(frame.f_locals)
+
+    i = code.InteractiveConsole(d)
+    message  = "Signal received : entering python shell.\nTraceback:\n"
+    message += ''.join(traceback.format_stack(frame))
+    i.interact(message)
+
+def listen():
+    signal.signal(signal.SIGUSR1, debug)  # Register handler
 
 global data_folder, valid_set_fraction, config
 init_config()
@@ -31,6 +47,7 @@ data_folder = 'data/'
 low_cut_hz = 0
 valid_set_fraction = 0.2
 multiple_values = ''
+listen()
 
 
 def write_dict(dict, filename):
