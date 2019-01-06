@@ -128,16 +128,19 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
     return exp
 
 if __name__ == '__main__':
-    with open("original_test.txt", "a") as file:
-        logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                            level=logging.DEBUG, stream=sys.stdout)
-        # Should contain both .gdf files and .mat-labelfiles from competition
-        data_folder = 'data/'
-        subject_id = 1 # 1-9
-        low_cut_hz = 4 # 0 or 4
-        model = 'deep' #'shallow' or 'deep'
-        cuda = True
-        exp = run_exp(data_folder, subject_id, low_cut_hz, model, cuda)
-        log.info("Last 10 epochs")
-        log.info("\n" + str(exp.epochs_df.iloc[-10:]))
-        file.write("\n" + str(exp.epochs_df.iloc[-10:]))
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    for subject_id in range(1,10):
+        with open("original_test.txt", "a") as file:
+            logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
+                                level=logging.DEBUG, stream=sys.stdout)
+            # Should contain both .gdf files and .mat-labelfiles from competition
+            data_folder = 'data/'
+            low_cut_hz = 4 # 0 or 4
+            model = 'deep' #'shallow' or 'deep'
+            cuda = True
+            exp = run_exp(data_folder, subject_id, low_cut_hz, model, cuda)
+            log.info("\nLast 10 epochs")
+            log.info("\n" + str(exp.epochs_df.iloc[-10:]))
+            file.write("Last 10 epochs \n ----------------------------------------------------------- \n")
+            file.write("\n" + str(exp.epochs_df.iloc[-10:]))
+            file.write('\nThe minimum is %.3f\n' % np.min(exp.epochs_df['test_misclass'].values))

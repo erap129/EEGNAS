@@ -166,10 +166,15 @@ class NaiveNAS:
                                                    n_preds_per_input=globals.config['DEFAULT']['n_preds_per_input'])
         else:
             model = target_model()
-        final_time, res_test, res_val, res_train, model, model_state, num_epochs = self.evaluate_model(model)
+        final_time, res_test, res_val, res_train, model, model_state, num_epochs = self.evaluate_model(model, final_evaluation=True)
         stats = {'train_acc': str(res_train), 'val_acc': str(res_val),
                  'test_acc': str(res_test), 'train_time': str(final_time)}
         self.write_to_csv(csv_file, stats, generation=1)
+
+    def sample_subjects(self):
+        self.current_chosen_population_sample = random.sample(
+            range(1, globals.config['DEFAULT']['num_subjects'] + 1),
+            globals.config['evolution']['cross_subject_sampling_rate'])
 
     def one_strategy(self, weighted_population, generation):
         self.current_chosen_population_sample = [self.subject_id]
@@ -186,10 +191,11 @@ class NaiveNAS:
             print('trained model %d in generation %d' % (i + 1, generation))
 
     def all_strategy(self, weighted_population, generation):
-        self.current_chosen_population_sample = random.sample(
-            range(1, globals.config['DEFAULT']['num_subjects'] + 1),
-            globals.config['evolution']['cross_subject_sampling_rate'])
+        if globals.config['evolution']['cross_subject_sampling_method'] == 'generation':
+            self.sample_subjects()
         for i, pop in enumerate(weighted_population):
+            if globals.config['evolution']['cross_subject_sampling_method'] == 'model':
+                self.sample_subjects()
             for key in ['res_train', 'res_val', 'res_test', 'train_time']:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
@@ -228,10 +234,12 @@ class NaiveNAS:
         for param in params:
             stats[param] = np.mean([sample[param] for sample in weighted_population])
         if self.subject_id == 'all':
+            if globals.config['evolution']['cross_subject_sampling_method'] == 'model':
+                self.current_chosen_population_sample = range(1, globals.config['DEFAULT']['num_subjects']+1)
             for subject in self.current_chosen_population_sample:
                 for param in params:
                     stats['%d_%s' % (subject, param)] = np.mean(
-                        [sample['%d_%s' % (subject, param)] for sample in weighted_population])
+                        [sample['%d_%s' % (subject, param)] for sample in weighted_population if '%d_%s' % (subject, param) in sample.keys()])
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
         stats['average_conv_width'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
@@ -255,11 +263,12 @@ class NaiveNAS:
         if globals.config['DEFAULT']['cross_subject']:
             self.current_chosen_population_sample = range(1, globals.config['DEFAULT']['num_subjects'] + 1)
         for subject in self.current_chosen_population_sample:
-            _, res_test, res_val, res_train, _, _ = self.evaluate_model(
+            _, res_test, res_val, res_train, _, _, num_epochs = self.evaluate_model(
                 weighted_population[0]['model'], final_evaluation=True, subject=subject)
             stats['%d_final_train_acc' % subject] = res_train
             stats['%d_final_val_acc' % subject] = res_val
             stats['%d_final_test_acc' % subject] = res_test
+            stats['%d_final_epoch_num' % subject] = num_epochs
 
     def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
         configuration = self.config['evolution']
