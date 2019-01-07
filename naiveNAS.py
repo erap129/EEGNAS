@@ -144,6 +144,8 @@ class NaiveNAS:
         self.mutation_rate = globals.config['evolution']['mutation_rate']
 
     def run_target_model(self, csv_file):
+        globals.config['DEFAULT']['max_epochs'] = globals.config['DEFAULT']['final_max_epochs']
+        globals.config['DEFAULT']['max_increase_epochs'] = globals.config['DEFAULT']['final_max_increase_epochs']
         if self.model_from_file is not None:
             if torch.cuda.is_available():
                 model = torch.load(self.model_from_file)
@@ -166,7 +168,8 @@ class NaiveNAS:
                                                    n_preds_per_input=globals.config['DEFAULT']['n_preds_per_input'])
         else:
             model = target_model()
-        final_time, res_test, res_val, res_train, model, model_state, num_epochs = self.evaluate_model(model, final_evaluation=True)
+        final_time, res_test, res_val, res_train, model, model_state, num_epochs =\
+            self.evaluate_model(model, final_evaluation=True)
         stats = {'train_acc': str(res_train), 'val_acc': str(res_val),
                  'test_acc': str(res_test), 'train_time': str(final_time)}
         self.write_to_csv(csv_file, stats, generation=1)
@@ -397,7 +400,7 @@ class NaiveNAS:
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             datasets = single_subj_dataset
             datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
-            num_epochs += self.run_until_stop(finalized_model.model, datasets, single_subj_dataset)
+            num_epochs += self.run_until_stop(finalized_model.model, datasets)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
                 self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
         end = time.time()
