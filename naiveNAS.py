@@ -184,9 +184,9 @@ class NaiveNAS:
         for i, pop in enumerate(weighted_population):
             final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
                 self.evaluate_model(pop['model'], pop['model_state'])
-            weighted_population[i]['res_train'] = res_train
-            weighted_population[i]['res_val'] = res_val
-            weighted_population[i]['res_test'] = res_test
+            weighted_population[i]['train_acc'] = res_train
+            weighted_population[i]['val_acc'] = res_val
+            weighted_population[i]['test_acc'] = res_test
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
@@ -199,17 +199,17 @@ class NaiveNAS:
         for i, pop in enumerate(weighted_population):
             if globals.config['evolution']['cross_subject_sampling_method'] == 'model':
                 self.sample_subjects()
-            for key in ['res_train', 'res_val', 'res_test', 'train_time']:
+            for key in ['train_acc', 'val_acc', 'test_acc', 'train_time']:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
                 final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
                     self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
-                weighted_population[i]['%d_res_train' % subject] = res_train
-                weighted_population[i]['res_train'] += res_train
-                weighted_population[i]['%d_res_val' % subject] = res_train
-                weighted_population[i]['res_val'] += res_val
-                weighted_population[i]['%d_res_test' % subject] = res_test
-                weighted_population[i]['res_test'] += res_test
+                weighted_population[i]['%d_train_acc' % subject] = res_train
+                weighted_population[i]['train_acc'] += res_train
+                weighted_population[i]['%d_val_acc' % subject] = res_train
+                weighted_population[i]['val_acc'] += res_val
+                weighted_population[i]['%d_test_acc' % subject] = res_test
+                weighted_population[i]['test_acc'] += res_test
                 weighted_population[i]['%d_train_time' % subject] = final_time
                 weighted_population[i]['train_time'] += final_time
                 weighted_population[i]['%d_model_state' % subject] = model_state
@@ -217,7 +217,7 @@ class NaiveNAS:
                 weighted_population[i]['num_epochs'] += num_epochs
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
             weighted_population[i]['finalized_model'] = model
-            for key in ['res_train', 'res_val', 'res_test', 'train_time']:
+            for key in ['train_acc', 'val_acc', 'test_acc', 'train_time']:
                 weighted_population[i][key] /= globals.config['evolution']['cross_subject_sampling_rate']
 
     @staticmethod
@@ -286,7 +286,7 @@ class NaiveNAS:
 
         for generation in range(num_generations):
             evo_strategy(weighted_population, generation)
-            weighted_population = sorted(weighted_population, key=lambda x: x['res_val'], reverse=True)
+            weighted_population = sorted(weighted_population, key=lambda x: x['val_acc'], reverse=True)
             stats = self.calculate_stats(weighted_population)
             if generation < num_generations - 1:
                 for index, _ in enumerate(weighted_population):
@@ -380,8 +380,7 @@ class NaiveNAS:
             finalized_model = finalize_model(model)
         if globals.config['DEFAULT']['cropping']:
             to_dense_prediction_model(finalized_model.model)
-        if globals.config['evolution']['inherit_weights']:
-            assert(state is not None)
+        if globals.config['evolution']['inherit_weights'] and state is not None:
             finalized_model.model.load_state_dict(state)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
         if self.cuda:
