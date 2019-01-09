@@ -245,7 +245,6 @@ class MyModel:
 
 def check_legal_model(layer_collection):
     try:
-        # MyModel.new_model_from_structure_pytorch(layer_collection, check_model=True)
         finalize_model(layer_collection)
         return True
     except Exception as e:
@@ -296,8 +295,7 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
             second_model[i] = first_model[i]
-        if globals.config['evolution']['inherit_weights']:
-            save_weights = True
+        save_weights = globals.config['evolution']['inherit_weights']
     if random.random() < mutation_rate:
         while True:
             rand_layer = random.randint(0, globals.config['evolution']['num_layers'] - 1)
@@ -308,10 +306,11 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
     if save_weights:
         finalized_new_model = finalize_model(new_model)
         finalized_new_model_state = finalized_new_model.model.state_dict()
-        for i in range(cut_point):
-            add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)
-        for i in range(cut_point+1, globals.config['evolution']['num_layers']):
-            add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
+        if None not in [first_model_state, second_model_state]:
+            for i in range(cut_point):
+                add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)
+            for i in range(cut_point+1, globals.config['evolution']['num_layers']):
+                add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
     else:
         finalized_new_model_state = None
     return new_model, finalized_new_model_state
