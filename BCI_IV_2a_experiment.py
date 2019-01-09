@@ -216,7 +216,7 @@ try:
             fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
             if 'cross_subject' in multiple_values and not globals.config['DEFAULT']['cross_subject']:
                 globals.config['evolution']['num_generations'] *= \
-                    globals.config['evolution']['cross_subject_sampling_rate']
+                    globals.config['evolution']['cross_subject_compensation_rate']
                 # make num of generations equal for cross and per subject
             if globals.config['DEFAULT']['exp_type'] == 'target':
                 target_exp()

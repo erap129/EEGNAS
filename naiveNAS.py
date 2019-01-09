@@ -199,7 +199,7 @@ class NaiveNAS:
         for i, pop in enumerate(weighted_population):
             if globals.config['evolution']['cross_subject_sampling_method'] == 'model':
                 self.sample_subjects()
-            for key in ['train_acc', 'val_acc', 'test_acc', 'train_time']:
+            for key in ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
                 final_time, res_test, res_val, res_train, model, model_state, num_epochs = \

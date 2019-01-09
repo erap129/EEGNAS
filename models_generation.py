@@ -144,11 +144,13 @@ class MyModel:
         if globals.config['DEFAULT']['time_factor'] != -1:
             model.add_module('stack_by_time', Expression(MyModel._stack_input_by_time))
         activations = {'elu': nn.ELU, 'softmax': nn.Softmax}
+        shapes = {'one': (2, globals.config['DEFAULT']['eeg_chans'], globals.config['DEFAULT']['input_time_len'], 1),
+                  'channels': (2, globals.config['DEFAULT']['input_time_len'], 1, globals.config['DEFAULT']['eeg_chans'])}
         for i in range(len(layer_collection)):
             layer = layer_collection[i]
             if i > 0:
                 out = model.forward(np_to_var(np.ones(
-                    (1, MyModel.n_chans, globals.config['DEFAULT']['input_time_len'], 1),
+                    shapes[globals.config['DEFAULT']['channel_dim']],
                     dtype=np.float32)))
                 prev_channels = out.cpu().data.numpy().shape[1]
                 prev_time = out.cpu().data.numpy().shape[2]
