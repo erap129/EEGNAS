@@ -182,6 +182,8 @@ class NaiveNAS:
     def one_strategy(self, weighted_population, generation):
         self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
+            if random.random() < 1 - (1 / pop['age']):
+                continue
             final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
                 self.evaluate_model(pop['model'], pop['model_state'])
             weighted_population[i]['train_acc'] = res_train
@@ -197,6 +199,8 @@ class NaiveNAS:
         if globals.config['evolution']['cross_subject_sampling_method'] == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
+            if random.random() < 1 - (1 / pop['age']):
+                continue
             if globals.config['evolution']['cross_subject_sampling_method'] == 'model':
                 self.sample_subjects()
             for key in ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']:
@@ -282,17 +286,19 @@ class NaiveNAS:
         for i in range(pop_size):  # generate pop_size random models
             new_rand_model = model_init(configuration[model_init_configuration])
             NaiveNAS.hash_model(new_rand_model, self.models_set, self.genome_set)
-            weighted_population.append({'model': new_rand_model, 'model_state': None})
+            weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
 
         for generation in range(num_generations):
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population, key=lambda x: x['val_acc'], reverse=True)
             stats = self.calculate_stats(weighted_population)
             if generation < num_generations - 1:
-                for index, _ in enumerate(weighted_population):
+                for index, model in enumerate(weighted_population):
                     if random.uniform(0, 1) < (index / pop_size):
-                        self.remove_from_models_hash(weighted_population[index]['model'], self.models_set, self.genome_set)
+                        self.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
                         del weighted_population[index]
+                    else:
+                        model['age'] += 1
 
                 children = []
                 while len(weighted_population) + len(children) < pop_size:
@@ -307,7 +313,7 @@ class NaiveNAS:
                                                 first_model_state=weighted_population[breeders[0]][model_state_str],
                                                 second_model_state=weighted_population[breeders[1]][model_state_str])
                     NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
-                    children.append({'model': new_model, 'model_state': new_model_state})
+                    children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
                 weighted_population.extend(children)
                 if len(self.models_set) < configuration['pop_size'] * configuration['unique_model_threshold']:
                     self.mutation_rate *= configuration['mutation_rate_change_factor']
