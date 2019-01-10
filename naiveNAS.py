@@ -182,7 +182,7 @@ class NaiveNAS:
     def one_strategy(self, weighted_population, generation):
         self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
-            if random.random() < 1 - (1 / pop['age']):
+            if random.random() < 1 - 1 / (pop['age'] + 1):
                 continue
             final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
                 self.evaluate_model(pop['model'], pop['model_state'])
@@ -199,7 +199,7 @@ class NaiveNAS:
         if globals.config['evolution']['cross_subject_sampling_method'] == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
-            if random.random() < 1 - (1 / pop['age']):
+            if random.random() < 1 - 1 / (pop['age'] + 1):
                 continue
             if globals.config['evolution']['cross_subject_sampling_method'] == 'model':
                 self.sample_subjects()
