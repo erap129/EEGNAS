@@ -180,8 +180,8 @@ class NaiveNAS:
             globals.config['evolution']['cross_subject_sampling_rate'])
 
     @staticmethod
-    def check_age(self, model):
-        return globals.config['DEFAULT']['evolution']['use_aging'] and\
+    def check_age(model):
+        return globals.config['evolution']['use_aging'] and\
             random.random() < 1 - 1 / (model['age'] + 1)
 
     def one_strategy(self, weighted_population, generation):
