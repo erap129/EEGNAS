@@ -2,6 +2,7 @@
 import os
 import platform
 import torch
+import pandas as pd
 from collections import OrderedDict, defaultdict
 from itertools import product
 import torch.nn.functional as F
@@ -44,6 +45,19 @@ def listen():
         signal.signal(signal.SIGUSR1, debug)  # Register handler
 
 
+def generate_report(filename, report_filename):
+    params = ['train_time', 'test_acc', 'val_acc', 'train_acc', 'num_epochs', 'final_test_acc', 'final_val_acc', 'final_train_acc']
+    params_to_average = defaultdict(int)
+    data = pd.read_csv(filename)
+    for param in params:
+        avg_count = 0
+        for index, row in data.iterrows():
+            if param in row['param_name']:
+                params_to_average[param] += row['param_value']
+                avg_count += 1
+        if avg_count != 0:
+            params_to_average[param] /= avg_count
+    pd.DataFrame(params_to_average, index=[0]).to_csv(report_filename)
 
 
 def write_dict(dict, filename):
@@ -225,8 +239,8 @@ if __name__ == '__main__':
                 exp_folder = 'results/' + exp_name
                 createFolder(exp_folder)
                 write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
-                csv_file = exp_folder + '/' + str(exp_id) + '_' + str(index+1) + '_' +\
-                    globals.config['DEFAULT']['exp_type'] + '.csv'
+                csv_file = f"{exp_folder}/{exp_id}_{index+1}_{globals.config['DEFAULT']['exp_type']}.csv"
+                report_file = f"{exp_folder}/report.csv"
                 fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
                 if 'cross_subject' in multiple_values and not globals.config['DEFAULT']['cross_subject']:
                     globals.config['evolution']['num_generations'] *= \
@@ -240,6 +254,7 @@ if __name__ == '__main__':
                     cross_subject_exp()
                 else:
                     per_subject_exp()
+                generate_report(csv_file, report_file)
             except Exception as e:
                 with open(exp_folder + "/error_log.txt", "w") as err_file:
                     print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
