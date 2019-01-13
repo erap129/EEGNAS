@@ -49,28 +49,6 @@ class TestModelGeneration(unittest.TestCase):
         check_list.remove(ActivationLayer())
         assert(len(check_list) == 0)
 
-    def test_massive_breed(self):
-        models = []
-        model_set = []
-        genome_set = []
-        for i in range(50):
-            rand_mod = random_model(10)
-            NaiveNAS.hash_model(rand_mod, model_set, genome_set)
-            models.append(rand_mod)
-        old_model_len = len(model_set)
-        old_genome_len = len(genome_set)
-        while(len(models) < 100):
-            breeders = random.sample(range(len(models)), 2)
-            new_mod = breed_layers(models[breeders[0]], models[breeders[1]])
-            if(new_mod == models[breeders[0]] or new_mod == models[breeders[1]]):
-                print('new mod is the same')
-            NaiveNAS.hash_model(new_mod, model_set, genome_set)
-            models.append(new_mod)
-        print('new model length: %d' % (len(model_set)))
-        print('new genome length: %d' % (len(genome_set)))
-        print('old model length: %d' % (old_model_len))
-        print('old genome length: %d' % (old_genome_len))
-
     def test_state_inheritance_breeding(self):
         globals.config['evolution']['inherit_breeding_weights'] = True
         globals.config['evolution']['num_layers'] = 4
@@ -79,7 +57,7 @@ class TestModelGeneration(unittest.TestCase):
         model1_state = finalize_model(model1).model.state_dict()
         model2 = uniform_model(4, ConvLayer)
         model2_state = finalize_model(model2).model.state_dict()
-        model3, model3_state = breed_layers(model1, model2, model1_state, model2_state, 2)
+        model3, model3_state = breed_layers(0, model1, model2, model1_state, model2_state, 2)
         for s1, s3 in zip(list(model1_state.values())[:4], list(model3_state.values())[:4]):
             assert((s1==s3).all())
         for s2, s3 in zip(list(model2_state.values())[6:8], list(model3_state.values())[6:8]):

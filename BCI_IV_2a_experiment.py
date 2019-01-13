@@ -14,6 +14,7 @@ from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
 from globals import init_config
 from utils import createFolder
 from itertools import chain
+from argparse import ArgumentParser
 import logging
 import globals
 import random
@@ -166,7 +167,11 @@ def cross_subject_exp():
 
 
 if __name__ == '__main__':
-    init_config('config.ini')
+    parser = ArgumentParser()
+    parser.add_argument("-c", "--config", help="path to configuration file", default='configurations/config.ini')
+    parser.add_argument("-m", "--model", help="path to Pytorch model file")
+    args = parser.parse_args()
+    init_config(args.config)
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
 
@@ -230,7 +235,7 @@ if __name__ == '__main__':
                 if globals.config['DEFAULT']['exp_type'] == 'target':
                     target_exp()
                 elif globals.config['DEFAULT']['exp_type'] == 'from_file':
-                    target_exp(model_from_file=sys.argv[1])
+                    target_exp(model_from_file=args.model)
                 elif globals.config['DEFAULT']['cross_subject']:
                     cross_subject_exp()
                 else:
