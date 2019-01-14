@@ -141,15 +141,12 @@ def per_subject_exp():
     start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
-        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
+        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
-        if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
-            naiveNAS.evolution_layers(csv_file, evolution_file)
-        elif globals.config['DEFAULT']['exp_type'] == 'evolution_filters':
-            naiveNAS.evolution_filters(csv_file, evolution_file)
+        naiveNAS.evolution_layers(csv_file, evolution_file)
     globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
@@ -212,7 +209,7 @@ if __name__ == '__main__':
         for index, configuration in enumerate(configurations):
             try:
                 globals.set_config(configuration)
-                if platform.node() == 'nvidia':
+                if torch.cuda.is_available():
                     globals.config['DEFAULT']['cuda'] = True
                     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
                 stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),

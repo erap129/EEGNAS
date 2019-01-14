@@ -337,10 +337,6 @@ class NaiveNAS:
             self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
         return evolution_results
 
-    def evolution_filters(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, breed_filters, genetic_filter_experiment_model,
-                              'num_conv_blocks', self.one_strategy)
-
     def evolution_layers(self, csv_file, evolution_file):
         return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers', self.one_strategy)
 

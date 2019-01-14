@@ -858,3 +858,7 @@ def deep_model(n_chans, input_time_length, n_classes, n_filters_time=25, n_filte
     model.summary()
     return model
 
+    def evolution_filters(self, csv_file, evolution_file):
+        return self.evolution(csv_file, evolution_file, breed_filters, genetic_filter_experiment_model,
+                              'num_conv_blocks', self.one_strategy)
+
