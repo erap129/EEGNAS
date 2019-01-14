@@ -209,7 +209,7 @@ if __name__ == '__main__':
         for index, configuration in enumerate(configurations):
             try:
                 globals.set_config(configuration)
-                if torch.cuda.is_available():
+                if platform.node() == 'nvidia' or platform.node() == 'gpu':
                     globals.config['DEFAULT']['cuda'] = True
                     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
                 stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
