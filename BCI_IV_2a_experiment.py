@@ -209,7 +209,7 @@ if __name__ == '__main__':
         for index, configuration in enumerate(configurations):
             try:
                 globals.set_config(configuration)
-                if platform.node() == 'nvidia' or platform.node() == 'gpu':
+                if platform.node() == 'nvidia' or platform.node() == 'GPU':
                     globals.config['DEFAULT']['cuda'] = True
                     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
                 stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
