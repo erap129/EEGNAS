@@ -209,7 +209,7 @@ if __name__ == '__main__':
         for index, configuration in enumerate(configurations):
             try:
                 globals.set_config(configuration)
-                if platform.node() == 'nvidia' or platform.node() == 'GPU':
+                if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
                     globals.config['DEFAULT']['cuda'] = True
                     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
                 stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
@@ -243,7 +243,7 @@ if __name__ == '__main__':
                     globals.config['evolution']['num_generations'] *= \
                         globals.config['evolution']['cross_subject_compensation_rate']
                     # make num of generations equal for cross and per subject
-                if globals.config['DEFAULT']['exp_type'] == 'target':
+                if globals.config['DEFAULT']['exp_type'] in ['target', 'benchmark']:
                     target_exp()
                 elif globals.config['DEFAULT']['exp_type'] == 'from_file':
                     target_exp(model_from_file=args.model)
