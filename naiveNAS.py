@@ -390,31 +390,34 @@ class NaiveNAS:
         if globals.config['evolution']['inherit_weights'] and state is not None:
             finalized_model.model.load_state_dict(state)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
+        pytorch_model = finalized_model.model
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
-            finalized_model.model.cuda()
-        self.monitor_epoch(single_subj_dataset, finalized_model.model)
+            pytorch_model.cuda()
+            if torch.cuda.device_count() > 1 and globals.config['DEFAULT']['parallel_gpu']:
+                pytorch_model = nn.DataParallel(pytorch_model.cuda(), device_ids=[0,1,2,3])
+        self.monitor_epoch(single_subj_dataset, pytorch_model)
         if globals.config['DEFAULT']['log_epochs']:
             self.log_epoch()
         if globals.config['DEFAULT']['remember_best']:
-            self.rememberer.remember_epoch(self.epochs_df, finalized_model.model, self.optimizer)
+            self.rememberer.remember_epoch(self.epochs_df, pytorch_model, self.optimizer)
         self.iterator.reset_rng()
         start = time.time()
-        num_epochs = self.run_until_stop(finalized_model.model, single_subj_dataset)
-        self.setup_after_stop_training(finalized_model.model, final_evaluation)
+        num_epochs = self.run_until_stop(pytorch_model, single_subj_dataset)
+        self.setup_after_stop_training(pytorch_model, final_evaluation)
         if final_evaluation:
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             datasets = single_subj_dataset
             datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
-            num_epochs += self.run_until_stop(finalized_model.model, datasets)
+            num_epochs += self.run_until_stop(pytorch_model, datasets)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
-                self.rememberer.reset_to_best_model(self.epochs_df, finalized_model.model, self.optimizer)
+                self.rememberer.reset_to_best_model(self.epochs_df, pytorch_model, self.optimizer)
         end = time.time()
         res_test = 1 - self.epochs_df.iloc[-1]['test_misclass']
         res_val = 1 - self.epochs_df.iloc[-1]['valid_misclass']
         res_train = 1 - self.epochs_df.iloc[-1]['train_misclass']
         final_time = end-start
-        return final_time, res_test, res_val, res_train, finalized_model.model, self.rememberer.model_state_dict, num_epochs
+        return final_time, res_test, res_val, res_train, pytorch_model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
         self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)

@@ -211,6 +211,7 @@ if __name__ == '__main__':
                 globals.set_config(configuration)
                 if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
                     globals.config['DEFAULT']['cuda'] = True
+                    # torch.cuda.set_device(0)
                     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
                 stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
                                      NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
