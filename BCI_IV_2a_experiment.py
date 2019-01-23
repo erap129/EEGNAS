@@ -69,8 +69,8 @@ def write_dict(dict, filename):
 
 def garbage_time():
     print('ENTERING GARBAGE TIME')
-    globals.config['DEFAULT']['exp_type'] = 'target'
-    globals.config['DEFAULT']['channel_dim'] = 'one'
+    args.experiment = 'target'
+    globals.set('channel_dim', 'one')
     train_set, val_set, test_set = get_train_val_test(data_folder, 1, 0)
     garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set, val_set=val_set, test_set=test_set,
@@ -82,24 +82,25 @@ def garbage_time():
 def get_configurations():
     configurations = []
     default_config = globals.init_config._defaults
-    evolution_config = globals.init_config._sections['evolution']
+    exp_config = globals.init_config._sections[args.experiment]
     for key in default_config.keys():
         default_config[key] = json.loads(default_config[key])
-    for key in evolution_config.keys():
-        evolution_config[key] = json.loads(evolution_config[key])
+    default_config['exp_name'] = [args.experiment]
+    for key in exp_config.keys():
+        exp_config[key] = json.loads(exp_config[key])
     both_configs = list(default_config.values())
-    both_configs.extend(list(evolution_config.values()))
+    both_configs.extend(list(exp_config.values()))
     config_keys = list(default_config.keys())
-    config_keys.extend(list(evolution_config.keys()))
+    config_keys.extend(list(exp_config.keys()))
     all_configs = list(product(*both_configs))
     for config_index in range(len(all_configs)):
-        configurations.append({'DEFAULT': OrderedDict([]), 'evolution': OrderedDict([])})
+        configurations.append({'DEFAULT': OrderedDict([]), args.experiment: OrderedDict([])})
         i = 0
         for key in default_config.keys():
             configurations[config_index]['DEFAULT'][key] = all_configs[config_index][i]
             i += 1
-        for key in evolution_config.keys():
-            configurations[config_index]['evolution'][key] = all_configs[config_index][i]
+        for key in exp_config.keys():
+            configurations[config_index][args.experiment][key] = all_configs[config_index][i]
             i += 1
     return configurations
 
@@ -130,7 +131,7 @@ def target_exp(model_from_file=None):
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
                             model_from_file=model_from_file)
         naiveNAS.run_target_model(csv_file)
-    globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
+    globals.config.set('total_time', str(time.time() - start_time))
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
@@ -147,7 +148,7 @@ def per_subject_exp():
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         naiveNAS.evolution_layers(csv_file, evolution_file)
-    globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
+    globals.config.set('total_time', str(time.time() - start_time))
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
@@ -169,17 +170,18 @@ def cross_subject_exp():
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=globals.config, subject_id='all', fieldnames=fieldnames)
     evolution_file = '%s/archs.txt' % (exp_folder)
-    if globals.config['DEFAULT']['exp_type'] == 'evolution_layers':
+    if args.experiment == 'evolution_layers':
         naiveNAS.evolution_layers_all(csv_file, evolution_file)
-    elif globals.config['DEFAULT']['exp_type'] == 'target':
+    elif args.experiment == 'target':
         naiveNAS.run_target_model(csv_file)
-    globals.config['DEFAULT']['total_time'] = str(time.time() - start_time)
+    globals.config.set('total_time', str(time.time() - start_time))
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("-c", "--config", help="path to configuration file", default='configurations/config.ini')
+    parser.add_argument("-e", "--experiment", help="experiment type", default='benchmark')
     parser.add_argument("-m", "--model", help="path to Pytorch model file")
     args = parser.parse_args()
     init_config(args.config)
@@ -210,45 +212,45 @@ if __name__ == '__main__':
             try:
                 globals.set_config(configuration)
                 if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
-                    globals.config['DEFAULT']['cuda'] = True
+                    globals.set('cuda', True)
                     # torch.cuda.set_device(0)
                     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-                stop_criterion = Or([MaxEpochs(globals.config['DEFAULT']['max_epochs']),
-                                     NoDecrease('valid_misclass', globals.config['DEFAULT']['max_increase_epochs'])])
-                if globals.config['DEFAULT']['cropping']:
-                    globals.config['DEFAULT']['input_time_len'] = globals.config['DEFAULT']['input_time_cropping']
-                    iterator = CropsFromTrialsIterator(batch_size=globals.config['DEFAULT']['batch_size'],
-                                                       input_time_length=globals.config['DEFAULT']['input_time_len'],
-                                                       n_preds_per_input=globals.config['DEFAULT']['n_preds_per_input'])
+                stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
+                                     NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
+                if globals.get('cropping'):
+                    globals.set('input_time_len', globals.get('input_time_cropping'))
+                    iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
+                                                       input_time_length=globals.get('input_time_len'),
+                                                       n_preds_per_input=globals.get('n_preds_per_input'))
                     loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
                     monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
                                 CroppedTrialMisclassMonitor(
-                                    input_time_length=globals.config['DEFAULT']['input_time_len']), RuntimeMonitor()]
+                                    input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
                 else:
-                    iterator = BalancedBatchSizeIterator(batch_size=globals.config['DEFAULT']['batch_size'])
+                    iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
                     loss_function = F.nll_loss
                     monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
-                if type(globals.config['evolution']['subjects_to_check']) == list:
-                    subjects = globals.config['evolution']['subjects_to_check']
+                if type(globals.get('subjects_to_check')) == list:
+                    subjects = globals.get('subjects_to_check')
                 else:
-                    subjects = random.sample(range(1, globals.config['DEFAULT']['num_subjects']),
-                                             globals.config['evolution']['subjects_to_check'])
-                exp_name = f"{exp_id}_{index+1}_{globals.config['DEFAULT']['exp_type']}_{'_'.join(multiple_values)}"
+                    subjects = random.sample(range(1, globals.get('num_subjects')),
+                                             globals.get('subjects_to_check'))
+                exp_name = f"{exp_id}_{index+1}_{args.experiment}"
                 exp_folder = 'results/' + exp_name
                 createFolder(exp_folder)
                 write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
-                csv_file = f"{exp_folder}/{exp_id}_{index+1}_{globals.config['DEFAULT']['exp_type']}.csv"
+                csv_file = f"{exp_folder}/{exp_id}_{index+1}_{args.experiment}.csv"
                 report_file = f"{exp_folder}/report.csv"
                 fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
-                if 'cross_subject' in multiple_values and not globals.config['DEFAULT']['cross_subject']:
-                    globals.config['evolution']['num_generations'] *= \
-                        globals.config['evolution']['cross_subject_compensation_rate']
+                if 'cross_subject' in multiple_values and not globals.get('cross_subject'):
+                    globals.set('num_generations', globals.get('num_generations') *
+                                globals.get('cross_subject_compensation_rate'))
                     # make num of generations equal for cross and per subject
-                if globals.config['DEFAULT']['exp_type'] in ['target', 'benchmark']:
+                if args.experiment in ['target', 'benchmark']:
                     target_exp()
-                elif globals.config['DEFAULT']['exp_type'] == 'from_file':
+                elif args.experiment == 'from_file':
                     target_exp(model_from_file=args.model)
-                elif globals.config['DEFAULT']['cross_subject']:
+                elif globals.get('cross_subject'):
                     cross_subject_exp()
                 else:
                     per_subject_exp()

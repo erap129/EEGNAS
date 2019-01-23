@@ -11,7 +11,14 @@ def set_config(configuration):
 
 def get(key):
     global config
-    if key in config[config['DEFAULT']['exp_type']]:
-        return config['exp_type'][key]
+    if key in config[config['DEFAULT']['exp_name']]:
+        return config[config['DEFAULT']['exp_name']][key]
     else:
         return config['DEFAULT'][key]
+
+def set(key, value):
+    global config
+    if key in config[config['DEFAULT']['exp_name']]:
+        config[config['DEFAULT']['exp_name']][key] = value
+    else:
+        config['DEFAULT'][key] = value
