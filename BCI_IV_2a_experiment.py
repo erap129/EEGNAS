@@ -45,6 +45,14 @@ def listen():
         signal.signal(signal.SIGUSR1, debug)  # Register handler
 
 
+def parse_args(args):
+    parser = ArgumentParser()
+    parser.add_argument("-c", "--config", help="path to configuration file", default='configurations/config.ini')
+    parser.add_argument("-e", "--experiment", help="experiment type", default='benchmark')
+    parser.add_argument("-m", "--model", help="path to Pytorch model file")
+    return parser.parse_args(args)
+
+
 def generate_report(filename, report_filename):
     params = ['train_time', 'test_acc', 'val_acc', 'train_acc', 'num_epochs', 'final_test_acc', 'final_val_acc', 'final_train_acc']
     params_to_average = defaultdict(int)
@@ -79,7 +87,7 @@ def garbage_time():
     garbageNAS.garbage_time()
 
 
-def get_configurations():
+def get_configurations(args):
     configurations = []
     default_config = globals.init_config._defaults
     exp_config = globals.init_config._sections[args.experiment]
@@ -179,11 +187,7 @@ def cross_subject_exp():
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser()
-    parser.add_argument("-c", "--config", help="path to configuration file", default='configurations/config.ini')
-    parser.add_argument("-e", "--experiment", help="experiment type", default='benchmark')
-    parser.add_argument("-m", "--model", help="path to Pytorch model file")
-    args = parser.parse_args()
+    args = parse_args(sys.argv[1:])
     init_config(args.config)
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
@@ -205,7 +209,7 @@ if __name__ == '__main__':
         subdir_names.sort()
         exp_id = subdir_names[-1] + 1
 
-    configurations = get_configurations()
+    configurations = get_configurations(args)
     multiple_values = get_multiple_values(configurations)
     try:
         for index, configuration in enumerate(configurations):

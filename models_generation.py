@@ -10,6 +10,7 @@ os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import copy
 import globals
+from Bio import pairwise2
 from torchsummary import summary
 WARNING = '\033[93m'
 ENDC = '\033[0m'
@@ -125,6 +126,27 @@ class ConcatLayer(Layer):
         Layer.__init__(self)
         self.first_layer_index = first_layer_index
         self.second_layer_index = second_layer_index
+
+
+def string_representation(layer_collection):
+    translation = {FlattenLayer: 'f',
+                   DropoutLayer: 'd',
+                   BatchNormLayer: 'b',
+                   ConvLayer: 'c',
+                   PoolingLayer: 'p',
+                   ActivationLayer: 'a',
+                   IdentityLayer: 'i'}
+    rep = ''
+    for layer in layer_collection:
+        rep += translation[type(layer)]
+    return rep
+
+
+def network_similarity(layer_collection1, layer_collection2):
+    str1 = string_representation(layer_collection1)
+    str2 = string_representation(layer_collection2)
+    alignments = pairwise2.align.globalxx(str1, str2)
+    pass
 
 
 class MyModel:
@@ -286,7 +308,7 @@ def add_layer_to_state(new_model_state, layer, index, old_model_state):
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
     save_weights = False
-    if random.random() < globals.config['evolution']['breed_rate']:
+    if random.random() < globals.get('breed_rate'):
         if cut_point is None:
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):

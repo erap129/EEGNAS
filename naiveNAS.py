@@ -1,5 +1,5 @@
 from models_generation import random_model, finalize_model, target_model,\
-    genetic_filter_experiment_model, breed_filters, breed_layers
+    breed_layers
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import models_generation

@@ -1,17 +1,23 @@
 import unittest
+from braindecode.datautil.iterators import BalancedBatchSizeIterator
+from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, RuntimeMonitor
+import numpy as np
 from naiveNAS import NaiveNAS
 from models_generation import uniform_model, breed_layers,\
-    finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
-    MyModel, ActivationLayer, random_model
-from BCI_IV_2a_experiment import get_configurations
+    ConvLayer, ActivationLayer
+from BCI_IV_2a_experiment import get_configurations, parse_args
+from models_generation import target_model
 import globals
+from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
 from globals import init_config
+import torch.nn.functional as F
 
 
 class TestModelGeneration(unittest.TestCase):
     def setUp(self):
-        init_config('test_configs/single_subject_config.ini')
-        configs = get_configurations()
+        args = parse_args(['-e', 'tests', '-c', '../configurations/config.ini'])
+        init_config(args.config)
+        configs = get_configurations(args)
         assert(len(configs) == 1)
         globals.set_config(configs[0])
 
@@ -28,7 +34,7 @@ class TestModelGeneration(unittest.TestCase):
     def test_hash_model(self):
         model1 = uniform_model(10, ActivationLayer)
         model2 = uniform_model(10, ActivationLayer)
-        globals.config['evolution']['mutation_rate'] = 1
+        globals.set('mutation_rate', 1)
         model3, _ = breed_layers(1, model1, model2)
         model_set = []
         genome_set = []
@@ -60,6 +66,26 @@ class TestModelGeneration(unittest.TestCase):
         assert(len(genome_set)) >= 3
         NaiveNAS.remove_from_models_hash(model2, model_set, genome_set)
         assert(len(genome_set)) == 0
+
+    def test_evaluation_target_model(self):
+        model = target_model()
+        iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
+        loss_function = F.nll_loss
+        monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
+        stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
+                             NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
+        input_shape = (50, globals.get('eeg_chans'), globals.get('input_time_len'))
+        class Dummy:
+            def __init__(self, X, y):
+                self.X = X
+                self.y = y
+        dummy_data = Dummy(X=np.ones(input_shape, dtype=np.float32), y=np.ones(50, dtype=np.longlong))
+        naiveNAS = NaiveNAS(iterator=iterator, exp_folder='', exp_name='',
+                            train_set=dummy_data, val_set=dummy_data, test_set=dummy_data,
+                            stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
+                            config=globals.config, subject_id=1, fieldnames=None,
+                            model_from_file=None)
+        naiveNAS.evaluate_model(model)
 
 if __name__ == '__main__':
     unittest.main()
