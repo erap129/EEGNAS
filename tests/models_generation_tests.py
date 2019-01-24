@@ -1,7 +1,7 @@
 import unittest
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
-    MyModel, ActivationLayer, network_similarity
+    MyModel, ActivationLayer, network_similarity, PoolingLayer
 from BCI_IV_2a_experiment import get_configurations, parse_args
 import globals
 from globals import init_config
@@ -60,10 +60,19 @@ class TestModelGeneration(unittest.TestCase):
         for s2, s3 in zip(list(model2_state.values())[6:8], list(model3_state.values())[6:8]):
             assert((s2==s3).all())
 
-    def test_string_representation(self):
-        model1 = uniform_model(3, DropoutLayer)
-        model2 = uniform_model(3, DropoutLayer)
-        network_similarity(model1, model2)
+    def test_network_similarity(self):
+        conv1 = ConvLayer(kernel_eeg_chan=3, kernel_time=10, filter_num=50)
+        conv2 = ConvLayer(kernel_eeg_chan=5, kernel_time=20, filter_num=25)
+        model1 = [conv1, DropoutLayer(), conv1]
+        model2 = [conv2, DropoutLayer(), conv2]
+        assert(network_similarity(model1, model1) > network_similarity(model1, model2))
+
+        pool1 = PoolingLayer(stride_eeg_chan=2, stride_time=3)
+        pool2 = PoolingLayer(stride_eeg_chan=10, stride_time=1)
+        model1 = [conv1, pool2, conv1, pool2, conv1, pool2]
+        model2 = [conv1, conv1, pool2, conv1, pool2, conv1, pool2]
+        model3 = [conv2, pool1, conv2, pool1, conv2, pool1]
+        assert(network_similarity(model1, model2) > network_similarity(model2, model3))
 
 
 

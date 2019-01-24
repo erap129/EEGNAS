@@ -240,6 +240,13 @@ class NaiveNAS:
                     count += 1
         return attr_count / count
 
+    def calculate_population_similarity(self, layer_collections):
+        sim = 0
+        for i in range(100):
+            idxs = random.sample(range(len(layer_collections)), 2)
+            sim += models_generation.network_similarity(layer_collections[idxs[0]], layer_collections[idxs[1]])
+        return sim / 100
+
     def calculate_stats(self, weighted_population):
         stats = {}
         params = ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']
@@ -254,16 +261,15 @@ class NaiveNAS:
                         [sample['%d_%s' % (subject, param)] for sample in weighted_population if '%d_%s' % (subject, param) in sample.keys()])
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
-        stats['average_conv_width'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
-                                                                 models_generation.ConvLayer, 'kernel_eeg_chan')
-        stats['average_conv_height'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
-                                                                 models_generation.ConvLayer, 'kernel_time')
-        stats['average_conv_filters'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
-                                                                 models_generation.ConvLayer, 'filter_num')
-        stats['average_pool_width'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
-                                                                   models_generation.PoolingLayer, 'pool_time')
-        stats['average_pool_stride'] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
-                                                                   models_generation.PoolingLayer, 'stride_time')
+        layer_stats = {'average_conv_width': (models_generation.ConvLayer, 'kernel_eeg_chan'),
+                       'average_conv_height': (models_generation.ConvLayer, 'kernel_time'),
+                       'average_conv_filters': (models_generation.ConvLayer, 'filter_num'),
+                       'average_pool_width': (models_generation.PoolingLayer, 'pool_time'),
+                       'average_pool_stride': (models_generation.PoolingLayer, 'stride_time')}
+        for stat in layer_stats.keys():
+            stats[stat] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
+                                                                 layer_stats[stat][0], layer_stats[stat][1])
+        stats['similarity_measure'] = self.calculate_population_similarity([pop['model'] for pop in weighted_population])
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:

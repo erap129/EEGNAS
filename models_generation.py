@@ -11,6 +11,7 @@ import random
 import copy
 import globals
 from Bio import pairwise2
+from collections import defaultdict
 from torchsummary import summary
 WARNING = '\033[93m'
 ENDC = '\033[0m'
@@ -142,11 +143,46 @@ def string_representation(layer_collection):
     return rep
 
 
+def get_layer(layer_collection, layer_type, order):
+    count = 0
+    for layer in layer_collection:
+        if type(layer) == layer_type:
+            count += 1
+            if count == order:
+                return layer
+    print(f"searched for layer {str(layer_type)} but didn't find.\n"
+          f"the layer collection is: {str(layer_collection)}\n"
+          f"the order is: {order}")
+
+
+def layer_comparison(layer_type, layer1_order, layer2_order, layer_collection1, layer_collection2, attrs):
+    score = 0
+    layer1 = get_layer(layer_collection1, layer_type, layer1_order)
+    layer2 = get_layer(layer_collection2, layer_type, layer2_order)
+    for attr in attrs:
+        score += 1 / (abs(getattr(layer1, attr) - getattr(layer2, attr)) + 1) * 5
+    return score
+
+
 def network_similarity(layer_collection1, layer_collection2):
     str1 = string_representation(layer_collection1)
     str2 = string_representation(layer_collection2)
-    alignments = pairwise2.align.globalxx(str1, str2)
-    pass
+    alignment = pairwise2.align.globalms(str1, str2, 2, -1, -.5, -.1)[0]
+    score = alignment[2]
+    str1_orders = defaultdict(lambda:0)
+    str2_orders = defaultdict(lambda:0)
+    for x,y in (zip(alignment[0], alignment[1])):
+        str1_orders[x] += 1
+        str2_orders[y] += 1
+        if x == y == 'c':
+            score += layer_comparison(ConvLayer, str1_orders['c'], str2_orders['c'],
+                                      layer_collection1, layer_collection2,
+                                      ['kernel_eeg_chan', 'filter_num', 'kernel_time'])
+        if x == y == 'p':
+            score += layer_comparison(PoolingLayer, str1_orders['p'], str2_orders['p'],
+                                      layer_collection1, layer_collection2,
+                                      ['pool_time', 'stride_time'])
+    return score
 
 
 class MyModel:
@@ -295,6 +331,17 @@ def uniform_model(n_layers, layer_type):
         return layer_collection
     else:
         return uniform_model(n_layers, layer_type)
+
+
+def custom_model(layers):
+    layer_collection = []
+    for layer in layers:
+        layer_collection.append(layer())
+    if check_legal_model(layer_collection):
+        return layer_collection
+    else:
+        return custom_model(layers)
+
 
 
 def add_layer_to_state(new_model_state, layer, index, old_model_state):
