@@ -598,7 +598,7 @@ class NaiveNAS:
             for model in models:
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
                 print_model = model['finalized_model'].to(device)
-                summary(print_model, (22, globals.get('input_time_len'), 1), file=text_file)
+                summary(print_model, (globals.get('eeg_chans'), globals.get('input_time_len'), 1), file=text_file)
 
 
 

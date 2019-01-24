@@ -3,7 +3,7 @@ import sys
 import os.path
 from collections import OrderedDict
 import numpy as np
-
+import os
 from braindecode.datasets.bbci import  BBCIDataset
 from braindecode.datautil.signalproc import highpass_cnt
 import torch.nn.functional as F
@@ -195,6 +195,7 @@ def run_exp_on_high_gamma_dataset(train_filename, test_filename,
 
 
 if __name__ == '__main__':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                      level=logging.DEBUG, stream=sys.stdout)
     subject_id = 1

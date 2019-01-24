@@ -186,8 +186,6 @@ def network_similarity(layer_collection1, layer_collection2):
 
 
 class MyModel:
-    n_chans = 22
-
     def __init__(self, model, layer_collection={}, name=None):
         self.layer_collection = layer_collection
         self.model = model
@@ -212,7 +210,7 @@ class MyModel:
                 prev_time = out.cpu().data.numpy().shape[2]
                 prev_eeg_channels = out.cpu().data.numpy().shape[3]
             else:
-                prev_eeg_channels = MyModel.n_chans
+                prev_eeg_channels = globals.get('eeg_chans')
                 prev_time = globals.get('input_time_len')
                 prev_channels = 1
             if isinstance(layer, PoolingLayer):
@@ -398,7 +396,7 @@ def breed_filters(first, second):
     return second_model
 
 
-def base_model(n_chans=22, n_filters_time=25, n_filters_spat=25,
+def base_model(n_chans=globals.get('eeg_chans'), n_filters_time=25, n_filters_spat=25,
                filter_time_length=10, random_filters=False):
     if random_filters:
         min_filt = globals.get('random_filter_range_min')

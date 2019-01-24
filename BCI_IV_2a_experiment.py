@@ -189,6 +189,8 @@ def cross_subject_exp():
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
+    num_subjects = {'HG': 14, 'BCI_IV': 9}
+    eeg_chans = {'HG': 44, 'BCI_IV': 22}
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
 
@@ -215,6 +217,8 @@ if __name__ == '__main__':
         for index, configuration in enumerate(configurations):
             try:
                 globals.set_config(configuration)
+                globals.set('num_subjects', num_subjects[globals.get('dataset')])
+                globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
                 if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
                     globals.set('cuda', True)
                     # torch.cuda.set_device(0)
