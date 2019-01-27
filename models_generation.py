@@ -396,8 +396,8 @@ def breed_filters(first, second):
     return second_model
 
 
-def base_model(n_chans=globals.get('eeg_chans'), n_filters_time=25, n_filters_spat=25,
-               filter_time_length=10, random_filters=False):
+def base_model(n_filters_time=25, n_filters_spat=25, filter_time_length=10, random_filters=False):
+    n_chans = globals.get('eeg_chans')
     if random_filters:
         min_filt = globals.get('random_filter_range_min')
         max_filt = globals.get('random_filter_range_max')

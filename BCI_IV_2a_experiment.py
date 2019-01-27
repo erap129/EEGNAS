@@ -139,7 +139,7 @@ def target_exp(model_from_file=None):
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
                             model_from_file=model_from_file)
         naiveNAS.run_target_model(csv_file)
-    globals.config.set('total_time', str(time.time() - start_time))
+    globals.set('total_time', str(time.time() - start_time))
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
@@ -156,7 +156,7 @@ def per_subject_exp():
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         naiveNAS.evolution_layers(csv_file, evolution_file)
-    globals.config.set('total_time', str(time.time() - start_time))
+    globals.set('total_time', str(time.time() - start_time))
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
@@ -178,11 +178,11 @@ def cross_subject_exp():
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=globals.config, subject_id='all', fieldnames=fieldnames)
     evolution_file = '%s/archs.txt' % (exp_folder)
-    if args.experiment == 'evolution_layers':
+    if globals.get('exp_type') == 'evolution_layers':
         naiveNAS.evolution_layers_all(csv_file, evolution_file)
-    elif args.experiment == 'target':
+    elif globals.get('exp_type') == 'target':
         naiveNAS.run_target_model(csv_file)
-    globals.config.set('total_time', str(time.time() - start_time))
+    globals.set('total_time', str(time.time() - start_time))
     write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
@@ -222,7 +222,7 @@ if __name__ == '__main__':
                 if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
                     globals.set('cuda', True)
                     # torch.cuda.set_device(0)
-                    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+                    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
                 stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
                                      NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
                 if globals.get('cropping'):
@@ -254,9 +254,9 @@ if __name__ == '__main__':
                     globals.set('num_generations', globals.get('num_generations') *
                                 globals.get('cross_subject_compensation_rate'))
                     # make num of generations equal for cross and per subject
-                if args.experiment in ['target', 'benchmark']:
+                if globals.get('exp_type') in ['target', 'benchmark']:
                     target_exp()
-                elif args.experiment == 'from_file':
+                elif globals.get('exp_type') == 'from_file':
                     target_exp(model_from_file=args.model)
                 elif globals.get('cross_subject'):
                     cross_subject_exp()
