@@ -240,14 +240,21 @@ class NaiveNAS:
                     count += 1
         return attr_count / count
 
-    def calculate_population_similarity(self, layer_collections):
+    def calculate_population_similarity(self, layer_collections, evolution_file, sim_count):
         sim = 0
-        for i in range(100):
+        to_output = 3
+        for i in range(sim_count):
             idxs = random.sample(range(len(layer_collections)), 2)
-            sim += models_generation.network_similarity(layer_collections[idxs[0]], layer_collections[idxs[1]])
-        return sim / 100
+            score, output = models_generation.network_similarity(layer_collections[idxs[0]],
+                                                                 layer_collections[idxs[1]], return_output=True)
+            sim += score
+            if to_output > 0:
+                with open(evolution_file, "a") as text_file:
+                    print(output, file=text_file)
+                to_output -= 1
+        return sim / sim_count
 
-    def calculate_stats(self, weighted_population):
+    def calculate_stats(self, weighted_population, evolution_file):
         stats = {}
         params = ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']
         for param in params:
@@ -269,7 +276,9 @@ class NaiveNAS:
         for stat in layer_stats.keys():
             stats[stat] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
                                                                  layer_stats[stat][0], layer_stats[stat][1])
-        stats['similarity_measure'] = self.calculate_population_similarity([pop['model'] for pop in weighted_population])
+        stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
+        stats['similarity_measure'] = self.calculate_population_similarity(
+            [pop['model'] for pop in weighted_population], evolution_file, sim_count=globals.get('sim_count'))
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
@@ -301,7 +310,7 @@ class NaiveNAS:
         for generation in range(num_generations):
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population, key=lambda x: x['val_acc'], reverse=True)
-            stats = self.calculate_stats(weighted_population)
+            stats = self.calculate_stats(weighted_population, evolution_file)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
                     if random.uniform(0, 1) < (index / pop_size):

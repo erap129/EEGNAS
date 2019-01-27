@@ -1,6 +1,7 @@
 import torch
 import traceback
 import numpy as np
+from Bio.pairwise2 import format_alignment
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 import os
@@ -155,19 +156,25 @@ def get_layer(layer_collection, layer_type, order):
           f"the order is: {order}")
 
 
-def layer_comparison(layer_type, layer1_order, layer2_order, layer_collection1, layer_collection2, attrs):
+def layer_comparison(layer_type, layer1_order, layer2_order, layer_collection1, layer_collection2, attrs, output):
     score = 0
     layer1 = get_layer(layer_collection1, layer_type, layer1_order)
     layer2 = get_layer(layer_collection2, layer_type, layer2_order)
     for attr in attrs:
-        score += 1 / (abs(getattr(layer1, attr) - getattr(layer2, attr)) + 1) * 5
+        added_value = 1 / (abs(getattr(layer1, attr) - getattr(layer2, attr)) + 1) * 5
+        score += added_value
+        output.append(f"{layer_type.__name__}_{layer1_order}_{layer2_order}"
+                      f" with attribute {attr}, added value : 1 / abs({getattr(layer1, attr)}"
+                      f" - {getattr(layer2, attr)}) + 1 * 5 = {added_value:.3f}")
     return score
 
 
-def network_similarity(layer_collection1, layer_collection2):
+def network_similarity(layer_collection1, layer_collection2, return_output=False):
     str1 = string_representation(layer_collection1)
     str2 = string_representation(layer_collection2)
     alignment = pairwise2.align.globalms(str1, str2, 2, -1, -.5, -.1)[0]
+    output = ['-' * 50]
+    output.append(format_alignment(*alignment))
     score = alignment[2]
     str1_orders = defaultdict(lambda:0)
     str2_orders = defaultdict(lambda:0)
@@ -177,13 +184,17 @@ def network_similarity(layer_collection1, layer_collection2):
         if x == y == 'c':
             score += layer_comparison(ConvLayer, str1_orders['c'], str2_orders['c'],
                                       layer_collection1, layer_collection2,
-                                      ['kernel_eeg_chan', 'filter_num', 'kernel_time'])
+                                      ['kernel_eeg_chan', 'filter_num', 'kernel_time'], output)
         if x == y == 'p':
             score += layer_comparison(PoolingLayer, str1_orders['p'], str2_orders['p'],
                                       layer_collection1, layer_collection2,
-                                      ['pool_time', 'stride_time'])
-    return score
-
+                                      ['pool_time', 'stride_time'], output)
+    output.append(f"final similarity: {score:.3f}")
+    output.append('-' * 50)
+    if return_output:
+        return score, '\n'.join(output)
+    else:
+        return score
 
 class MyModel:
     def __init__(self, model, layer_collection={}, name=None):
@@ -295,14 +306,33 @@ class MyModel:
             return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
 
 
+# def check_legal_model(layer_collection):
+#     try:
+#         finalize_model(layer_collection)
+#         return True
+#     except Exception as e:
+#         print('check legal model failed. Exception message: %s' % (str(e)))
+#         print(traceback.format_exc())
+#         return False
+
+
 def check_legal_model(layer_collection):
-    try:
-        finalize_model(layer_collection)
-        return True
-    except Exception as e:
-        print('check legal model failed. Exception message: %s' % (str(e)))
-        print(traceback.format_exc())
-        return False
+    if globals.get('channel_dim') == 'channels':
+        input_chans = 1
+    else:
+        input_chans = globals.get('eeg_chans')
+    input_time = globals.get('input_time_len')
+    for layer in layer_collection:
+        if type(layer) == ConvLayer:
+            input_time = (input_time - layer.kernel_time) + 1
+            input_chans = (input_chans - layer.kernel_eeg_chan) + 1
+        elif type(layer) == PoolingLayer:
+            input_time = (input_time - layer.pool_time) / layer.stride_time + 1
+            input_chans = (input_chans - layer.pool_eeg_chan) / layer.stride_eeg_chan + 1
+        if input_time < 1 or input_chans < 1:
+            print(f"illegal model, input_time={input_time}, input_chans={input_chans}")
+            return False
+    return True
 
 
 def random_layer():

@@ -221,10 +221,9 @@ if __name__ == '__main__':
                 globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
                 if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
                     globals.set('cuda', True)
-                    assert torch.cuda.is_available(), "Cuda not available"
                     # torch.cuda.set_device(0)
                     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
-                    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+                    assert torch.cuda.is_available(), "Cuda not available"
                 stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
                                      NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
                 if globals.get('cropping'):

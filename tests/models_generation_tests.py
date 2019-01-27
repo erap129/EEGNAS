@@ -47,6 +47,7 @@ class TestModelGeneration(unittest.TestCase):
         assert(len(check_list) == 0)
 
     def test_state_inheritance_breeding(self):
+        globals.set('eeg_chans', 22)
         globals.set('inherit_breeding_weights', True)
         globals.set('num_layers', 4)
         globals.set('mutation_rate', 0)
