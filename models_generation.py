@@ -1,5 +1,4 @@
 import torch
-import traceback
 import numpy as np
 from Bio.pairwise2 import format_alignment
 from braindecode.torch_ext.modules import Expression
@@ -13,7 +12,8 @@ import copy
 import globals
 from Bio import pairwise2
 from collections import defaultdict
-from torchsummary import summary
+import networkx as nx
+from networkx.classes.function import create_empty_copy
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 
@@ -25,16 +25,20 @@ def print_structure(structure):
     print('-----------------------------------------------')
 
 
+class Lattice:
+    def __init__(self, layers, connections):
+        self.layers = layers
+        self.connections = connections
+
+
 class IdentityModule(nn.Module):
     def forward(self, inputs):
         return inputs
 
 
 class Layer():
-
     def __init__(self, name=None):
         self.connections = []
-        self.parent = None
         self.name = name
 
     def __eq__(self, other):
@@ -45,7 +49,7 @@ class Layer():
 
     def make_connection(self, other):
         self.connections.append(other)
-        other.parent = self
+
 
 class InputLayer(Layer):
     def __init__(self, shape_height, shape_width):
@@ -306,16 +310,6 @@ class MyModel:
             return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
 
 
-# def check_legal_model(layer_collection):
-#     try:
-#         finalize_model(layer_collection)
-#         return True
-#     except Exception as e:
-#         print('check legal model failed. Exception message: %s' % (str(e)))
-#         print(traceback.format_exc())
-#         return False
-
-
 def check_legal_model(layer_collection):
     if globals.get('channel_dim') == 'channels':
         input_chans = 1
@@ -335,6 +329,43 @@ def check_legal_model(layer_collection):
     return True
 
 
+def calc_shape(in_shape, layer):
+    input_time = in_shape['time']
+    input_chans = in_shape['chans']
+    if type(layer) == ConvLayer:
+        input_time = (input_time - layer.kernel_time) + 1
+        input_chans = (input_chans - layer.kernel_eeg_chan) + 1
+    elif type(layer) == PoolingLayer:
+        input_time = (input_time - layer.pool_time) / layer.stride_time + 1
+        input_chans = (input_chans - layer.pool_eeg_chan) / layer.stride_eeg_chan + 1
+    if input_time < 1 or input_chans < 1:
+        raise ValueError(f"illegal model, input_time={input_time}, input_chans={input_chans}")
+    return {'time': input_time, 'chans': input_chans}
+
+
+def check_legal_grid_model(layer_grid):
+    if globals.get('channel_dim') == 'channels':
+        input_chans = 1
+    else:
+        input_chans = globals.get('eeg_chans')
+    input_time = globals.get('input_time_len')
+    input_shape = {'time': input_time, 'chans': input_chans}
+    layer_shapes = layer_grid.copy()
+    layer_shapes.nodes['input']['shape'] = input_shape
+    nodes_to_check = [(i,j) for i in range(layer_shapes.graph['width'])
+                      for j in range(layer_shapes.graph['height'])]
+    nodes_to_check.append('output')
+    for node in nodes_to_check:
+        predecessors = list(layer_shapes.predecessors(node))
+        if len(predecessors) == 1:
+            try:
+                layer_shapes.nodes[node]['shape'] = calc_shape(layer_shapes.nodes[predecessors[0]]['shape'],
+                                                           layer_shapes.nodes[node]['layer'])
+            except ValueError:
+                return False
+    return True
+
+
 def random_layer():
     layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
     return layers[random.randint(0, 5)]()
@@ -348,6 +379,25 @@ def random_model(n_layers):
         return layer_collection
     else:
         return random_model(n_layers)
+
+
+def random_grid_model(height, width):
+    layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(height, width)))
+    for node in layer_grid.nodes.values():
+        node['layer'] = random_layer()
+    layer_grid.add_node('input')
+    layer_grid.add_node('output')
+    layer_grid.nodes['output']['layer'] = IdentityLayer()
+    layer_grid.add_edge('input', (0,0))
+    layer_grid.add_edge((0,width-1), 'output')
+    for i in range(width-1):
+        layer_grid.add_edge((0,i), (0,i+1))
+    layer_grid.graph['height'] = height
+    layer_grid.graph['width'] = width
+    if check_legal_grid_model(layer_grid):
+        return layer_grid
+    else:
+        return random_grid_model(height, width)
 
 
 def uniform_model(n_layers, layer_type):
@@ -483,7 +533,7 @@ def add_layer(layer_collection, layer_to_add, in_place=False):
 
 def finalize_model(layer_collection):
     layer_collection = copy.deepcopy(layer_collection)
-    if globals.config['DEFAULT']['cropping']:
+    if globals.get('cropping'):
         final_conv_time = globals.get('final_conv_size')
     else:
         final_conv_time = 'down_to_one'

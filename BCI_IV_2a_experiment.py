@@ -70,9 +70,12 @@ def generate_report(filename, report_filename):
 
 def write_dict(dict, filename):
     with open(filename, 'w') as f:
+        all_keys = set()
         for inner_dict in dict.values():
-            for K, V in inner_dict.items():
-                f.write(str(K) + "\t" + str(V) + "\n")
+            for K in inner_dict.keys():
+                all_keys.add(K)
+        for K in all_keys:
+            f.write(f"{K}\t{globals.get(K)}\n")
 
 
 def garbage_time():
@@ -130,7 +133,6 @@ def target_exp(model_from_file=None):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-    start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
@@ -139,15 +141,12 @@ def target_exp(model_from_file=None):
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
                             model_from_file=model_from_file)
         naiveNAS.run_target_model(csv_file)
-    globals.set('total_time', str(time.time() - start_time))
-    write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
-def per_subject_exp():
+def per_subject_exp(subjects):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-    start_time = time.time()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
@@ -156,23 +155,20 @@ def per_subject_exp():
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         naiveNAS.evolution_layers(csv_file, evolution_file)
-    globals.set('total_time', str(time.time() - start_time))
-    write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
-def cross_subject_exp():
+def cross_subject_exp(subjects):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-    start_time = time.time()
-    train_set_all = []
-    val_set_all = []
-    test_set_all = []
-    for subject_id in range(1,10):
+    train_set_all = {}
+    val_set_all = {}
+    test_set_all = {}
+    for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
-        train_set_all.append(train_set)
-        val_set_all.append(val_set)
-        test_set_all.append(test_set)
+        train_set_all[subject_id] = train_set
+        val_set_all[subject_id] = val_set
+        test_set_all[subject_id] = test_set
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
@@ -182,8 +178,6 @@ def cross_subject_exp():
         naiveNAS.evolution_layers_all(csv_file, evolution_file)
     elif globals.get('exp_type') == 'target':
         naiveNAS.run_target_model(csv_file)
-    globals.set('total_time', str(time.time() - start_time))
-    write_dict(dict=globals.config, filename=str(exp_folder) + '/final_config.ini')
 
 
 if __name__ == '__main__':
@@ -198,7 +192,6 @@ if __name__ == '__main__':
     low_cut_hz = 0
     valid_set_fraction = 0.2
     listen()
-
 
     subdirs = [x for x in os.walk('results')]
     if len(subdirs) == 1:
@@ -221,7 +214,6 @@ if __name__ == '__main__':
                 globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
                 if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
                     globals.set('cuda', True)
-                    # torch.cuda.set_device(0)
                     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
                     assert torch.cuda.is_available(), "Cuda not available"
                 stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
@@ -247,30 +239,33 @@ if __name__ == '__main__':
                 exp_name = f"{exp_id}_{index+1}_{args.experiment}"
                 exp_folder = 'results/' + exp_name
                 createFolder(exp_folder)
-                write_dict(dict=globals.config, filename=str(exp_folder) + '/config.ini')
-                csv_file = f"{exp_folder}/{exp_id}_{index+1}_{args.experiment}.csv"
-                report_file = f"{exp_folder}/report.csv"
+                write_dict(globals.config, f"{exp_folder}/config_{exp_name}.ini")
+                csv_file = f"{exp_folder}/{exp_name}.csv"
+                report_file = f"{exp_folder}/report_{exp_name}.csv"
                 fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
                 if 'cross_subject' in multiple_values and not globals.get('cross_subject'):
                     globals.set('num_generations', globals.get('num_generations') *
                                 globals.get('cross_subject_compensation_rate'))
                     # make num of generations equal for cross and per subject
+                start_time = time.time()
                 if globals.get('exp_type') in ['target', 'benchmark']:
                     target_exp()
                 elif globals.get('exp_type') == 'from_file':
                     target_exp(model_from_file=args.model)
                 elif globals.get('cross_subject'):
-                    cross_subject_exp()
+                    cross_subject_exp(subjects)
                 else:
-                    per_subject_exp()
+                    per_subject_exp(subjects)
+                globals.set('total_time', str(time.time() - start_time))
+                write_dict(globals.config, f"{exp_folder}/final_config_{exp_name}.ini")
                 generate_report(csv_file, report_file)
             except Exception as e:
-                with open(exp_folder + "/error_log.txt", "w") as err_file:
+                with open(f"{exp_folder}/error_log_{exp_name}.txt", "w") as err_file:
                     print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
                     print(traceback.format_exc(), file=err_file)
                 new_exp_folder = exp_folder + '_fail'
                 os.rename(exp_folder, new_exp_folder)
-                write_dict(dict=globals.config, filename=str(new_exp_folder) + '/final_config.ini')
+                write_dict(globals.config, f"{exp_folder}/final_config_{exp_name}.ini")
     finally:
         garbage_time()
 

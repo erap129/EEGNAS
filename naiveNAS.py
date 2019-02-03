@@ -19,7 +19,7 @@ import os
 import globals
 import csv
 from torch import nn
-from torchsummary import summary
+from utils import summary
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
@@ -143,6 +143,30 @@ class NaiveNAS:
             self.current_chosen_population_sample = []
         self.mutation_rate = globals.get('mutation_rate')
 
+    def get_dummy_input(self):
+        if globals.get('cross_subject'):
+            random_subj = list(self.datasets['train'].keys())[0]
+            return np_to_var(self.datasets['train'][random_subj].X[:1, :, :, None])
+        else:
+            return np_to_var(self.datasets['train'].X[:1, :, :, None])
+
+    def finalized_model_to_dilated(self, model):
+        conv_classifier = list(model._modules.items())[-3][1]
+        model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
+                                          (globals.get('final_conv_size'),
+                                           conv_classifier.kernel_size[1]), stride=conv_classifier.stride)
+        dummy_input = self.get_dummy_input()
+        if globals.get('cuda'):
+            model.cuda()
+            dummy_input = dummy_input.cuda()
+        to_dense_prediction_model(model)
+        out = model(dummy_input)
+        n_preds_per_input = out.cpu().data.numpy().shape[2]
+        globals.set('n_preds_per_input', n_preds_per_input)
+        self.iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
+                                                input_time_length=globals.get('input_time_len'),
+                                                n_preds_per_input=globals.get('n_preds_per_input'))
+
     def run_target_model(self, csv_file):
         globals.set('max_epochs', globals.get('final_max_epochs'))
         globals.set('max_increase_epochs', globals.get('final_max_increase_epochs'))
@@ -151,21 +175,6 @@ class NaiveNAS:
                 model = torch.load(self.model_from_file)
             else:
                 model = torch.load(self.model_from_file, map_location='cpu')
-            if globals.get('cropping'):
-                conv_classifier = list(model._modules.items())[-3][1]
-                model.conv_classifier =  nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
-                          (globals.get('final_conv_size'),
-                           conv_classifier.kernel_size[1]), stride=conv_classifier.stride)
-                model.cuda()
-                dummy_input = np_to_var(self.datasets['train'].X[:1, :, :, None])
-                if globals.get('cuda'):
-                    dummy_input = dummy_input.cuda()
-                out = model(dummy_input)
-                n_preds_per_input = out.cpu().data.numpy().shape[2]
-                globals.set('n_preds_per_input', n_preds_per_input)
-                self.iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
-                                                   input_time_length=globals.get('input_time_len'),
-                                                   n_preds_per_input=globals.get('n_preds_per_input'))
         else:
             model = target_model()
         final_time, res_test, res_val, res_train, model, model_state, num_epochs =\
@@ -387,9 +396,9 @@ class NaiveNAS:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
                                  NoDecrease('valid_misclass', globals.get('final_max_increase_epochs'))])
         if subject is not None and globals.get('cross_subject'):
-            single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject - 1]),
-                                               ('valid', self.datasets['valid'][subject - 1]),
-                                               ('test', self.datasets['test'][subject - 1])))
+            single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
+                                               ('valid', self.datasets['valid'][subject]),
+                                               ('test', self.datasets['test'][subject])))
         else:
             single_subj_dataset = self.datasets
         self.epochs_df = pd.DataFrame()
@@ -399,8 +408,6 @@ class NaiveNAS:
             finalized_model = models_generation.MyModel(model=model)
         else:
             finalized_model = finalize_model(model)
-        if globals.get('cropping'):
-            to_dense_prediction_model(finalized_model.model)
         if globals.get('inherit_weights') and state is not None:
             finalized_model.model.load_state_dict(state)
         self.optimizer = optim.Adam(finalized_model.model.parameters())
@@ -420,6 +427,8 @@ class NaiveNAS:
         num_epochs = self.run_until_stop(pytorch_model, single_subj_dataset)
         self.setup_after_stop_training(pytorch_model, final_evaluation)
         if final_evaluation:
+            if globals.get('cropping'):
+                self.finalized_model_to_dilated(finalize_model.model)
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             datasets = single_subj_dataset
             datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])

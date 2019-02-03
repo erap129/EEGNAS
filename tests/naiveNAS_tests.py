@@ -20,6 +20,7 @@ class TestModelGeneration(unittest.TestCase):
         configs = get_configurations(args)
         assert(len(configs) == 1)
         globals.set_config(configs[0])
+        globals.set('eeg_chans', 22)
 
     def test_hash_model_nochange(self):
         model1 = uniform_model(10, ActivationLayer)

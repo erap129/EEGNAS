@@ -2,6 +2,7 @@ import unittest
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
     MyModel, ActivationLayer, network_similarity, PoolingLayer
+import models_generation
 from BCI_IV_2a_experiment import get_configurations, parse_args
 import globals
 from globals import init_config
@@ -13,6 +14,7 @@ class TestModelGeneration(unittest.TestCase):
         configs = get_configurations(args)
         assert(len(configs) == 1)
         globals.set_config(configs[0])
+        globals.set('eeg_chans', 22)
 
     def test_breed(self):
         model1 = uniform_model(10, BatchNormLayer)
@@ -47,7 +49,6 @@ class TestModelGeneration(unittest.TestCase):
         assert(len(check_list) == 0)
 
     def test_state_inheritance_breeding(self):
-        globals.set('eeg_chans', 22)
         globals.set('inherit_breeding_weights', True)
         globals.set('num_layers', 4)
         globals.set('mutation_rate', 0)
@@ -74,6 +75,10 @@ class TestModelGeneration(unittest.TestCase):
         model2 = [conv1, conv1, pool2, conv1, pool2, conv1, pool2]
         model3 = [conv2, pool1, conv2, pool1, conv2, pool1]
         assert(network_similarity(model1, model2) > network_similarity(model2, model3))
+
+    def test_random_grid_model(self):
+        model = models_generation.random_grid_model(3,3)
+
 
 
 

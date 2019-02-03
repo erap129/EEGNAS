@@ -153,10 +153,10 @@ if __name__ == '__main__':
             logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                                 level=logging.DEBUG, stream=sys.stdout)
             # Should contain both .gdf files and .mat-labelfiles from competition
-            data_folder = 'data/'
+            data_folder = 'data/BCI_IV/'
             low_cut_hz = 4  # 0 or 4
-            model = 'shallow'  # 'shallow' or 'deep'
-            cuda = True
+            model = 'deep'  # 'shallow' or 'deep'
+            cuda = th.cuda.is_available()
             exp = run_exp(data_folder, subject_id, low_cut_hz, model, cuda)
             log.info("\nLast 10 epochs")
             log.info("\n" + str(exp.epochs_df.iloc[-10:]))
