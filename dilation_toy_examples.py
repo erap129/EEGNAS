@@ -15,19 +15,19 @@ model.add_module("pool1", nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)))
 model.add_module("conv2", conv2)
 model.add_module("pool2", nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)))
 
-input = np_to_var(np.arange(0, 13, 1)[np.newaxis, np.newaxis, :, np.newaxis])
+input = np_to_var(np.arange(1, 14, 1)[np.newaxis, np.newaxis, :, np.newaxis])
 input = input.type('torch.FloatTensor')
 
-input1 = np_to_var(np.arange(0, 10, 1)[np.newaxis, np.newaxis, :, np.newaxis])
+input1 = np_to_var(np.arange(1, 11, 1)[np.newaxis, np.newaxis, :, np.newaxis])
 input1 = input1.type('torch.FloatTensor')
 
-input2 = np_to_var(np.arange(1, 11, 1)[np.newaxis, np.newaxis, :, np.newaxis])
+input2 = np_to_var(np.arange(2, 12, 1)[np.newaxis, np.newaxis, :, np.newaxis])
 input2 = input2.type('torch.FloatTensor')
 
-input3 = np_to_var(np.arange(2, 12, 1)[np.newaxis, np.newaxis, :, np.newaxis])
+input3 = np_to_var(np.arange(3, 13, 1)[np.newaxis, np.newaxis, :, np.newaxis])
 input3 = input3.type('torch.FloatTensor')
 
-input4 = np_to_var(np.arange(3, 13, 1)[np.newaxis, np.newaxis, :, np.newaxis])
+input4 = np_to_var(np.arange(4, 14, 1)[np.newaxis, np.newaxis, :, np.newaxis])
 input4 = input4.type('torch.FloatTensor')
 
 print('output 1:' + str(model.forward(input1)))

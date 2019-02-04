@@ -666,13 +666,6 @@ def handle_subject_data(subject_id, cropping=False):
     return X_train, y_train, X_valid, y_valid, X_test, y_test
 
 
-from keras.models import Sequential
-from keras.layers import Input, Conv2D, Dense, Flatten, Activation, MaxPool2D, Lambda, Dropout, BatchNormalization
-from keras.models import model_from_json, Model
-import numpy as np
-import keras.backend as K
-
-
 def shallow_model_mimic(n_chans, input_time_length, n_classes, n_filters_time=40, n_filters_spat=40,
                         filter_time_length=25, cropped=False):
     model = Sequential()

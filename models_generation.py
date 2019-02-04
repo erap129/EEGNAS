@@ -200,114 +200,108 @@ def network_similarity(layer_collection1, layer_collection2, return_output=False
     else:
         return score
 
-class MyModel:
-    def __init__(self, model, layer_collection={}, name=None):
-        self.layer_collection = layer_collection
-        self.model = model
-        self.name = name
 
-    @staticmethod
-    def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
-        model = nn.Sequential()
-        if globals.get('channel_dim') != 'channels' or globals.get('exp_type') == 'target':
-            model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
-        if globals.get('time_factor') != -1:
-            model.add_module('stack_by_time', Expression(MyModel._stack_input_by_time))
-        activations = {'elu': nn.ELU, 'softmax': nn.Softmax}
-        input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
-        for i in range(len(layer_collection)):
-            layer = layer_collection[i]
-            if i > 0:
-                out = model.forward(np_to_var(np.ones(
-                    input_shape,
-                    dtype=np.float32)))
-                prev_channels = out.cpu().data.numpy().shape[1]
-                prev_time = out.cpu().data.numpy().shape[2]
-                prev_eeg_channels = out.cpu().data.numpy().shape[3]
-            else:
-                prev_eeg_channels = globals.get('eeg_chans')
-                prev_time = globals.get('input_time_len')
-                prev_channels = 1
-            if isinstance(layer, PoolingLayer):
-                while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
-                    if random.uniform(0,1) < 0.5 and layer.pool_time > 1:
-                        layer.pool_time -= 1
-                    elif layer.stride_time > 1:
-                        layer.stride_time -=1
-                    if layer.pool_time == 1 and layer.stride_time == 1:
-                        break
-                if globals.get('channel_dim') == 'channels':
-                    layer.pool_eeg_chan = 1
-                model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
-                                                                          stride=(layer.stride_time, 1)))
-
-            elif isinstance(layer, ConvLayer):
-                if layer.kernel_time == 'down_to_one':
-                    layer.kernel_time = prev_time
-                    layer.kernel_eeg_chan = prev_eeg_channels
-                    conv_name = 'conv_classifier'
-                else:
-                    conv_name = '%s_%d' % (type(layer).__name__, i)
-                    if applyFix and layer.kernel_eeg_chan > prev_eeg_channels:
-                        layer.kernel_eeg_chan = prev_eeg_channels
-                    if applyFix and layer.kernel_time > prev_time:
-                        layer.kernel_time = prev_time
-                if globals.get('channel_dim') == 'channels':
-                    layer.kernel_eeg_chan = 1
-                model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
-                                                    (layer.kernel_time, layer.kernel_eeg_chan),
-                                                    stride=1))
-
-            elif isinstance(layer, BatchNormLayer):
-                model.add_module('%s_%d' % (type(layer).__name__, i), nn.BatchNorm2d(prev_channels,
-                                                                    momentum=globals.get('batch_norm_alpha'),
-                                                                    affine=True, eps=1e-5), )
-
-            elif isinstance(layer, ActivationLayer):
-                model.add_module('%s_%d' % (layer.activation_type, i), activations[layer.activation_type]())
-
-
-            elif isinstance(layer, DropoutLayer):
-                model.add_module('%s_%d' % (type(layer).__name__, i), nn.Dropout(p=globals.get('dropout_p')))
-
-            elif isinstance(layer, IdentityLayer):
-                model.add_module('%s_%d' % (type(layer).__name__, i), IdentityModule())
-
-            elif isinstance(layer, FlattenLayer):
-                model.add_module('squeeze', Expression(MyModel._squeeze_final_output))
-
-        if applyFix:
-            return layer_collection
-        if check_model:
-            return
-        init.xavier_uniform_(list(model._modules.items())[-3][1].weight, gain=1)
-        init.constant_(list(model._modules.items())[-3][1].bias, 0)
-        if torch.cuda.device_count() > 1:
-            model = nn.DataParallel(model)
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            model.to(device)
-        return MyModel(layer_collection=layer_collection, model=model)
-
-    # remove empty dim at end and potentially remove empty time dim
-    # do not just use squeeze as we never want to remove first dim
-    @staticmethod
-    def _squeeze_final_output(x):
-        assert x.size()[3] == 1
-        x = x[:, :, :, 0]
-        if x.size()[2] == 1:
-            x = x[:, :, 0]
-        return x
-
-    @staticmethod
-    def _transpose_time_to_spat(x):
-        return x.permute(0, 3, 2, 1)
-
-    @staticmethod
-    def _stack_input_by_time(x):
-        if globals.config['DEFAULT']['channel_dim'] == 'one':
-            return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
+def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
+    model = nn.Sequential()
+    if globals.get('channel_dim') != 'channels' or globals.get('exp_type') == 'target':
+        model.add_module('dimshuffle', Expression(_transpose_time_to_spat))
+    if globals.get('time_factor') != -1:
+        model.add_module('stack_by_time', Expression(_stack_input_by_time))
+    activations = {'elu': nn.ELU, 'softmax': nn.Softmax}
+    input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+    for i in range(len(layer_collection)):
+        layer = layer_collection[i]
+        if i > 0:
+            out = model.forward(np_to_var(np.ones(
+                input_shape,
+                dtype=np.float32)))
+            prev_channels = out.cpu().data.numpy().shape[1]
+            prev_time = out.cpu().data.numpy().shape[2]
+            prev_eeg_channels = out.cpu().data.numpy().shape[3]
         else:
-            return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
+            prev_eeg_channels = globals.get('eeg_chans')
+            prev_time = globals.get('input_time_len')
+            prev_channels = 1
+        if isinstance(layer, PoolingLayer):
+            while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
+                if random.uniform(0,1) < 0.5 and layer.pool_time > 1:
+                    layer.pool_time -= 1
+                elif layer.stride_time > 1:
+                    layer.stride_time -=1
+                if layer.pool_time == 1 and layer.stride_time == 1:
+                    break
+            if globals.get('channel_dim') == 'channels':
+                layer.pool_eeg_chan = 1
+            model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
+                                                                      stride=(layer.stride_time, 1)))
+
+        elif isinstance(layer, ConvLayer):
+            if layer.kernel_time == 'down_to_one':
+                layer.kernel_time = prev_time
+                layer.kernel_eeg_chan = prev_eeg_channels
+                conv_name = 'conv_classifier'
+            else:
+                conv_name = '%s_%d' % (type(layer).__name__, i)
+                if applyFix and layer.kernel_eeg_chan > prev_eeg_channels:
+                    layer.kernel_eeg_chan = prev_eeg_channels
+                if applyFix and layer.kernel_time > prev_time:
+                    layer.kernel_time = prev_time
+            if globals.get('channel_dim') == 'channels':
+                layer.kernel_eeg_chan = 1
+            model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
+                                                (layer.kernel_time, layer.kernel_eeg_chan),
+                                                stride=1))
+
+        elif isinstance(layer, BatchNormLayer):
+            model.add_module('%s_%d' % (type(layer).__name__, i), nn.BatchNorm2d(prev_channels,
+                                                                momentum=globals.get('batch_norm_alpha'),
+                                                                affine=True, eps=1e-5), )
+
+        elif isinstance(layer, ActivationLayer):
+            model.add_module('%s_%d' % (layer.activation_type, i), activations[layer.activation_type]())
+
+
+        elif isinstance(layer, DropoutLayer):
+            model.add_module('%s_%d' % (type(layer).__name__, i), nn.Dropout(p=globals.get('dropout_p')))
+
+        elif isinstance(layer, IdentityLayer):
+            model.add_module('%s_%d' % (type(layer).__name__, i), IdentityModule())
+
+        elif isinstance(layer, FlattenLayer):
+            model.add_module('squeeze', Expression(_squeeze_final_output))
+
+    if applyFix:
+        return layer_collection
+    if check_model:
+        return
+    init.xavier_uniform_(list(model._modules.items())[-3][1].weight, gain=1)
+    init.constant_(list(model._modules.items())[-3][1].bias, 0)
+    if globals.get('parallel_gpu'):
+        model = nn.DataParallel(model)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+    return model
+
+
+# remove empty dim at end and potentially remove empty time dim
+# do not just use squeeze as we never want to remove first dim
+def _squeeze_final_output(x):
+    assert x.size()[3] == 1
+    x = x[:, :, :, 0]
+    if x.size()[2] == 1:
+        x = x[:, :, 0]
+    return x
+
+
+def _transpose_time_to_spat(x):
+    return x.permute(0, 3, 2, 1)
+
+
+def _stack_input_by_time(x):
+    if globals.config['DEFAULT']['channel_dim'] == 'one':
+        return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
+    else:
+        return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
 
 
 def check_legal_model(layer_collection):
@@ -445,7 +439,7 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
             second_model[rand_layer] = random_layer()
             if check_legal_model(second_model):
                 break
-    new_model = MyModel.new_model_from_structure_pytorch(second_model, applyFix=True)
+    new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
         finalized_new_model_state = finalized_new_model.model.state_dict()
@@ -544,7 +538,7 @@ def finalize_model(layer_collection):
     layer_collection.append(softmax)
     flatten = FlattenLayer()
     layer_collection.append(flatten)
-    return MyModel.new_model_from_structure_pytorch(layer_collection)
+    return new_model_from_structure_pytorch(layer_collection)
 
 
 def add_conv_maxpool_block(layer_collection, conv_width=10, conv_filter_num=50, dropout=False,

@@ -2,7 +2,6 @@ mne==0.16.2
 torch==1.0.0
 Braindecode==0.4.7
 matplotlib==2.1.2
-tensorflow==1.10.0
 scipy==1.0.0
 pandas==0.22.0
 numpy==1.15.1

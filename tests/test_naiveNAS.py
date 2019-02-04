@@ -2,7 +2,7 @@ import unittest
 from braindecode.datautil.iterators import BalancedBatchSizeIterator
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, RuntimeMonitor
 import numpy as np
-from naiveNAS import NaiveNAS
+from naiveNAS import NaiveNAS, finalize_model
 from models_generation import uniform_model, breed_layers,\
     ConvLayer, ActivationLayer
 from BCI_IV_2a_experiment import get_configurations, parse_args
@@ -86,7 +86,7 @@ class TestModelGeneration(unittest.TestCase):
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=1, fieldnames=None,
                             model_from_file=None)
-        naiveNAS.evaluate_model(model)
+        naiveNAS.evaluate_model(finalize_model(model))
 
 if __name__ == '__main__':
     unittest.main()

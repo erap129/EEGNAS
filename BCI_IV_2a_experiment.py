@@ -78,10 +78,35 @@ def write_dict(dict, filename):
             f.write(f"{K}\t{globals.get(K)}\n")
 
 
+def get_normal_settings():
+    stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
+                         NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
+    iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
+    loss_function = F.nll_loss
+    monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
+    return stop_criterion, iterator, loss_function, monitors
+
+
+def get_cropped_settings():
+    stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
+                         NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
+    iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
+                                       input_time_length=globals.get('input_time_len'),
+                                       n_preds_per_input=globals.get('n_preds_per_input'))
+    loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
+    monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
+                CroppedTrialMisclassMonitor(
+                    input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
+    return stop_criterion, iterator, loss_function, monitors
+
+
 def garbage_time():
     print('ENTERING GARBAGE TIME')
+    stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     args.experiment = 'target'
     globals.set('channel_dim', 'one')
+    globals.set('input_time_len', 1125)
+    globals.set('cropping', False)
     train_set, val_set, test_set = get_train_val_test(data_folder, 1, 0)
     garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set, val_set=val_set, test_set=test_set,
@@ -129,7 +154,7 @@ def get_multiple_values(configurations):
     return list(set(multiple_values))
 
 
-def target_exp(model_from_file=None):
+def target_exp(stop_criterion, iterator, loss_function, model_from_file=None):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -143,7 +168,7 @@ def target_exp(model_from_file=None):
         naiveNAS.run_target_model(csv_file)
 
 
-def per_subject_exp(subjects):
+def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -157,7 +182,7 @@ def per_subject_exp(subjects):
         naiveNAS.evolution_layers(csv_file, evolution_file)
 
 
-def cross_subject_exp(subjects):
+def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -216,21 +241,11 @@ if __name__ == '__main__':
                     globals.set('cuda', True)
                     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
                     assert torch.cuda.is_available(), "Cuda not available"
-                stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                                     NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
                 if globals.get('cropping'):
                     globals.set('input_time_len', globals.get('input_time_cropping'))
-                    iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
-                                                       input_time_length=globals.get('input_time_len'),
-                                                       n_preds_per_input=globals.get('n_preds_per_input'))
-                    loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
-                    monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
-                                CroppedTrialMisclassMonitor(
-                                    input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
+                    stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
                 else:
-                    iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
-                    loss_function = F.nll_loss
-                    monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
+                    stop_criterion, iterator, loss_function, monitors = get_normal_settings()
                 if type(globals.get('subjects_to_check')) == list:
                     subjects = globals.get('subjects_to_check')
                 else:
@@ -249,13 +264,13 @@ if __name__ == '__main__':
                     # make num of generations equal for cross and per subject
                 start_time = time.time()
                 if globals.get('exp_type') in ['target', 'benchmark']:
-                    target_exp()
+                    target_exp(stop_criterion, iterator, loss_function)
                 elif globals.get('exp_type') == 'from_file':
                     target_exp(model_from_file=args.model)
                 elif globals.get('cross_subject'):
-                    cross_subject_exp(subjects)
+                    cross_subject_exp(subjects, stop_criterion, iterator, loss_function)
                 else:
-                    per_subject_exp(subjects)
+                    per_subject_exp(subjects, stop_criterion, iterator, loss_function)
                 globals.set('total_time', str(time.time() - start_time))
                 write_dict(globals.config, f"{exp_folder}/final_config_{exp_name}.ini")
                 generate_report(csv_file, report_file)
@@ -265,7 +280,7 @@ if __name__ == '__main__':
                     print(traceback.format_exc(), file=err_file)
                 new_exp_folder = exp_folder + '_fail'
                 os.rename(exp_folder, new_exp_folder)
-                write_dict(globals.config, f"{exp_folder}/final_config_{exp_name}.ini")
+                write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
     finally:
         garbage_time()
 

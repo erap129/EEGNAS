@@ -151,15 +151,16 @@ class NaiveNAS:
             return np_to_var(self.datasets['train'].X[:1, :, :, None])
 
     def finalized_model_to_dilated(self, model):
+        to_dense_prediction_model(model)
         conv_classifier = list(model._modules.items())[-3][1]
         model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
                                           (globals.get('final_conv_size'),
-                                           conv_classifier.kernel_size[1]), stride=conv_classifier.stride)
+                                           conv_classifier.kernel_size[1]), stride=conv_classifier.stride,
+                                          dilation=conv_classifier.dilation)
         dummy_input = self.get_dummy_input()
         if globals.get('cuda'):
             model.cuda()
             dummy_input = dummy_input.cuda()
-        to_dense_prediction_model(model)
         out = model(dummy_input)
         n_preds_per_input = out.cpu().data.numpy().shape[2]
         globals.set('n_preds_per_input', n_preds_per_input)
@@ -177,6 +178,9 @@ class NaiveNAS:
                 model = torch.load(self.model_from_file, map_location='cpu')
         else:
             model = target_model()
+            model = finalize_model(model)
+        if globals.get('cropping'):
+            self.finalized_model_to_dilated(model)
         final_time, res_test, res_val, res_train, model, model_state, num_epochs =\
             self.evaluate_model(model, final_evaluation=True)
         stats = {'train_acc': str(res_train), 'val_acc': str(res_val),
@@ -199,7 +203,7 @@ class NaiveNAS:
             if NaiveNAS.check_age(pop):
                 continue
             final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
-                self.evaluate_model(pop['model'], pop['model_state'])
+                self.evaluate_model(finalize_model(pop['model']), pop['model_state'])
             weighted_population[i]['train_acc'] = res_train
             weighted_population[i]['val_acc'] = res_val
             weighted_population[i]['test_acc'] = res_test
@@ -221,7 +225,7 @@ class NaiveNAS:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
                 final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
-                    self.evaluate_model(pop['model'], pop['model_state'], subject=subject)
+                    self.evaluate_model(finalize_model(pop['model']), pop['model_state'], subject=subject)
                 weighted_population[i]['%d_train_acc' % subject] = res_train
                 weighted_population[i]['train_acc'] += res_train
                 weighted_population[i]['%d_val_acc' % subject] = res_train
@@ -300,7 +304,7 @@ class NaiveNAS:
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
             _, res_test, res_val, res_train, _, _, num_epochs = self.evaluate_model(
-                weighted_population[0]['model'], final_evaluation=True, subject=subject)
+                finalize_model(weighted_population[0]['model']), final_evaluation=True, subject=subject)
             stats['%d_final_train_acc' % subject] = res_train
             stats['%d_final_val_acc' % subject] = res_val
             stats['%d_final_test_acc' % subject] = res_test
@@ -404,43 +408,36 @@ class NaiveNAS:
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop'):
             self.rememberer = RememberBest(globals.get('remember_best_column'))
-        if globals.get('exp_type') == 'from_file':
-            finalized_model = models_generation.MyModel(model=model)
-        else:
-            finalized_model = finalize_model(model)
         if globals.get('inherit_weights') and state is not None:
-            finalized_model.model.load_state_dict(state)
-        self.optimizer = optim.Adam(finalized_model.model.parameters())
-        pytorch_model = finalized_model.model
+            model.load_state_dict(state)
+        self.optimizer = optim.Adam(model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
-            pytorch_model.cuda()
+            model.cuda()
             if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
-                pytorch_model = nn.DataParallel(pytorch_model.cuda(), device_ids=[0,1,2,3])
-        self.monitor_epoch(single_subj_dataset, pytorch_model)
+                model = nn.DataParallel(model.cuda(), device_ids=[0,1,2,3])
+        self.monitor_epoch(single_subj_dataset, model)
         if globals.get('log_epochs'):
             self.log_epoch()
         if globals.get('remember_best'):
-            self.rememberer.remember_epoch(self.epochs_df, pytorch_model, self.optimizer)
+            self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
         self.iterator.reset_rng()
         start = time.time()
-        num_epochs = self.run_until_stop(pytorch_model, single_subj_dataset)
-        self.setup_after_stop_training(pytorch_model, final_evaluation)
+        num_epochs = self.run_until_stop(model, single_subj_dataset)
+        self.setup_after_stop_training(model, final_evaluation)
         if final_evaluation:
-            if globals.get('cropping'):
-                self.finalized_model_to_dilated(finalize_model.model)
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             datasets = single_subj_dataset
             datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
-            num_epochs += self.run_until_stop(pytorch_model, datasets)
+            num_epochs += self.run_until_stop(model, datasets)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
-                self.rememberer.reset_to_best_model(self.epochs_df, pytorch_model, self.optimizer)
+                self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
         res_test = 1 - self.epochs_df.iloc[-1]['test_misclass']
         res_val = 1 - self.epochs_df.iloc[-1]['valid_misclass']
         res_train = 1 - self.epochs_df.iloc[-1]['train_misclass']
         final_time = end-start
-        return final_time, res_test, res_val, res_train, pytorch_model, self.rememberer.model_state_dict, num_epochs
+        return final_time, res_test, res_val, res_train, model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
         self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
@@ -606,7 +603,7 @@ class NaiveNAS:
         model = target_model()
         while 1:
             print('GARBAGE TIME GARBAGE TIME GARBAGE TIME')
-            self.evaluate_model(model)
+            self.evaluate_model(finalize_model(model))
 
     def print_to_evolution_file(self, evolution_file, models, generation):
         global text_file
