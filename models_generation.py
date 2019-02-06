@@ -442,7 +442,7 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
-        finalized_new_model_state = finalized_new_model.model.state_dict()
+        finalized_new_model_state = finalized_new_model.state_dict()
         if None not in [first_model_state, second_model_state]:
             for i in range(cut_point):
                 add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)

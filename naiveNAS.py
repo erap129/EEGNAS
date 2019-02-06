@@ -201,6 +201,9 @@ class NaiveNAS:
         self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
             if NaiveNAS.check_age(pop):
+                weighted_population[i] = weighted_population[i - 1]
+                weighted_population[i]['train_time'] = 0
+                weighted_population[i]['num_epochs'] = 0
                 continue
             final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
                 self.evaluate_model(finalize_model(pop['model']), pop['model_state'])
@@ -211,17 +214,23 @@ class NaiveNAS:
             weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
             weighted_population[i]['num_epochs'] = num_epochs
+            # weighted_population[i]['fitness'] = res_val - weighted_population[i]['train_time']
+            weighted_population[i]['fitness'] = weighted_population[i]['val_acc']
             print('trained model %d in generation %d' % (i + 1, generation))
 
     def all_strategy(self, weighted_population, generation):
+        summed_parameters = ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']
         if globals.get('cross_subject_sampling_method') == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
             if NaiveNAS.check_age(pop):
+                weighted_population[i] = weighted_population[i - 1]
+                weighted_population[i]['train_time'] = 0
+                weighted_population[i]['num_epochs'] = 0
                 continue
             if globals.get('cross_subject_sampling_method') == 'model':
                 self.sample_subjects()
-            for key in ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']:
+            for key in summed_parameters:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
                 final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
@@ -239,8 +248,10 @@ class NaiveNAS:
                 weighted_population[i]['num_epochs'] += num_epochs
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
             weighted_population[i]['finalized_model'] = model
-            for key in ['train_acc', 'val_acc', 'test_acc', 'train_time']:
+            for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
+            # weighted_population[i]['fitness'] = res_val - weighted_population[i]['train_time']
+            weighted_population[i]['fitness'] = weighted_population[i]['val_acc']
 
     @staticmethod
     def get_average_param(models, layer_type, attribute):
@@ -253,7 +264,8 @@ class NaiveNAS:
                     count += 1
         return attr_count / count
 
-    def calculate_population_similarity(self, layer_collections, evolution_file, sim_count):
+    @staticmethod
+    def calculate_population_similarity(layer_collections, evolution_file, sim_count):
         sim = 0
         to_output = 3
         for i in range(sim_count):
@@ -266,6 +278,15 @@ class NaiveNAS:
                     print(output, file=text_file)
                 to_output -= 1
         return sim / sim_count
+
+    @staticmethod
+    def calculate_one_similarity(layer_collection, other_layer_collections):
+        sim = 0
+        for other_layer_collection in other_layer_collections:
+            score, output = models_generation.network_similarity(layer_collection,
+                                                                 other_layer_collection)
+            sim += score
+        return sim / len(other_layer_collections)
 
     def calculate_stats(self, weighted_population, evolution_file):
         stats = {}
@@ -290,7 +311,7 @@ class NaiveNAS:
             stats[stat] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
                                                                  layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
-        stats['similarity_measure'] = self.calculate_population_similarity(
+        stats['similarity_measure'] = NaiveNAS.calculate_population_similarity(
             [pop['model'] for pop in weighted_population], evolution_file, sim_count=globals.get('sim_count'))
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
@@ -310,6 +331,15 @@ class NaiveNAS:
             stats['%d_final_test_acc' % subject] = res_test
             stats['%d_final_epoch_num' % subject] = num_epochs
 
+    @staticmethod
+    def get_model_state(model):
+        if globals.get('cross_subject'):
+            available_states = [x for x in model.keys() if 'model_state' in x]
+            model_state_str = random.sample(available_states, 1)[0]
+        else:
+            model_state_str = 'model_state'
+        return model[model_state_str]
+
     def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
         pop_size = globals.get('pop_size')
         num_generations = globals.get('num_generations')
@@ -322,7 +352,7 @@ class NaiveNAS:
 
         for generation in range(num_generations):
             evo_strategy(weighted_population, generation)
-            weighted_population = sorted(weighted_population, key=lambda x: x['val_acc'], reverse=True)
+            weighted_population = sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
             stats = self.calculate_stats(weighted_population, evolution_file)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
@@ -331,26 +361,26 @@ class NaiveNAS:
                         del weighted_population[index]
                     else:
                         model['age'] += 1
-
                 children = []
                 while len(weighted_population) + len(children) < pop_size:
                     breeders = random.sample(range(len(weighted_population)), 2)
-                    if globals.get('cross_subject'):
-                        model_state_str = '%d_model_state' % random.sample(self.current_chosen_population_sample, 1)[0]
-                    else:
-                        model_state_str = 'model_state'
+                    first_breeder = weighted_population[breeders[0]]
+                    second_breeder = weighted_population[breeders[1]]
+                    first_model_state = NaiveNAS.get_model_state(first_breeder)
+                    second_model_state = NaiveNAS.get_model_state(second_breeder)
                     new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
-                                                                first_model=weighted_population[breeders[0]]['model'],
-                                             second_model=weighted_population[breeders[1]]['model'],
-                                                first_model_state=weighted_population[breeders[0]][model_state_str],
-                                                second_model_state=weighted_population[breeders[1]][model_state_str])
+                                                                first_model=first_breeder['model'],
+                                                                 second_model=second_breeder['model'],
+                                                                 first_model_state=first_model_state,
+                                                                 second_model_state=second_model_state)
                     NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
                     children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
                 weighted_population.extend(children)
-                if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
-                    self.mutation_rate *= globals.get('mutation_rate_change_factor')
-                else:
-                    self.mutation_rate = globals.get('mutation_rate')
+                if globals.get('dynamic_mutation_rate'):
+                    if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
+                        self.mutation_rate *= globals.get('mutation_rate_change_factor')
+                    else:
+                        self.mutation_rate = globals.get('mutation_rate')
             else:  # last generation
                 try:
                     save_model = weighted_population[0]['finalized_model'].to("cpu")

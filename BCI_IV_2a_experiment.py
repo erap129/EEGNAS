@@ -189,7 +189,8 @@ def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
     train_set_all = {}
     val_set_all = {}
     test_set_all = {}
-    for subject_id in subjects:
+    # for subject_id in subjects:
+    for subject_id in range(1, globals.get('num_subjects')+1):
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         train_set_all[subject_id] = train_set
         val_set_all[subject_id] = val_set
@@ -266,7 +267,7 @@ if __name__ == '__main__':
                 if globals.get('exp_type') in ['target', 'benchmark']:
                     target_exp(stop_criterion, iterator, loss_function)
                 elif globals.get('exp_type') == 'from_file':
-                    target_exp(model_from_file=args.model)
+                    target_exp(model_from_file=f"models/{args.experiment}/{globals.get('model_file_name')}")
                 elif globals.get('cross_subject'):
                     cross_subject_exp(subjects, stop_criterion, iterator, loss_function)
                 else:
