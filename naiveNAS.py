@@ -214,8 +214,6 @@ class NaiveNAS:
             weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
             weighted_population[i]['num_epochs'] = num_epochs
-            # weighted_population[i]['fitness'] = res_val - weighted_population[i]['train_time']
-            weighted_population[i]['fitness'] = weighted_population[i]['val_acc']
             print('trained model %d in generation %d' % (i + 1, generation))
 
     def all_strategy(self, weighted_population, generation):
@@ -250,8 +248,6 @@ class NaiveNAS:
             weighted_population[i]['finalized_model'] = model
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
-            # weighted_population[i]['fitness'] = res_val - weighted_population[i]['train_time']
-            weighted_population[i]['fitness'] = weighted_population[i]['val_acc']
 
     @staticmethod
     def get_average_param(models, layer_type, attribute):
@@ -352,7 +348,7 @@ class NaiveNAS:
 
         for generation in range(num_generations):
             evo_strategy(weighted_population, generation)
-            weighted_population = sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
+            weighted_population = sorted(weighted_population, key=lambda x: x['val_acc'], reverse=True)
             stats = self.calculate_stats(weighted_population, evolution_file)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
@@ -437,7 +433,7 @@ class NaiveNAS:
             single_subj_dataset = self.datasets
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop'):
-            self.rememberer = RememberBest(globals.get('remember_best_column'))
+            self.rememberer = RememberBest(f"valid_{globals.get('evaluation_metric')}")
         if globals.get('inherit_weights') and state is not None:
             model.load_state_dict(state)
         self.optimizer = optim.Adam(model.parameters())
@@ -463,9 +459,9 @@ class NaiveNAS:
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
-        res_test = 1 - self.epochs_df.iloc[-1]['test_misclass']
-        res_val = 1 - self.epochs_df.iloc[-1]['valid_misclass']
-        res_train = 1 - self.epochs_df.iloc[-1]['train_misclass']
+        res_test = 1 - self.epochs_df.iloc[-1][f"test_{globals.get('evaluation_metric')}"]
+        res_val = 1 - self.epochs_df.iloc[-1][f"valid_{globals.get('evaluation_metric')}"]
+        res_train = 1 - self.epochs_df.iloc[-1][f"train_{globals.get('evaluation_metric')}"]
         final_time = end-start
         return final_time, res_test, res_val, res_train, model, self.rememberer.model_state_dict, num_epochs
 

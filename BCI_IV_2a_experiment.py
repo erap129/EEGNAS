@@ -13,7 +13,7 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromT
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
     RuntimeMonitor, CroppedTrialMisclassMonitor
 from globals import init_config
-from utils import createFolder
+from utils import createFolder, AUCMonitor
 from itertools import chain
 from argparse import ArgumentParser
 import logging
@@ -82,8 +82,12 @@ def get_normal_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
                          NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
-    loss_function = F.nll_loss
     monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
+    if globals.get('dataset') == 'NER15':
+        loss_function = F.binary_cross_entropy
+        monitors.append(AUCMonitor())
+    else:
+        loss_function = F.nll_loss
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -104,6 +108,7 @@ def garbage_time():
     print('ENTERING GARBAGE TIME')
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     args.experiment = 'target'
+    globals.set('dataset', 'BCI_IV')
     globals.set('channel_dim', 'one')
     globals.set('input_time_len', 1125)
     globals.set('cropping', False)
@@ -209,8 +214,10 @@ def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
-    num_subjects = {'HG': 14, 'BCI_IV': 9}
-    eeg_chans = {'HG': 44, 'BCI_IV': 22}
+    num_subjects = {'HG': 14, 'BCI_IV': 9, 'NER15': 1}
+    eeg_chans = {'HG': 44, 'BCI_IV': 22, 'NER15': 56}
+    input_time_len = {'HG': 1125, 'BCI_IV': 1125, 'NER15': 260}
+    n_classes = {'HG': 4, 'BCI_IV': 4, 'NER15': 2}
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
 
@@ -238,6 +245,8 @@ if __name__ == '__main__':
                 globals.set_config(configuration)
                 globals.set('num_subjects', num_subjects[globals.get('dataset')])
                 globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
+                globals.set('input_time_len', input_time_len[globals.get('dataset')])
+                globals.set('n_classes', n_classes[globals.get('dataset')])
                 if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
                     globals.set('cuda', True)
                     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
@@ -267,7 +276,8 @@ if __name__ == '__main__':
                 if globals.get('exp_type') in ['target', 'benchmark']:
                     target_exp(stop_criterion, iterator, loss_function)
                 elif globals.get('exp_type') == 'from_file':
-                    target_exp(model_from_file=f"models/{args.experiment}/{globals.get('model_file_name')}")
+                    target_exp(stop_criterion, iterator, loss_function,
+                               model_from_file=f"models/{args.experiment}/{globals.get('model_file_name')}")
                 elif globals.get('cross_subject'):
                     cross_subject_exp(subjects, stop_criterion, iterator, loss_function)
                 else:
