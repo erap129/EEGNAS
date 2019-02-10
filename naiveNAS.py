@@ -347,6 +347,8 @@ class NaiveNAS:
             weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
 
         for generation in range(num_generations):
+            if self.cuda:
+                torch.cuda.empty_cache()
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population, key=lambda x: x['val_acc'], reverse=True)
             stats = self.calculate_stats(weighted_population, evolution_file)

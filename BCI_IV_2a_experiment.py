@@ -6,6 +6,7 @@ import pandas as pd
 from collections import OrderedDict, defaultdict
 from itertools import product
 import torch.nn.functional as F
+import torch
 from data_preprocessing import get_train_val_test
 from naiveNAS import NaiveNAS
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
