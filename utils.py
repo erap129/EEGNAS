@@ -274,7 +274,7 @@ class NoIncrease(object):
     def __init__(self, column_name, num_epochs, min_increase=1e-6):
         self.column_name = column_name
         self.num_epochs = num_epochs
-        self.min_decrease = min_increase
+        self.min_increase = min_increase
         self.best_epoch = 0
         self.highest_val = 0
 

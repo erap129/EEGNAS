@@ -19,7 +19,7 @@ import os
 import globals
 import csv
 from torch import nn
-from utils import summary
+from utils import summary, NoIncrease
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
@@ -48,7 +48,7 @@ class RememberBest(object):
     def __init__(self, column_name):
         self.column_name = column_name
         self.best_epoch = 0
-        self.lowest_val = float('inf')
+        self.highest_val = 0
         self.model_state_dict = None
         self.optimizer_state_dict = None
 
@@ -67,9 +67,9 @@ class RememberBest(object):
         """
         i_epoch = len(epochs_df) - 1
         current_val = float(epochs_df[self.column_name].iloc[-1])
-        if current_val <= self.lowest_val:
+        if current_val >= self.highest_val:
             self.best_epoch = i_epoch
-            self.lowest_val = current_val
+            self.highest_val = current_val
             self.model_state_dict = deepcopy(model.state_dict())
             self.optimizer_state_dict = deepcopy(optimizer.state_dict())
             log.info("New best {:s}: {:5f}".format(self.column_name,
@@ -181,10 +181,10 @@ class NaiveNAS:
             model = finalize_model(model)
         if globals.get('cropping'):
             self.finalized_model_to_dilated(model)
-        final_time, res_test, res_val, res_train, model, model_state, num_epochs =\
+        final_time, evaluations, model, model_state, num_epochs =\
             self.evaluate_model(model, final_evaluation=True)
-        stats = {'train_acc': str(res_train), 'val_acc': str(res_val),
-                 'test_acc': str(res_test), 'train_time': str(final_time)}
+        stats = {'train_time': str(final_time)}
+        NaiveNAS.add_evaluations_to_stats(stats, evaluations)
         self.write_to_csv(csv_file, stats, generation=1)
 
     def sample_subjects(self):
@@ -205,11 +205,9 @@ class NaiveNAS:
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
                 continue
-            final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
+            final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalize_model(pop['model']), pop['model_state'])
-            weighted_population[i]['train_acc'] = res_train
-            weighted_population[i]['val_acc'] = res_val
-            weighted_population[i]['test_acc'] = res_test
+            NaiveNAS.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
@@ -217,7 +215,8 @@ class NaiveNAS:
             print('trained model %d in generation %d' % (i + 1, generation))
 
     def all_strategy(self, weighted_population, generation):
-        summed_parameters = ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']
+        summed_parameters = ['train_time', 'num_epochs']
+        summed_parameters.extend(NaiveNAS.get_metric_strs())
         if globals.get('cross_subject_sampling_method') == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
@@ -231,14 +230,11 @@ class NaiveNAS:
             for key in summed_parameters:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
-                final_time, res_test, res_val, res_train, model, model_state, num_epochs = \
+                final_time, evaluations, model, model_state, num_epochs = \
                     self.evaluate_model(finalize_model(pop['model']), pop['model_state'], subject=subject)
-                weighted_population[i]['%d_train_acc' % subject] = res_train
-                weighted_population[i]['train_acc'] += res_train
-                weighted_population[i]['%d_val_acc' % subject] = res_train
-                weighted_population[i]['val_acc'] += res_val
-                weighted_population[i]['%d_test_acc' % subject] = res_test
-                weighted_population[i]['test_acc'] += res_test
+                NaiveNAS.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
+                                                                str_prefix=f"{subject}_")
+                NaiveNAS.sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
                 weighted_population[i]['%d_train_time' % subject] = final_time
                 weighted_population[i]['train_time'] += final_time
                 weighted_population[i]['%d_model_state' % subject] = model_state
@@ -320,12 +316,51 @@ class NaiveNAS:
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
-            _, res_test, res_val, res_train, _, _, num_epochs = self.evaluate_model(
+            _, evaluations, _, _, num_epochs = self.evaluate_model(
                 finalize_model(weighted_population[0]['model']), final_evaluation=True, subject=subject)
-            stats['%d_final_train_acc' % subject] = res_train
-            stats['%d_final_val_acc' % subject] = res_val
-            stats['%d_final_test_acc' % subject] = res_test
+            NaiveNAS.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
+
+    @staticmethod
+    def get_metric_strs():
+        result = []
+        for evaluation_metric in globals.get('evaluation_metrics'):
+            if evaluation_metric == 'accuracy':
+                evaluation_metric = 'acc'
+            result.append(f"train_{evaluation_metric}")
+            result.append(f"val_{evaluation_metric}")
+            result.append(f"test_{evaluation_metric}")
+        return result
+
+    @staticmethod
+    def add_evaluations_to_stats(stats, evaluations, str_prefix=''):
+        for metric, valuedict in evaluations.items():
+            metric_str = metric
+            if metric == 'accuracy':
+                metric_str = 'acc'
+            stats[f"{str_prefix}train_{metric_str}"] = valuedict['train']
+            stats[f"{str_prefix}val_{metric_str}"] = valuedict['valid']
+            stats[f"{str_prefix}test_{metric_str}"] = valuedict['test']
+
+    @staticmethod
+    def add_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
+        for metric, valuedict in evaluations.items():
+            metric_str = metric
+            if metric == 'accuracy':
+                metric_str = 'acc'
+            pop[f"{str_prefix}train_{metric_str}"] = valuedict['train']
+            pop[f"{str_prefix}val_{metric_str}"] = valuedict['valid']
+            pop[f"{str_prefix}test_{metric_str}"] = valuedict['test']
+            
+    @staticmethod
+    def sum_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
+        for metric, valuedict in evaluations.items():
+            metric_str = metric
+            if metric == 'accuracy':
+                metric_str = 'acc'
+            pop[f"{str_prefix}train_{metric_str}"] += valuedict['train']
+            pop[f"{str_prefix}val_{metric_str}"] += valuedict['valid']
+            pop[f"{str_prefix}test_{metric_str}"] += valuedict['test']
 
     @staticmethod
     def get_model_state(model):
@@ -426,7 +461,7 @@ class NaiveNAS:
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
-                                 NoDecrease('valid_misclass', globals.get('final_max_increase_epochs'))])
+                                 NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
         if subject is not None and globals.get('cross_subject'):
             single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
                                                ('valid', self.datasets['valid'][subject]),
@@ -435,7 +470,7 @@ class NaiveNAS:
             single_subj_dataset = self.datasets
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop'):
-            self.rememberer = RememberBest(f"valid_{globals.get('evaluation_metric')}")
+            self.rememberer = RememberBest(f"valid_{globals.get('main_evaluation_metric')}")
         if globals.get('inherit_weights') and state is not None:
             model.load_state_dict(state)
         self.optimizer = optim.Adam(model.parameters())
@@ -461,11 +496,13 @@ class NaiveNAS:
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
-        res_test = 1 - self.epochs_df.iloc[-1][f"test_{globals.get('evaluation_metric')}"]
-        res_val = 1 - self.epochs_df.iloc[-1][f"valid_{globals.get('evaluation_metric')}"]
-        res_train = 1 - self.epochs_df.iloc[-1][f"train_{globals.get('evaluation_metric')}"]
+        evaluations = {}
+        for evaluation_metric in globals.get('evaluation_metrics'):
+            evaluations[evaluation_metric] = {'train': self.epochs_df.iloc[-1][f"train_{evaluation_metric}"],
+                                              'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
+                                              'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
-        return final_time, res_test, res_val, res_train, model, self.rememberer.model_state_dict, num_epochs
+        return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
         self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)

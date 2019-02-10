@@ -14,7 +14,7 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromT
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
     RuntimeMonitor, CroppedTrialMisclassMonitor
 from globals import init_config
-from utils import createFolder, AUCMonitor
+from utils import createFolder, AUCMonitor, AccuracyMonitor, NoIncrease, CroppedTrialAccuracyMonitor
 from itertools import chain
 from argparse import ArgumentParser
 import logging
@@ -81,9 +81,9 @@ def write_dict(dict, filename):
 
 def get_normal_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                         NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
+                         NoIncrease('valid_accuracy', globals.get('max_increase_epochs'))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
-    monitors = [LossMonitor(), MisclassMonitor(), RuntimeMonitor()]
+    monitors = [LossMonitor(), AccuracyMonitor(), RuntimeMonitor()]
     if globals.get('dataset') == 'NER15':
         loss_function = F.binary_cross_entropy
         monitors.append(AUCMonitor())
@@ -94,13 +94,13 @@ def get_normal_settings():
 
 def get_cropped_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                         NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
+                         NoIncrease('valid_accuracy', globals.get('max_increase_epochs'))])
     iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
                                        input_time_length=globals.get('input_time_len'),
                                        n_preds_per_input=globals.get('n_preds_per_input'))
     loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
-    monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
-                CroppedTrialMisclassMonitor(
+    monitors = [LossMonitor(), AccuracyMonitor(col_suffix='sample_accuracy'),
+                CroppedTrialAccuracyMonitor(
                     input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
     return stop_criterion, iterator, loss_function, monitors
 
