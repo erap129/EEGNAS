@@ -282,7 +282,8 @@ class NaiveNAS:
 
     def calculate_stats(self, weighted_population, evolution_file):
         stats = {}
-        params = ['train_acc', 'val_acc', 'test_acc', 'train_time', 'num_epochs']
+        params = ['train_time', 'num_epochs']
+        params.extend(NaiveNAS.get_metric_strs())
         for param in params:
             stats[param] = np.mean([sample[param] for sample in weighted_population])
         if self.subject_id == 'all':

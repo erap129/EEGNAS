@@ -252,7 +252,8 @@ if __name__ == '__main__':
                 globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
                 globals.set('input_time_len', input_time_len[globals.get('dataset')])
                 globals.set('n_classes', n_classes[globals.get('dataset')])
-                if platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu':
+                if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu')\
+                        and not globals.get('force_gpu_off'):
                     globals.set('cuda', True)
                     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
                     assert torch.cuda.is_available(), "Cuda not available"

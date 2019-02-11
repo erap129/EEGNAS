@@ -222,6 +222,9 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
             prev_eeg_channels = globals.get('eeg_chans')
             prev_time = globals.get('input_time_len')
             prev_channels = 1
+            if globals.get('channel_dim') == 'channels':
+                prev_channels = globals.get('eeg_chans')
+                prev_eeg_channels = 1
         if isinstance(layer, PoolingLayer):
             while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
                 if random.uniform(0,1) < 0.5 and layer.pool_time > 1:

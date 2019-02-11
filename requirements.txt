@@ -7,3 +7,4 @@ pandas==0.22.0
 numpy==1.15.1
 networkx==2.1
 biopython==1.73
+sklearn==0.0
