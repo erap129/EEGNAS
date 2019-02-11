@@ -108,11 +108,15 @@ def get_cropped_settings():
 def garbage_time():
     print('ENTERING GARBAGE TIME')
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+    loss_function = F.nll_loss
     args.experiment = 'target'
     globals.set('dataset', 'BCI_IV')
     globals.set('channel_dim', 'one')
     globals.set('input_time_len', 1125)
     globals.set('cropping', False)
+    globals.set('num_subjects', 9)
+    globals.set('eeg_chans', 22)
+    globals.set('n_classes', 4)
     train_set, val_set, test_set = get_train_val_test(data_folder, 1, 0)
     garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set, val_set=val_set, test_set=test_set,
