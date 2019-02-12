@@ -10,6 +10,9 @@ from braindecode.datautil.splitters import split_into_two_sets
 from braindecode.datautil.signalproc import bandpass_cnt, exponential_running_standardize, highpass_cnt
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
 from sklearn.model_selection import train_test_split
+from moabb.datasets import Cho2017
+from moabb.paradigms import (LeftRightImagery, MotorImagery,
+                             FilterBankMotorImagery)
 import globals
 import logging
 import numpy as np
@@ -197,6 +200,14 @@ def get_ner_train_val_test(data_folder):
     return train_set, valid_set, test_set
 
 
+def get_cho_train_val_test(subject_id):
+    paradigm = LeftRightImagery()
+    dataset = Cho2017()
+    subjects = [subject_id]
+    X, y, metadata = paradigm.get_data(dataset=dataset, subjects=subjects)
+
+
+
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
     if globals.get('dataset') == 'BCI_IV':
         return get_bci_iv_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)
@@ -204,5 +215,7 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_hg_train_val_test(f"{data_folder}HG/", subject_id, low_cut_hz)
     elif globals.get('dataset') == 'NER15':
         return get_ner_train_val_test(data_folder)
+    elif globals.get('dataset') == 'Cho':
+        return get_cho_train_val_test(subject_id)
 
 
