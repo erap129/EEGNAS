@@ -205,6 +205,13 @@ def get_cho_train_val_test(subject_id):
     dataset = Cho2017()
     subjects = [subject_id]
     X, y, metadata = paradigm.get_data(dataset=dataset, subjects=subjects)
+    X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.3) # test = 30%, same as paper
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
+                                                      test_size=globals.get('valid_set_fraction'))
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
 
 
 

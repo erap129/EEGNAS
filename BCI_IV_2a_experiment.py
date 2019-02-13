@@ -84,7 +84,7 @@ def get_normal_settings():
                          NoIncrease('valid_accuracy', globals.get('max_increase_epochs'))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
     monitors = [LossMonitor(), AccuracyMonitor(), RuntimeMonitor()]
-    if globals.get('dataset') == 'NER15':
+    if globals.get('dataset') in ['NER15', 'Cho']:
         loss_function = F.binary_cross_entropy
         monitors.append(AUCMonitor())
     else:
@@ -219,10 +219,10 @@ def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
-    num_subjects = {'HG': 14, 'BCI_IV': 9, 'NER15': 1}
-    eeg_chans = {'HG': 44, 'BCI_IV': 22, 'NER15': 56}
-    input_time_len = {'HG': 1125, 'BCI_IV': 1125, 'NER15': 260}
-    n_classes = {'HG': 4, 'BCI_IV': 4, 'NER15': 2}
+    num_subjects = {'HG': 14, 'BCI_IV': 9, 'NER15': 1, 'Cho': 52}
+    eeg_chans = {'HG': 44, 'BCI_IV': 22, 'NER15': 56, 'Cho': 64}
+    input_time_len = {'HG': 1125, 'BCI_IV': 1125, 'NER15': 260, 'Cho': 1537}
+    n_classes = {'HG': 4, 'BCI_IV': 4, 'NER15': 2, 'Cho': 2}
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
 

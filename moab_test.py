@@ -6,8 +6,8 @@ from moabb.paradigms import (LeftRightImagery, MotorImagery,
 paradigm = LeftRightImagery()
 
 dataset = Cho2017()
-dataset.download()
-subjects = [1]
+# dataset.download()
+subjects = [7]
 
 X, y, metadata = paradigm.get_data(dataset=dataset, subjects=subjects)
 pass
