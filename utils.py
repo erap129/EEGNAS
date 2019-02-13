@@ -189,6 +189,72 @@ class AUCMonitor(object):
         return {column_name: float(auc)}
 
 
+class KappaMonitor(object):
+    """
+    Monitor the examplewise Kappa rate.
+
+    Parameters
+    ----------
+    col_suffix: str, optional
+        Name of the column in the monitoring output.
+    threshold_for_binary_case: bool, optional
+        In case of binary classification with only one output prediction
+        per target, define the threshold for separating the classes, i.e.
+        0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
+    """
+
+    def __init__(self, col_suffix='kappa', threshold_for_binary_case=None):
+        self.col_suffix = col_suffix
+        self.threshold_for_binary_case = threshold_for_binary_case
+
+    def monitor_epoch(self, ):
+        return
+
+    def monitor_set(self, setname, all_preds, all_losses,
+                    all_batch_sizes, all_targets, dataset):
+        all_pred_labels = []
+        all_target_labels = []
+        for i_batch in range(len(all_batch_sizes)):
+            preds = all_preds[i_batch]
+            # preds could be examples x classes x time
+            # or just
+            # examples x classes
+            # make sure not to remove first dimension if it only has size one
+            if preds.ndim > 1:
+                only_one_row = preds.shape[0] == 1
+
+                pred_labels = np.argmax(preds, axis=1).squeeze()
+                # add first dimension again if needed
+                if only_one_row:
+                    pred_labels = pred_labels[None]
+            else:
+                assert self.threshold_for_binary_case is not None, (
+                    "In case of only one output, please supply the "
+                    "threshold_for_binary_case parameter")
+                # binary classification case... assume logits
+                pred_labels = np.int32(preds > self.threshold_for_binary_case)
+            # now examples x time or examples
+            all_pred_labels.extend(pred_labels)
+            targets = all_targets[i_batch]
+            if targets.ndim > pred_labels.ndim:
+                # targets may be one-hot-encoded
+                targets = np.argmax(targets, axis=1)
+            elif targets.ndim < pred_labels.ndim:
+                # targets may not have time dimension,
+                # in that case just repeat targets on time dimension
+                extra_dim = pred_labels.ndim - 1
+                targets = np.repeat(np.expand_dims(targets, extra_dim),
+                                    pred_labels.shape[extra_dim],
+                                    extra_dim)
+            assert targets.shape == pred_labels.shape
+            all_target_labels.extend(targets)
+        all_pred_labels = np.array(all_pred_labels)
+        all_target_labels = np.array(all_target_labels)
+        kappa = metrics.cohen_kappa_score(all_pred_labels, all_target_labels)
+        column_name = "{:s}_{:s}".format(setname, self.col_suffix)
+        return {column_name: float(kappa)}
+
+
 class AccuracyMonitor(object):
     """
     Monitor the examplewise accuracy rate.

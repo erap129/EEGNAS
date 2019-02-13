@@ -1,7 +1,5 @@
-#%%
 import os
 import platform
-import torch
 import pandas as pd
 from collections import OrderedDict, defaultdict
 from itertools import product
@@ -9,12 +7,11 @@ import torch.nn.functional as F
 import torch
 from data_preprocessing import get_train_val_test
 from naiveNAS import NaiveNAS
-from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
+from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
-from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
-    RuntimeMonitor, CroppedTrialMisclassMonitor
+from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
-from utils import createFolder, AUCMonitor, AccuracyMonitor, NoIncrease, CroppedTrialAccuracyMonitor
+from utils import createFolder, AUCMonitor, AccuracyMonitor, NoIncrease, CroppedTrialAccuracyMonitor, KappaMonitor
 from itertools import chain
 from argparse import ArgumentParser
 import logging
@@ -81,14 +78,14 @@ def write_dict(dict, filename):
 
 def get_normal_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                         NoIncrease('valid_accuracy', globals.get('max_increase_epochs'))])
+                         NoIncrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
     monitors = [LossMonitor(), AccuracyMonitor(), RuntimeMonitor()]
-    if globals.get('dataset') in ['NER15', 'Cho']:
-        loss_function = F.binary_cross_entropy
+    loss_function = F.nll_loss
+    if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b']:
         monitors.append(AUCMonitor())
-    else:
-        loss_function = F.nll_loss
+    if globals.get('dataset') in ['BCI_IV_2b']:
+        monitors.append(KappaMonitor())
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -110,7 +107,7 @@ def garbage_time():
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     loss_function = F.nll_loss
     args.experiment = 'target'
-    globals.set('dataset', 'BCI_IV')
+    globals.set('dataset', 'BCI_IV_2a')
     globals.set('channel_dim', 'one')
     globals.set('input_time_len', 1125)
     globals.set('cropping', False)
@@ -219,10 +216,10 @@ def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
-    num_subjects = {'HG': 14, 'BCI_IV': 9, 'NER15': 1, 'Cho': 52}
-    eeg_chans = {'HG': 44, 'BCI_IV': 22, 'NER15': 56, 'Cho': 64}
-    input_time_len = {'HG': 1125, 'BCI_IV': 1125, 'NER15': 260, 'Cho': 1537}
-    n_classes = {'HG': 4, 'BCI_IV': 4, 'NER15': 2, 'Cho': 2}
+    num_subjects = {'HG': 14, 'BCI_IV_2a': 9, 'BCI_IV_2b': 9, 'NER15': 1, 'Cho': 52}
+    eeg_chans = {'HG': 44, 'BCI_IV_2a': 22, 'BCI_IV_2b': 3, 'NER15': 56, 'Cho': 64}
+    input_time_len = {'HG': 1125, 'BCI_IV_2a': 1125, 'BCI_IV_2b': 1126, 'NER15': 260, 'Cho': 1537}
+    n_classes = {'HG': 4, 'BCI_IV_2a': 4, 'BCI_IV_2b': 2, 'NER15': 2, 'Cho': 2}
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
 
@@ -283,7 +280,7 @@ if __name__ == '__main__':
                     target_exp(stop_criterion, iterator, loss_function)
                 elif globals.get('exp_type') == 'from_file':
                     target_exp(stop_criterion, iterator, loss_function,
-                               model_from_file=f"models/{args.experiment}/{globals.get('model_file_name')}")
+                               model_from_file=f"models/{globals.get('models_dir')}/{globals.get('model_file_name')}")
                 elif globals.get('cross_subject'):
                     cross_subject_exp(subjects, stop_criterion, iterator, loss_function)
                 else:

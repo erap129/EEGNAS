@@ -48,7 +48,7 @@ class RememberBest(object):
     def __init__(self, column_name):
         self.column_name = column_name
         self.best_epoch = 0
-        self.highest_val = 0
+        self.highest_val = -2
         self.model_state_dict = None
         self.optimizer_state_dict = None
 
@@ -189,7 +189,7 @@ class NaiveNAS:
 
     def sample_subjects(self):
         self.current_chosen_population_sample = random.sample(
-            range(1, globals.get('num_subjects') + 1),
+            [i for i in range(1, globals.get('num_subjects') + 1) if i not in globals.get('exclude_subjects')],
             globals.get('cross_subject_sampling_rate'))
 
     @staticmethod
@@ -386,7 +386,8 @@ class NaiveNAS:
             if self.cuda:
                 torch.cuda.empty_cache()
             evo_strategy(weighted_population, generation)
-            weighted_population = sorted(weighted_population, key=lambda x: x['val_acc'], reverse=True)
+            weighted_population = sorted(weighted_population,
+                                         key=lambda x: x[f'val_{globals.get("ga_objective")}'], reverse=True)
             stats = self.calculate_stats(weighted_population, evolution_file)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
@@ -471,7 +472,7 @@ class NaiveNAS:
             single_subj_dataset = self.datasets
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop'):
-            self.rememberer = RememberBest(f"valid_{globals.get('main_evaluation_metric')}")
+            self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
         if globals.get('inherit_weights') and state is not None:
             model.load_state_dict(state)
         self.optimizer = optim.Adam(model.parameters())

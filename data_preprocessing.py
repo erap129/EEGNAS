@@ -10,7 +10,7 @@ from braindecode.datautil.splitters import split_into_two_sets
 from braindecode.datautil.signalproc import bandpass_cnt, exponential_running_standardize, highpass_cnt
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
 from sklearn.model_selection import train_test_split
-from moabb.datasets import Cho2017
+from moabb.datasets import Cho2017, BNCI2014004
 from moabb.paradigms import (LeftRightImagery, MotorImagery,
                              FilterBankMotorImagery)
 import globals
@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
 
 
-def get_bci_iv_train_val_test(data_folder,subject_id, low_cut_hz):
+def get_bci_iv_2a_train_val_test(data_folder,subject_id, low_cut_hz):
     ival = [-500, 4000]  # this is the window around the event from which we will take data to feed to the classifier
     high_cut_hz = 38  # cut off parts of signal higher than 38 hz
     factor_new = 1e-3  # ??? has to do with exponential running standardize
@@ -183,16 +183,14 @@ def get_hg_train_val_test(data_folder, subject_id, low_cut_hz):
 class DummySignalTarget:
     def __init__(self, X, y):
         self.X = np.array(X, dtype=np.float32)
-        self.y = np.array(y, dtype=np.float32)
+        self.y = np.array(y, dtype=np.longlong)
 
 
 def get_ner_train_val_test(data_folder):
     X = np.load(f"{data_folder}NER15/preproc/epochs.npy")
     y, User = np.load(f"{data_folder}NER15/preproc/infos.npy")
-    y = [[val, 1-val] for val in y]
     X_test = np.load(f"{data_folder}NER15/preproc/test_epochs.npy")
     y_test = pd.read_csv(f"{data_folder}NER15/preproc/true_labels.csv").values.reshape(-1)
-    y_test = [[val, 1 - val] for val in y_test]
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=globals.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
@@ -205,7 +203,33 @@ def get_cho_train_val_test(subject_id):
     dataset = Cho2017()
     subjects = [subject_id]
     X, y, metadata = paradigm.get_data(dataset=dataset, subjects=subjects)
+    y = np.where(y=='left_hand', 0, y)
+    y = np.where(y=='right_hand', 1, y)
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.3) # test = 30%, same as paper
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
+                                                      test_size=globals.get('valid_set_fraction'))
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
+
+
+def get_bci_iv_2b_train_val_test(subject_id):
+    paradigm = LeftRightImagery()
+    dataset = BNCI2014004()
+    subjects = [subject_id]
+    X, y, metadata = paradigm.get_data(dataset=dataset, subjects=subjects)
+    y = np.where(y=='left_hand', 0, y)
+    y = np.where(y=='right_hand', 1, y)
+    train_indexes = np.logical_or(metadata.values[:, 1] == 'session_0',
+                                       metadata.values[:, 1] == 'session_1',
+                                       metadata.values[:, 1] == 'session_2')
+    test_indexes = np.logical_or(metadata.values[:, 1] == 'session_3',
+                                       metadata.values[:, 1] == 'session_4')
+    X_train_val = X[train_indexes]
+    y_train_val = y[train_indexes]
+    X_test = X[test_indexes]
+    y_test = y[test_indexes]
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=globals.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
@@ -216,13 +240,15 @@ def get_cho_train_val_test(subject_id):
 
 
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
-    if globals.get('dataset') == 'BCI_IV':
-        return get_bci_iv_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)
+    if globals.get('dataset') == 'BCI_IV_2a':
+        return get_bci_iv_2a_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)
     elif globals.get('dataset') == 'HG':
         return get_hg_train_val_test(f"{data_folder}HG/", subject_id, low_cut_hz)
     elif globals.get('dataset') == 'NER15':
         return get_ner_train_val_test(data_folder)
     elif globals.get('dataset') == 'Cho':
         return get_cho_train_val_test(subject_id)
+    elif globals.get('dataset') == 'BCI_IV_2b':
+        return get_bci_iv_2b_train_val_test(subject_id)
 
 

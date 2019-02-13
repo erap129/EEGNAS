@@ -93,6 +93,8 @@ class ConvLayer(Layer):
             kernel_time = random.randint(1, globals.get('kernel_time_max'))
         if filter_num is None:
             filter_num = random.randint(1, globals.get('filter_num_max'))
+        if globals.get('channel_dim') == 'channels':
+            kernel_eeg_chan = 1
         self.kernel_eeg_chan = kernel_eeg_chan
         self.kernel_time = kernel_time
         self.filter_num = filter_num
@@ -230,13 +232,13 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                 if random.uniform(0,1) < 0.5 and layer.pool_time > 1:
                     layer.pool_time -= 1
                 elif layer.stride_time > 1:
-                    layer.stride_time -=1
+                    layer.stride_time -= 1
                 if layer.pool_time == 1 and layer.stride_time == 1:
                     break
             if globals.get('channel_dim') == 'channels':
                 layer.pool_eeg_chan = 1
-            model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(layer.pool_time, layer.pool_eeg_chan),
-                                                                      stride=(layer.stride_time, 1)))
+            model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(int(layer.pool_time), int(layer.pool_eeg_chan)),
+                                                                      stride=(int(layer.stride_time), 1)))
 
         elif isinstance(layer, ConvLayer):
             if layer.kernel_time == 'down_to_one':
