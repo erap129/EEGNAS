@@ -3,10 +3,10 @@ import numpy as np
 from Bio.pairwise2 import format_alignment
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
+from braindecode.models import deep4, shallow_fbcsp, eegnet
 import os
 from torch import nn
 from torch.nn import init
-os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 import copy
 import globals
@@ -14,6 +14,7 @@ from Bio import pairwise2
 from collections import defaultdict
 import networkx as nx
 from networkx.classes.function import create_empty_copy
+os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 
@@ -209,7 +210,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
         model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
     if globals.get('time_factor') != -1:
         model.add_module('stack_by_time', Expression(MyModel._stack_input_by_time))
-    activations = {'elu': nn.ELU, 'softmax': nn.Softmax}
+    activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
     input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
     for i in range(len(layer_collection)):
         layer = layer_collection[i]
@@ -498,13 +499,23 @@ def base_model(n_filters_time=25, n_filters_spat=25, filter_time_length=10, rand
     return layer_collection
 
 
-def target_model():
-    basemodel = base_model()
-    model = add_conv_maxpool_block(basemodel, conv_filter_num=50, conv_layer_name='conv1', random_values=False)
-    model = add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2', random_values=False)
-    model = add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3',
-                                   random_values=False)
-    return model
+# def target_model():
+#     basemodel = base_model()
+#     model = add_conv_maxpool_block(basemodel, conv_filter_num=50, conv_layer_name='conv1', random_values=False)
+#     model = add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2', random_values=False)
+#     model = add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3',
+#                                    random_values=False)
+#     return model
+
+
+def target_model(model_name):
+    input_time_len = globals.get('input_time_len')
+    n_classes = globals.get('n_classes')
+    eeg_chans = globals.get('eeg_chans')
+    models = {'deep': deep4.Deep4Net(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
+              'shallow': shallow_fbcsp.ShallowFBCSPNet(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
+              'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_time_len, final_conv_length='auto')}
+    return models[model_name].create_network()
 
 
 def genetic_filter_experiment_model(num_blocks):
@@ -541,8 +552,8 @@ def finalize_model(layer_collection):
     conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
                            filter_num=globals.get('n_classes'))
     layer_collection.append(conv_layer)
-    softmax = ActivationLayer('softmax')
-    layer_collection.append(softmax)
+    activation = ActivationLayer('softmax')
+    layer_collection.append(activation)
     flatten = FlattenLayer()
     layer_collection.append(flatten)
     return new_model_from_structure_pytorch(layer_collection)

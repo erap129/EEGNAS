@@ -177,8 +177,8 @@ class NaiveNAS:
             else:
                 model = torch.load(self.model_from_file, map_location='cpu')
         else:
-            model = target_model()
-            model = finalize_model(model)
+            model = target_model(globals.get('model_name'))
+            # model = finalize_model(model)
         if globals.get('cropping'):
             self.finalized_model_to_dilated(model)
         final_time, evaluations, model, model_state, num_epochs =\
@@ -667,10 +667,10 @@ class NaiveNAS:
         return count
 
     def garbage_time(self):
-        model = target_model()
+        model = target_model('deep')
         while 1:
             print('GARBAGE TIME GARBAGE TIME GARBAGE TIME')
-            self.evaluate_model(finalize_model(model))
+            self.evaluate_model(model)
 
     def print_to_evolution_file(self, evolution_file, models, generation):
         global text_file

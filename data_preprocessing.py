@@ -181,9 +181,9 @@ def get_hg_train_val_test(data_folder, subject_id, low_cut_hz):
 
 
 class DummySignalTarget:
-    def __init__(self, X, y):
+    def __init__(self, X, y, y_type=np.longlong):
         self.X = np.array(X, dtype=np.float32)
-        self.y = np.array(y, dtype=np.longlong)
+        self.y = np.array(y, dtype=y_type)
 
 
 def get_ner_train_val_test(data_folder):
@@ -238,6 +238,19 @@ def get_bci_iv_2b_train_val_test(subject_id):
     return train_set, valid_set, test_set
 
 
+def get_bloomberg_train_val_test(data_folder):
+    X_train_val = np.load(f"{data_folder}/Bloomberg/X_train_{globals.get('commodity')}.npy")
+    X_test = np.load(f"{data_folder}/Bloomberg/X_test_{globals.get('commodity')}.npy")
+    y_train_val = np.load(f"{data_folder}/Bloomberg/y_train_{globals.get('commodity')}.npy")
+    y_test = np.load(f"{data_folder}/Bloomberg/y_test_{globals.get('commodity')}.npy")
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
+                                                      test_size=globals.get('valid_set_fraction'))
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
+
+
 
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
     if globals.get('dataset') == 'BCI_IV_2a':
@@ -250,5 +263,7 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_cho_train_val_test(subject_id)
     elif globals.get('dataset') == 'BCI_IV_2b':
         return get_bci_iv_2b_train_val_test(subject_id)
+    elif globals.get('dataset') == 'Bloomberg':
+        return get_bloomberg_train_val_test(data_folder)
 
 
