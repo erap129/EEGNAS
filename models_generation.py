@@ -4,6 +4,7 @@ from Bio.pairwise2 import format_alignment
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 from braindecode.models import deep4, shallow_fbcsp, eegnet
+from braindecode.models.util import to_dense_prediction_model
 import os
 from torch import nn
 from torch.nn import init
@@ -440,7 +441,7 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
             second_model[i] = first_model[i]
-        save_weights = globals.get('inherit_weights')
+        save_weights = globals.get('inherit_weights_crossover') and globals.get('inherit_weights_normal')
     if random.random() < mutation_rate:
         while True:
             rand_layer = random.randint(0, globals.get('num_layers') - 1)
@@ -499,14 +500,6 @@ def base_model(n_filters_time=25, n_filters_spat=25, filter_time_length=10, rand
     return layer_collection
 
 
-# def target_model():
-#     basemodel = base_model()
-#     model = add_conv_maxpool_block(basemodel, conv_filter_num=50, conv_layer_name='conv1', random_values=False)
-#     model = add_conv_maxpool_block(model, conv_filter_num=100, conv_layer_name='conv2', random_values=False)
-#     model = add_conv_maxpool_block(model, conv_filter_num=200, dropout=True, conv_layer_name='conv3',
-#                                    random_values=False)
-#     return model
-
 
 def target_model(model_name):
     input_time_len = globals.get('input_time_len')
@@ -515,7 +508,11 @@ def target_model(model_name):
     models = {'deep': deep4.Deep4Net(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
               'shallow': shallow_fbcsp.ShallowFBCSPNet(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
               'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_time_len, final_conv_length='auto')}
-    return models[model_name].create_network()
+    final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2}
+    globals.set('final_conv_size', final_conv_sizes[model_name])
+    model = models[model_name].create_network()
+    return model
+
 
 
 def genetic_filter_experiment_model(num_blocks):

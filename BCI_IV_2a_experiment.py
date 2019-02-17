@@ -11,7 +11,8 @@ from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
-from utils import createFolder, AUCMonitor, AccuracyMonitor, NoIncrease, CroppedTrialAccuracyMonitor, KappaMonitor
+from utils import createFolder, AUCMonitor, AccuracyMonitor, NoIncrease, CroppedTrialGenericMonitor, KappaMonitor,\
+    accuracy_func, kappa_func, auc_func
 from itertools import chain
 from argparse import ArgumentParser
 import logging
@@ -97,8 +98,14 @@ def get_cropped_settings():
                                        n_preds_per_input=globals.get('n_preds_per_input'))
     loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
     monitors = [LossMonitor(), AccuracyMonitor(col_suffix='sample_accuracy'),
-                CroppedTrialAccuracyMonitor(
+                CroppedTrialGenericMonitor('accuracy', accuracy_func,
                     input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
+    if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b']:
+        monitors.append(CroppedTrialGenericMonitor('auc', auc_func,
+                    input_time_length=globals.get('input_time_len')))
+    if globals.get('dataset') in ['BCI_IV_2b']:
+        monitors.append(CroppedTrialGenericMonitor('kappa', kappa_func,
+                    input_time_length=globals.get('input_time_len')))
     return stop_criterion, iterator, loss_function, monitors
 
 

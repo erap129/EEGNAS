@@ -147,7 +147,7 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
     return exp
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     for subject_id in range(1, 10):
         with open("original_test_cropped.txt", "a") as file:
             logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
@@ -155,7 +155,7 @@ if __name__ == '__main__':
             # Should contain both .gdf files and .mat-labelfiles from competition
             data_folder = 'data/BCI_IV/'
             low_cut_hz = 4  # 0 or 4
-            model = 'deep'  # 'shallow' or 'deep'
+            model = 'shallow'  # 'shallow' or 'deep'
             cuda = th.cuda.is_available()
             exp = run_exp(data_folder, subject_id, low_cut_hz, model, cuda)
             log.info("\nLast 10 epochs")

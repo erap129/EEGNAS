@@ -417,9 +417,25 @@ class NoIncrease(object):
         return (i_epoch - self.best_epoch) >= self.num_epochs
 
 
-class CroppedTrialAccuracyMonitor(object):
+def accuracy_func(all_pred_labels, all_trial_labels):
+    accuracy = 1 - np.mean(all_pred_labels == all_trial_labels)
+    return accuracy
+
+
+def kappa_func(all_pred_labels, all_target_labels):
+    kappa = metrics.cohen_kappa_score(all_pred_labels, all_target_labels)
+    return kappa
+
+
+def auc_func(all_pred_labels, all_target_labels):
+    fpr, tpr, thresholds = metrics.roc_curve(all_target_labels, all_pred_labels, pos_label=1)
+    auc = metrics.auc(fpr, tpr)
+    return auc
+
+
+class CroppedTrialGenericMonitor():
     """
-    Compute trialwise accuracy from predictions for crops.
+    Compute trialwise *** from predictions for crops.
 
     Parameters
     ----------
@@ -427,8 +443,10 @@ class CroppedTrialAccuracyMonitor(object):
         Temporal length of one input to the model.
     """
 
-    def __init__(self, input_time_length=None):
+    def __init__(self, measure_name, measure_func, input_time_length=None):
         self.input_time_length = input_time_length
+        self.measure_name = measure_name
+        self.measure_func = measure_func
 
     def monitor_epoch(self, ):
         return
@@ -447,9 +465,9 @@ class CroppedTrialAccuracyMonitor(object):
             all_trial_labels, all_pred_labels = (
                 self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds))
         assert all_pred_labels.shape == all_trial_labels.shape
-        accuracy = 1 - np.mean(all_pred_labels == all_trial_labels)
-        column_name = "{:s}_accuracy".format(setname)
-        return {column_name: float(accuracy)}
+        measure = self.measure_func(all_pred_labels, all_trial_labels)
+        column_name = "{:s}_{:s}".format(setname, self.measure_name)
+        return {column_name: float(measure)}
 
     def _compute_pred_labels(self, dataset, all_preds, ):
         preds_per_trial = compute_preds_per_trial_from_crops(

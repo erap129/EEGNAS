@@ -152,7 +152,8 @@ class NaiveNAS:
 
     def finalized_model_to_dilated(self, model):
         to_dense_prediction_model(model)
-        conv_classifier = list(model._modules.items())[-3][1]
+        # conv_classifier = list(model._modules.items())[-3][1]
+        conv_classifier = model.conv_classifier
         model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
                                           (globals.get('final_conv_size'),
                                            conv_classifier.kernel_size[1]), stride=conv_classifier.stride,
@@ -473,7 +474,7 @@ class NaiveNAS:
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop'):
             self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
-        if globals.get('inherit_weights') and state is not None:
+        if globals.get('inherit_weights_normal') and state is not None:
             model.load_state_dict(state)
         self.optimizer = optim.Adam(model.parameters())
         if self.cuda:

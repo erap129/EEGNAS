@@ -35,7 +35,7 @@ paradigm = LeftRightImagery()
 # results.to_csv('moab_cho.csv')
 
 dataset = BNCI2014004()
-# dataset.download()
+dataset.download(path='/data1/eladr/mne_data')
 subjects = [5]
 
 X, y, metadata = paradigm.get_data(dataset=dataset, subjects=subjects)
