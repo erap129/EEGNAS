@@ -223,10 +223,11 @@ def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
-    num_subjects = {'HG': 14, 'BCI_IV_2a': 9, 'BCI_IV_2b': 9, 'NER15': 1, 'Cho': 52, 'Bloomberg': 1}
-    eeg_chans = {'HG': 44, 'BCI_IV_2a': 22, 'BCI_IV_2b': 3, 'NER15': 56, 'Cho': 64, 'Bloomberg': 32}
-    input_time_len = {'HG': 1125, 'BCI_IV_2a': 1125, 'BCI_IV_2b': 1126, 'NER15': 260, 'Cho': 1537, 'Bloomberg': 1000}
-    n_classes = {'HG': 4, 'BCI_IV_2a': 4, 'BCI_IV_2b': 2, 'NER15': 2, 'Cho': 2, 'Bloomberg': 2}
+    num_subjects = {'HG': 14, 'BCI_IV_2a': 9, 'BCI_IV_2b': 9, 'NER15': 1, 'Cho': 52, 'Bloomberg': 1, 'NYSE': 1}
+    eeg_chans = {'HG': 44, 'BCI_IV_2a': 22, 'BCI_IV_2b': 3, 'NER15': 56, 'Cho': 64, 'Bloomberg': 32, 'NYSE': 5}
+    input_time_len = {'HG': 1125, 'BCI_IV_2a': 1125, 'BCI_IV_2b': 1126, 'NER15': 260, 'Cho': 1537, 'Bloomberg': 1000,
+                      'NYSE': 200}
+    n_classes = {'HG': 4, 'BCI_IV_2a': 4, 'BCI_IV_2b': 2, 'NER15': 2, 'Cho': 2, 'Bloomberg': 2, 'NYSE': 2}
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
 

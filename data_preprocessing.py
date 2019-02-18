@@ -13,6 +13,7 @@ from sklearn.model_selection import train_test_split
 from moabb.datasets import Cho2017, BNCI2014004
 from moabb.paradigms import (LeftRightImagery, MotorImagery,
                              FilterBankMotorImagery)
+from sklearn import preprocessing
 import globals
 import logging
 import numpy as np
@@ -251,6 +252,50 @@ def get_bloomberg_train_val_test(data_folder):
     return train_set, valid_set, test_set
 
 
+def get_nyse_train_val_test(data_folder):
+    df = pd.read_csv(f"{data_folder}/NYSE/prices-split-adjusted.csv", index_col=0)
+    df["adj close"] = df.close  # Moving close to the last column
+    df.drop(['close'], 1, inplace=True)  # Moving close to the last column
+    df2 = pd.read_csv(f"{data_folder}/NYSE/fundamentals.csv")
+    symbols = list(set(df.symbol))
+
+    df = df[df.symbol == 'GOOG']
+    df.drop(['symbol'], 1, inplace=True)
+    min_max_scaler = preprocessing.MinMaxScaler()
+    df['open'] = min_max_scaler.fit_transform(df.open.values.reshape(-1, 1))
+    df['high'] = min_max_scaler.fit_transform(df.high.values.reshape(-1, 1))
+    df['low'] = min_max_scaler.fit_transform(df.low.values.reshape(-1, 1))
+    df['volume'] = min_max_scaler.fit_transform(df.volume.values.reshape(-1, 1))
+    df['adj close'] = min_max_scaler.fit_transform(df['adj close'].values.reshape(-1, 1))
+    amount_of_features = len(df.columns)  # 5
+    data = df.as_matrix()
+    sequence_length = 200 + 1  # index starting from 0
+    result = []
+
+    for index in range(len(data) - sequence_length):  # maxmimum date = lastest date - sequence length
+        result.append(data[index: index + sequence_length])  # index : index + 22days
+
+    result = np.array(result)
+    row = round(0.7 * result.shape[0])  # 90% split
+    train = result[:int(row), :]  # 90% date, all features
+
+    X_train_val = train[:, :-1]
+    y_train_val = np.array([i > j for i,j in zip(train[:, -1][:, -1], train[:, -2][:, -1])]).astype(int) # did the price go up?
+
+    X_test = result[int(row):, :-1]
+    y_test = np.array([i > j for i,j in zip(result[int(row):, -1][:, -1], result[int(row):, -2][:, -1])]).astype(int)
+
+    X_train_val = np.reshape(X_train_val, (X_train_val.shape[0], amount_of_features, X_train_val.shape[1]))
+    X_test = np.reshape(X_test, (X_test.shape[0], amount_of_features, X_test.shape[1]))
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
+                                                      test_size=0.2)
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
+
+
+
 
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
     if globals.get('dataset') == 'BCI_IV_2a':
@@ -265,5 +310,5 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_bci_iv_2b_train_val_test(subject_id)
     elif globals.get('dataset') == 'Bloomberg':
         return get_bloomberg_train_val_test(data_folder)
-
-
+    elif globals.get('dataset') == 'NYSE':
+        return get_nyse_train_val_test(data_folder)
