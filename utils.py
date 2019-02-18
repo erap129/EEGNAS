@@ -5,6 +5,8 @@ from collections import OrderedDict
 import numpy as np
 from braindecode.experiments.monitors import compute_trial_labels_from_crop_preds, compute_preds_per_trial_from_crops
 from sklearn import metrics
+from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import LabelBinarizer
 
 
 def summary(model, input_size, batch_size=-1, device="cuda", file=None):
@@ -183,10 +185,21 @@ class AUCMonitor(object):
         all_pred_labels = np.array(all_pred_labels)
         all_target_labels = np.array(all_target_labels)
         assert all_pred_labels.shape == all_target_labels.shape
-        fpr, tpr, thresholds = metrics.roc_curve(all_target_labels, all_pred_labels, pos_label=1)
-        auc = metrics.auc(fpr, tpr)
+        if len(np.unique(all_pred_labels)) == len(np.unique(all_target_labels)) == 2:  # binary classification
+            fpr, tpr, thresholds = metrics.roc_curve(all_target_labels, all_pred_labels, pos_label=1)
+            auc = metrics.auc(fpr, tpr)
+        else:
+            auc = multiclass_roc_auc_score(all_target_labels, all_pred_labels)
         column_name = "{:s}_{:s}".format(setname, self.col_suffix)
         return {column_name: float(auc)}
+
+
+def multiclass_roc_auc_score(y_test, y_pred, average="macro"):
+    lb = LabelBinarizer()
+    lb.fit(y_test)
+    y_test = lb.transform(y_test)
+    y_pred = lb.transform(y_pred)
+    return roc_auc_score(y_test, y_pred, average=average)
 
 
 class KappaMonitor(object):
