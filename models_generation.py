@@ -90,6 +90,7 @@ class ConvLayer(Layer):
     def __init__(self, kernel_eeg_chan=None, kernel_time=None, filter_num=None, name=None):
         Layer.__init__(self, name)
         if kernel_eeg_chan is None:
+            # kernel_eeg_chan = random.randint(1, globals.get('kernel_height_max'))
             kernel_eeg_chan = random.randint(1, globals.get('eeg_chans'))
         if kernel_time is None:
             kernel_time = random.randint(1, globals.get('kernel_time_max'))
