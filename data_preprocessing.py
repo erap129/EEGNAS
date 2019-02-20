@@ -14,6 +14,7 @@ from moabb.datasets import Cho2017, BNCI2014004
 from moabb.paradigms import (LeftRightImagery, MotorImagery,
                              FilterBankMotorImagery)
 from data.Bloomberg.bloomberg_preproc import get_bloomberg
+from data.HumanActivity.human_activity_preproc import get_human_activity
 from sklearn import preprocessing
 import globals
 import logging
@@ -241,10 +242,6 @@ def get_bci_iv_2b_train_val_test(subject_id):
 
 
 def get_bloomberg_train_val_test(data_folder):
-    # X_train_val = np.load(f"{data_folder}/Bloomberg/X_train_{globals.get('commodity')}.npy")
-    # X_test = np.load(f"{data_folder}/Bloomberg/X_test_{globals.get('commodity')}.npy")
-    # y_train_val = np.load(f"{data_folder}/Bloomberg/y_train_{globals.get('commodity')}.npy")
-    # y_test = np.load(f"{data_folder}/Bloomberg/y_test_{globals.get('commodity')}.npy")
     X_train_val, y_train_val, X_test, y_test = get_bloomberg(f'{data_folder}/Bloomberg')
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=globals.get('valid_set_fraction'))
@@ -284,9 +281,6 @@ def get_nyse_train_val_test(data_folder):
     X_train_val = train[:, :-1]
     y_train_val = np.array([i > j for i,j in zip(train[:, -1][:, -1], train[:, -2][:, -1])]).astype(int) # did the price go up?
 
-    # y_train_val = np.array([i > j for i,j in zip(np.average(train[:, -20:-10][:, -1], axis=1),
-    #                                              np.average(train[:, -10:][:, -1], axis=1))]).astype(int)
-
     X_test = result[int(row):, :-1]
     y_test = np.array([i > j for i,j in zip(result[int(row):, -1][:, -1], result[int(row):, -2][:, -1])]).astype(int)
 
@@ -300,6 +294,14 @@ def get_nyse_train_val_test(data_folder):
     return train_set, valid_set, test_set
 
 
+def get_human_activity_train_val_test(data_folder, subject_id):
+    X_train_val, y_train_val, X_test, y_test = get_human_activity(f'{data_folder}/HumanActivity', subject_id)
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
+                                                      test_size=globals.get('valid_set_fraction'))
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
 
 
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
@@ -317,3 +319,5 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_bloomberg_train_val_test(data_folder)
     elif globals.get('dataset') == 'NYSE':
         return get_nyse_train_val_test(data_folder)
+    elif globals.get('dataset') == 'HumanActivity':
+        return get_human_activity(data_folder, subject_id)
