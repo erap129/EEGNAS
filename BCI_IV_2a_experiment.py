@@ -12,7 +12,7 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromT
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
 from utils import createFolder, AUCMonitor, AccuracyMonitor, NoIncrease, CroppedTrialGenericMonitor, KappaMonitor,\
-    accuracy_func, kappa_func, auc_func
+    accuracy_func, kappa_func, auc_func, F1Monitor
 from itertools import chain
 from argparse import ArgumentParser
 import logging
@@ -53,7 +53,9 @@ def parse_args(args):
 
 
 def generate_report(filename, report_filename):
-    params = ['train_time', 'test_acc', 'val_acc', 'train_acc', 'num_epochs', 'final_test_acc', 'final_val_acc', 'final_train_acc']
+    params = ['train_time', 'test_acc', 'val_acc', 'train_acc', 'num_epochs', 'final_test_acc', 'final_val_acc', 'final_train_acc',
+              'final_test_auc', 'final_val_auc', 'final_train_auc', 'final_test_kappa', 'final_val_kappa', 'final_train_kappa',
+              'final_test_f1', 'final_val_f1', 'final_train_f1']
     params_to_average = defaultdict(int)
     data = pd.read_csv(filename)
     for param in params:
@@ -87,6 +89,8 @@ def get_normal_settings():
         monitors.append(AUCMonitor())
     if globals.get('dataset') in ['BCI_IV_2b']:
         monitors.append(KappaMonitor())
+    if globals.get('dataset') in ['Opportunity']:
+        monitors.append(F1Monitor())
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -224,13 +228,13 @@ if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
     num_subjects = {'HG': 14, 'BCI_IV_2a': 9, 'BCI_IV_2b': 9, 'NER15': 1, 'Cho': 52, 'Bloomberg': 1, 'NYSE': 1,
-                    'HumanActivity': 19}
+                    'HumanActivity': 19, 'Opportunity': 1}
     eeg_chans = {'HG': 44, 'BCI_IV_2a': 22, 'BCI_IV_2b': 3, 'NER15': 56, 'Cho': 64, 'Bloomberg': 32, 'NYSE': 5,
-                 'HumanActivity': 45}
+                 'HumanActivity': 45, 'Opportunity': 113}
     input_time_len = {'HG': 1125, 'BCI_IV_2a': 1125, 'BCI_IV_2b': 1126, 'NER15': 260, 'Cho': 1537, 'Bloomberg': 950,
-                      'NYSE': 200, 'HumanActivity': 124}
+                      'NYSE': 200, 'HumanActivity': 124, 'Opportunity': 128}
     n_classes = {'HG': 4, 'BCI_IV_2a': 4, 'BCI_IV_2b': 2, 'NER15': 2, 'Cho': 2, 'Bloomberg': 3, 'NYSE': 2,
-                 'HumanActivity': 8}
+                 'HumanActivity': 8, 'Opportunity': 18}
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
 

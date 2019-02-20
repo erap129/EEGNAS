@@ -15,7 +15,9 @@ from moabb.paradigms import (LeftRightImagery, MotorImagery,
                              FilterBankMotorImagery)
 from data.Bloomberg.bloomberg_preproc import get_bloomberg
 from data.HumanActivity.human_activity_preproc import get_human_activity
+from data.Opportunity.sliding_window import sliding_window
 from sklearn import preprocessing
+import pickle
 import globals
 import logging
 import numpy as np
@@ -304,6 +306,29 @@ def get_human_activity_train_val_test(data_folder, subject_id):
     return train_set, valid_set, test_set
 
 
+def opp_sliding_window(data_x, data_y, ws, ss):
+    data_x = sliding_window(data_x,(ws,data_x.shape[1]),(ss,1))
+    data_y = np.asarray([[i[-1]] for i in sliding_window(data_y,ws,ss)])
+    return data_x.astype(np.float32), data_y.reshape(len(data_y)).astype(np.uint8)
+
+
+def get_opportunity_train_val_test(data_folder):
+    with open(f'{data_folder}/Opportunity/oppChallenge_gestures.data', 'rb') as pickle_file:
+        data = pickle.load(pickle_file)
+        X_train, y_train = data[0]
+        X_test, y_test = data[1]
+        X_test, y_test = opp_sliding_window(X_test, y_test, 128, 12)
+        X_train_val, y_train_val = opp_sliding_window(X_train, y_train, 128, 12)
+        X_test = np.swapaxes(X_test, 1, 2)
+        X_train_val = np.swapaxes(X_train_val, 1, 2)
+        X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
+                                                          test_size=globals.get('valid_set_fraction'))
+        train_set = DummySignalTarget(X_train, y_train)
+        valid_set = DummySignalTarget(X_val, y_val)
+        test_set = DummySignalTarget(X_test, y_test)
+        return train_set, valid_set, test_set
+
+
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
     if globals.get('dataset') == 'BCI_IV_2a':
         return get_bci_iv_2a_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)
@@ -320,4 +345,6 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
     elif globals.get('dataset') == 'NYSE':
         return get_nyse_train_val_test(data_folder)
     elif globals.get('dataset') == 'HumanActivity':
-        return get_human_activity(data_folder, subject_id)
+        return get_human_activity_train_val_test(data_folder, subject_id)
+    elif globals.get('dataset') == 'Opportunity':
+        return get_opportunity_train_val_test(data_folder)
