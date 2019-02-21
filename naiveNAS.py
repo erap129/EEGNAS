@@ -484,9 +484,12 @@ class NaiveNAS:
         self.optimizer = optim.Adam(model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
-            model.cuda()
             if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
-                model = nn.DataParallel(model.cuda(), device_ids=[0,1,2,3])
+                model.cuda()
+                with torch.cuda.device(0):
+                    model = nn.DataParallel(model.cuda(), device_ids=[0,1,2,3])
+            else:
+                model.cuda()
         self.monitor_epoch(single_subj_dataset, model)
         if globals.get('log_epochs'):
             self.log_epoch()
@@ -534,8 +537,9 @@ class NaiveNAS:
             input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
             target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
             if self.cuda:
-                input_vars = input_vars.cuda()
-                target_vars = target_vars.cuda()
+                with torch.cuda.device(0):
+                    input_vars = input_vars.cuda()
+                    target_vars = target_vars.cuda()
             self.optimizer.zero_grad()
             outputs = model(input_vars)
             loss = self.loss_function(outputs, target_vars)
@@ -602,8 +606,9 @@ class NaiveNAS:
             input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
             target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
             if self.cuda:
-                input_vars = input_vars.cuda()
-                target_vars = target_vars.cuda()
+                with torch.cuda.device(0):
+                    input_vars = input_vars.cuda()
+                    target_vars = target_vars.cuda()
             outputs = model(input_vars)
             loss = self.loss_function(outputs, target_vars)
             if hasattr(outputs, 'cpu'):

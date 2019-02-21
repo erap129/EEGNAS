@@ -284,10 +284,6 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
         return
     init.xavier_uniform_(list(model._modules.items())[-3][1].weight, gain=1)
     init.constant_(list(model._modules.items())[-3][1].bias, 0)
-    if globals.get('parallel_gpu'):
-        model = nn.DataParallel(model)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model.to(device)
     return model
 
 

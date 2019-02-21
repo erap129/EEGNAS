@@ -172,11 +172,23 @@ def get_multiple_values(configurations):
     return list(set(multiple_values))
 
 
+def not_exclusively_in(subj, model_from_file):
+    all_subjs = [int(s) for s in model_from_file.split() if s.isdigit()]
+    if len(all_subjs) > 1:
+        return False
+    if subj in all_subjs:
+        return False
+    return True
+
+
 def target_exp(stop_criterion, iterator, loss_function, model_from_file=None):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
     for subject_id in subjects:
+        if model_from_file is not None and globals.get('per_subject_exclusive') and \
+                not_exclusively_in(subject_id, model_from_file):
+            continue
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
