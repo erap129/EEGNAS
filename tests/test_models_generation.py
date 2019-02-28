@@ -1,11 +1,13 @@
 import unittest
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
-    MyModel, ActivationLayer, network_similarity, PoolingLayer
+    MyModel, ActivationLayer, network_similarity, PoolingLayer, add_random_connection
 import models_generation
-from BCI_IV_2a_experiment import get_configurations, parse_args
+from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset
 import globals
+import networkx as nx
 from globals import init_config
+import matplotlib.pyplot as plt
 
 class TestModelGeneration(unittest.TestCase):
     def setUp(self):
@@ -14,7 +16,7 @@ class TestModelGeneration(unittest.TestCase):
         configs = get_configurations(args)
         assert(len(configs) == 1)
         globals.set_config(configs[0])
-        globals.set('eeg_chans', 22)
+        set_params_by_dataset()
 
     def test_breed(self):
         model1 = uniform_model(10, BatchNormLayer)
@@ -78,7 +80,11 @@ class TestModelGeneration(unittest.TestCase):
 
     def test_random_grid_model(self):
         model = models_generation.random_grid_model(3,3)
-
+        for i in range(10):
+            add_random_connection(model)
+        print(list(nx.topological_sort(model)))
+        nx.draw(model, with_labels=True)
+        plt.show()
 
 
 

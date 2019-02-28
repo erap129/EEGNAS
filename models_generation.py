@@ -4,7 +4,7 @@ from Bio.pairwise2 import format_alignment
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 from braindecode.models import deep4, shallow_fbcsp, eegnet
-from braindecode.models.util import to_dense_prediction_model
+import matplotlib.pyplot as plt
 import os
 from torch import nn
 from torch.nn import init
@@ -287,6 +287,28 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
     return model
 
 
+class ModelFromGrid(torch.nn.Module):
+    def __init__(self, layer_grid):
+        sorted_nodes = list(nx.topological_sort(layer_grid))
+        self.layers = layer_grid.copy()
+        if globals.get('channel_dim') == 'channels':
+            input_chans = 1
+        else:
+            input_chans = globals.get('eeg_chans')
+        input_time = globals.get('input_time_len')
+        input_shape = {'time': input_time, 'chans': input_chans}
+        self.layers.nodes['input']['shape'] = input_shape
+        for node in sorted_nodes:
+            predecessor_shapes = [self.layers[n]['shape'] for n in list(self.layers.predecessors(node))]
+            self.calc_shape_multi(predecessor_shapes, node)
+
+    def calc_shape_multi(self, predecessor_shapes, current_layer):
+        
+
+
+
+
+
 class MyModel:
     # remove empty dim at end and potentially remove empty time dim
     # do not just use squeeze as we never want to remove first dim
@@ -364,6 +386,19 @@ def check_legal_grid_model(layer_grid):
             except ValueError:
                 return False
     return True
+
+
+def add_random_connection(layer_grid):
+    i1 = j1 = i2 = j2 = 0
+    while i1 == i2 and j1 == j2:
+        i1 = random.randint(0, layer_grid.graph['height'] - 1)
+        i2 = random.randint(0, layer_grid.graph['height'] - 1)
+        j1 = random.randint(0, layer_grid.graph['width'] - 1)
+        j2 = random.randint(0, layer_grid.graph['width'] - 1)
+    layer_grid.add_edge((i1, j1), (i2, j2))
+    if not nx.is_directed_acyclic_graph(layer_grid):
+        layer_grid.remove_edge((i1, j1), (i2, j2))
+        add_random_connection(layer_grid)
 
 
 def random_layer():

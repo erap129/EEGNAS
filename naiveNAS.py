@@ -324,12 +324,14 @@ class NaiveNAS:
                                                       weighted_population[:int(len(weighted_population)/5)]], layer_type)
         return stats
 
-    def add_final_stats(self, stats, weighted_population):
+    def add_final_stats(self, stats, model_filename):
+        model = torch.load(model_filename)
+        if globals.get('cropping'):
+            self.finalized_model_to_dilated(model)
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
-            _, evaluations, _, _, num_epochs = self.evaluate_model(
-                finalize_model(weighted_population[0]['model']), final_evaluation=True, subject=subject)
+            _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
             NaiveNAS.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
@@ -386,10 +388,12 @@ class NaiveNAS:
     def save_best_model(self, weighted_population):
         try:
             save_model = weighted_population[0]['finalized_model'].to("cpu")
-            torch.save(save_model, "%s/best_model_" % self.exp_folder
-                       + '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th")
+            model_filename = "%s/best_model_" % self.exp_folder +\
+                             '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th"
+            torch.save(save_model, model_filename)
         except Exception as e:
             print("failed to save model")
+        return model_filename
 
     @staticmethod
     def inject_dropout(weighted_population):
@@ -452,8 +456,8 @@ class NaiveNAS:
                 if globals.get('save_every_generation'):
                     self.save_best_model(weighted_population)
             else:  # last generation
-                self.save_best_model(weighted_population)
-                self.add_final_stats(stats, weighted_population)
+                model_filename = self.save_best_model(weighted_population)
+                self.add_final_stats(stats, model_filename)
 
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)

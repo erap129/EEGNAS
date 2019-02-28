@@ -236,9 +236,7 @@ def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
         naiveNAS.run_target_model(csv_file)
 
 
-if __name__ == '__main__':
-    args = parse_args(sys.argv[1:])
-    init_config(args.config)
+def set_params_by_dataset():
     num_subjects = {'HG': 14, 'BCI_IV_2a': 9, 'BCI_IV_2b': 9, 'NER15': 1, 'Cho': 52, 'Bloomberg': 1, 'NYSE': 1,
                     'HumanActivity': 19, 'Opportunity': 1}
     eeg_chans = {'HG': 44, 'BCI_IV_2a': 22, 'BCI_IV_2b': 3, 'NER15': 56, 'Cho': 64, 'Bloomberg': 32, 'NYSE': 5,
@@ -247,9 +245,17 @@ if __name__ == '__main__':
                       'NYSE': 200, 'HumanActivity': 124, 'Opportunity': 128}
     n_classes = {'HG': 4, 'BCI_IV_2a': 4, 'BCI_IV_2b': 2, 'NER15': 2, 'Cho': 2, 'Bloomberg': 3, 'NYSE': 2,
                  'HumanActivity': 8, 'Opportunity': 18}
+    globals.set('num_subjects', num_subjects[globals.get('dataset')])
+    globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
+    globals.set('input_time_len', input_time_len[globals.get('dataset')])
+    globals.set('n_classes', n_classes[globals.get('dataset')])
+
+
+if __name__ == '__main__':
+    args = parse_args(sys.argv[1:])
+    init_config(args.config)
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                             level=logging.DEBUG, stream=sys.stdout)
-
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
@@ -272,10 +278,7 @@ if __name__ == '__main__':
         for index, configuration in enumerate(configurations):
             try:
                 globals.set_config(configuration)
-                globals.set('num_subjects', num_subjects[globals.get('dataset')])
-                globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
-                globals.set('input_time_len', input_time_len[globals.get('dataset')])
-                globals.set('n_classes', n_classes[globals.get('dataset')])
+                set_params_by_dataset()
                 if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2')\
                         and not globals.get('force_gpu_off'):
                     globals.set('cuda', True)
