@@ -255,6 +255,8 @@ class NaiveNAS:
                 if isinstance(layer, layer_type):
                     attr_count += getattr(layer, attribute)
                     count += 1
+        if count == 0:
+            return 'NAN'
         return attr_count / count
 
     @staticmethod
@@ -304,6 +306,10 @@ class NaiveNAS:
         for stat in layer_stats.keys():
             stats[stat] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
                                                                  layer_stats[stat][0], layer_stats[stat][1])
+            if globals.get('add_top_20_stats'):
+                stats[f'top20_{stat}'] = NaiveNAS.get_average_param([pop['model'] for pop in
+                                                                     weighted_population[:int(len(weighted_population)/5)]],
+                                                         layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
         stats['similarity_measure'] = NaiveNAS.calculate_population_similarity(
             [pop['model'] for pop in weighted_population], evolution_file, sim_count=globals.get('sim_count'))
@@ -312,6 +318,10 @@ class NaiveNAS:
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
             stats['%s_count' % layer_type.__name__] = \
                 NaiveNAS.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
+            if globals.get('add_top_20_stats'):
+                stats['top20_%s_count' % layer_type.__name__] = \
+                    NaiveNAS.count_layer_type_in_pop([pop['model'] for pop in
+                                                      weighted_population[:int(len(weighted_population)/5)]], layer_type)
         return stats
 
     def add_final_stats(self, stats, weighted_population):
@@ -381,6 +391,18 @@ class NaiveNAS:
         except Exception as e:
             print("failed to save model")
 
+    @staticmethod
+    def inject_dropout(weighted_population):
+        for pop in weighted_population:
+            layer_collection = pop['model']
+            for i in range(len(layer_collection)):
+                if random.uniform(0, 1) < globals.get('dropout_injection_rate'):
+                    old_layer = layer_collection[i]
+                    layer_collection[i] = models_generation.DropoutLayer()
+                    if not models_generation.check_legal_model(layer_collection):
+                        layer_collection[i] = old_layer
+            pop['model_state'] = None
+
     def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
         pop_size = globals.get('pop_size')
         num_generations = globals.get('num_generations')
@@ -394,6 +416,8 @@ class NaiveNAS:
         for generation in range(num_generations):
             if self.cuda:
                 torch.cuda.empty_cache()
+            if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
+                NaiveNAS.inject_dropout(weighted_population)
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population,
                                          key=lambda x: x[f'val_{globals.get("ga_objective")}'], reverse=True)
@@ -479,17 +503,18 @@ class NaiveNAS:
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop'):
             self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
-        if globals.get('inherit_weights_normal') and state is not None:
-            model.load_state_dict(state)
         self.optimizer = optim.Adam(model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
             if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
                 model.cuda()
                 with torch.cuda.device(0):
-                    model = nn.DataParallel(model.cuda(), device_ids=[0,1,2,3])
+                    model = nn.DataParallel(model.cuda(), device_ids=
+                        [int(s) for s in globals.get('gpu_select').split(',')])
             else:
                 model.cuda()
+        if globals.get('inherit_weights_normal') and state is not None:
+                model.load_state_dict(state)
         self.monitor_epoch(single_subj_dataset, model)
         if globals.get('log_epochs'):
             self.log_epoch()

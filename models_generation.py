@@ -425,7 +425,7 @@ def custom_model(layers):
 def add_layer_to_state(new_model_state, layer, index, old_model_state):
     if type(layer).__name__ in ['BatchNormLayer', 'ConvLayer', 'PoolingLayer']:
         for k, v in old_model_state.items():
-            if k.startswith('%s_%d' % (type(layer).__name__, index)) and \
+            if '%s_%d' % (type(layer).__name__, index) in k and \
                     k in new_model_state.keys() and new_model_state[k].shape == v.shape:
                 new_model_state[k] = v
 
@@ -448,6 +448,11 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
+        if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
+            finalized_new_model.cuda()
+            with torch.cuda.device(0):
+                finalized_new_model = nn.DataParallel(finalized_new_model.cuda(), device_ids=
+                    [int(s) for s in globals.get('gpu_select').split(',')])
         finalized_new_model_state = finalized_new_model.state_dict()
         if None not in [first_model_state, second_model_state]:
             for i in range(cut_point):
