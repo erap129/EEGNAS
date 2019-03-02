@@ -1,4 +1,7 @@
 import unittest
+
+from braindecode.torch_ext.util import np_to_var
+
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
     MyModel, ActivationLayer, network_similarity, PoolingLayer, add_random_connection
@@ -6,6 +9,7 @@ import models_generation
 from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset
 import globals
 import networkx as nx
+import numpy as np
 from globals import init_config
 import matplotlib.pyplot as plt
 
@@ -82,6 +86,9 @@ class TestModelGeneration(unittest.TestCase):
         model = models_generation.random_grid_model(3,3)
         for i in range(10):
             add_random_connection(model)
+        real_model = models_generation.ModelFromGrid(model)
+        input_shape = (2, globals.get('input_time_len'), globals.get('eeg_chans'), 1)
+        out = real_model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
         print(list(nx.topological_sort(model)))
         nx.draw(model, with_labels=True)
         plt.show()

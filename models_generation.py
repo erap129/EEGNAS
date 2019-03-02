@@ -4,7 +4,6 @@ from Bio.pairwise2 import format_alignment
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 from braindecode.models import deep4, shallow_fbcsp, eegnet
-import matplotlib.pyplot as plt
 import os
 from torch import nn
 from torch.nn import init
@@ -287,25 +286,104 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
     return model
 
 
+def generate_conv_layer(layer, in_chans, prev_time):
+    if layer.kernel_time == 'down_to_one':
+        layer.kernel_time = prev_time
+        layer.kernel_eeg_chan = prev_eeg_channels
+    if globals.get('channel_dim') == 'channels':
+        layer.kernel_eeg_chan = 1
+    return nn.Conv2d(in_chans, layer.filter_num, (layer.kernel_time, layer.kernel_eeg_chan), stride=1)
+
+
+def generate_pooling_layer(layer, in_chans, prev_time):
+    if globals.get('channel_dim') == 'channels':
+        layer.pool_eeg_chan = 1
+    return nn.MaxPool2d(kernel_size=(int(layer.pool_time), int(layer.pool_eeg_chan)),
+                                  stride=(int(layer.stride_time), 1))
+
+
+def generate_batchnorm_layer(layer, in_chans, prev_time):
+    return nn.BatchNorm2d(in_chans, momentum=globals.get('batch_norm_alpha'), affine=True, eps=1e-5)
+
+
+def generate_activation_layer(layer, in_chans, prev_time):
+    activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
+    return activations[layer.activation_type]()
+
+
+def generate_dropout_layer(layer, in_chans, prev_time):
+    return nn.Dropout(p=globals.get('dropout_p'))
+
+
+def generate_identity_layer(layer, in_chans, prev_time):
+    return IdentityModule()
+
+
+def generate_flatten_layer(layer, in_chans, prev_time):
+    return Expression(MyModel._squeeze_final_output)
+
+
 class ModelFromGrid(torch.nn.Module):
     def __init__(self, layer_grid):
-        sorted_nodes = list(nx.topological_sort(layer_grid))
+        super(ModelFromGrid, self).__init__()
+        self.generate_pytorch_layer = {
+            ConvLayer: generate_conv_layer,
+            PoolingLayer: generate_pooling_layer,
+            BatchNormLayer: generate_batchnorm_layer,
+            ActivationLayer: generate_activation_layer,
+            DropoutLayer: generate_dropout_layer,
+            IdentityLayer: generate_identity_layer,
+            FlattenLayer: generate_flatten_layer
+        }
+
+        self.sorted_nodes = list(nx.topological_sort(layer_grid))
         self.layers = layer_grid.copy()
-        if globals.get('channel_dim') == 'channels':
-            input_chans = 1
-        else:
-            input_chans = globals.get('eeg_chans')
+        self.pytorch_layers = nn.ModuleDict({})
+        input_chans = globals.get('eeg_chans')
         input_time = globals.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
+        for node in self.sorted_nodes:
+            self.layers.nodes[node]['active'] = False
         self.layers.nodes['input']['shape'] = input_shape
-        for node in sorted_nodes:
-            predecessor_shapes = [self.layers[n]['shape'] for n in list(self.layers.predecessors(node))]
-            self.calc_shape_multi(predecessor_shapes, node)
+        self.layers.nodes['input']['active'] = True
+        for node in self.sorted_nodes[1:]:
+            predecessors= list(self.layers.predecessors(node))
+            predecessors = [pred for pred in predecessors if self.layers.nodes[pred]['active']]
+            if len(predecessors) == 0:
+                continue
+            self.layers.nodes[node]['active'] = True
+            self.calc_shape_multi(predecessors, node)
 
-    def calc_shape_multi(self, predecessor_shapes, current_layer):
-        
+    def calc_shape_multi(self, predecessors, node):
+        pred_shapes = [self.layers.nodes[pred]['shape']['time'] for pred in predecessors if
+                        self.layers.nodes[pred]['active']]
+        min_time = int(min(pred_shapes))
+        sum_chans = int(sum([self.layers.nodes[pred]['shape']['chans'] for pred in predecessors if
+                         self.layers.nodes[pred]['active']]))
+        for pred in predecessors:
+            if self.layers.nodes[pred]['active']:
+                self.layers.nodes[pred]['fix_amount'] = self.layers.nodes[pred]['shape']['time'] - min_time
+        self.pytorch_layers[str(node)] = self.generate_pytorch_layer[type(self.layers.nodes[node]['layer'])]\
+            (self.layers.nodes[node]['layer'], sum_chans, min_time)
+        self.layers.nodes[node]['shape'] = calc_shape({'time': min_time, 'chans':1}, self.layers.nodes[node]['layer'])
 
-
+    def forward(self, X):
+        self.layers.nodes['input']['tensor'] = X
+        for node in self.sorted_nodes[1:]:
+            if not self.layers.nodes[node]['active']:
+                continue
+            predecessors = list(self.layers.predecessors(node))
+            if len(predecessors) == 1:
+                self.layers.nodes[node]['tensor'] = self.pytorch_layers[str(node)]\
+                    (self.layers.nodes[predecessors[0]]['tensor'])
+            else:
+                for pred in predecessors:
+                    while self.layers.nodes[pred]['fix_amount'] > 0:
+                        self.layers.nodes[pred]['tensor'] = nn.MaxPool2d((2,1), 1)(self.layers.nodes[pred]['tensor'])
+                        self.layers.nodes[pred]['fix_amount'] -= 1
+                self.layers.nodes[node]['tensor'] = torch.cat(tuple([self.layers.nodes[pred]['tensor'] for pred in predecessors]), dim=0)
+            if node == 'output':
+                return self.layers.nodes[node]['tensor']
 
 
 
