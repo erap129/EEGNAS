@@ -89,8 +89,8 @@ class ConvLayer(Layer):
     def __init__(self, kernel_eeg_chan=None, kernel_time=None, filter_num=None, name=None):
         Layer.__init__(self, name)
         if kernel_eeg_chan is None:
-            # kernel_eeg_chan = random.randint(1, globals.get('kernel_height_max'))
-            kernel_eeg_chan = random.randint(1, globals.get('eeg_chans'))
+            kernel_eeg_chan = random.randint(1, globals.get('kernel_height_max'))
+            # kernel_eeg_chan = random.randint(1, globals.get('eeg_chans'))
         if kernel_time is None:
             kernel_time = random.randint(1, globals.get('kernel_time_max'))
         if filter_num is None:
@@ -289,7 +289,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 def generate_conv_layer(layer, in_chans, prev_time):
     if layer.kernel_time == 'down_to_one':
         layer.kernel_time = prev_time
-        layer.kernel_eeg_chan = prev_eeg_channels
+        layer.filter_num = globals.get('n_classes')
     if globals.get('channel_dim') == 'channels':
         layer.kernel_eeg_chan = 1
     return nn.Conv2d(in_chans, layer.filter_num, (layer.kernel_time, layer.kernel_eeg_chan), stride=1)
@@ -335,24 +335,48 @@ class ModelFromGrid(torch.nn.Module):
             IdentityLayer: generate_identity_layer,
             FlattenLayer: generate_flatten_layer
         }
-
-        self.sorted_nodes = list(nx.topological_sort(layer_grid))
         self.layers = layer_grid.copy()
         self.pytorch_layers = nn.ModuleDict({})
+        self.layers.add_node('output_softmax')
+        self.layers.add_node('output_flatten')
+        self.layers.nodes['output_conv']['layer'] = ConvLayer(kernel_time='down_to_one')
+        self.layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
+        self.layers.nodes['output_flatten']['layer'] = FlattenLayer()
+        self.layers.add_edge('output_conv', 'output_softmax')
+        self.layers.add_edge('output_softmax', 'output_flatten')
         input_chans = globals.get('eeg_chans')
         input_time = globals.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
+        self.sorted_nodes = list(nx.topological_sort(self.layers))
         for node in self.sorted_nodes:
             self.layers.nodes[node]['active'] = False
         self.layers.nodes['input']['shape'] = input_shape
         self.layers.nodes['input']['active'] = True
+        self.layers.nodes['output_conv']['active'] = True
+        self.layers.nodes['output_softmax']['active'] = True
+        self.layers.nodes['output_flatten']['active'] = True
         for node in self.sorted_nodes[1:]:
-            predecessors= list(self.layers.predecessors(node))
+            predecessors = list(self.layers.predecessors(node))
             predecessors = [pred for pred in predecessors if self.layers.nodes[pred]['active']]
             if len(predecessors) == 0:
                 continue
             self.layers.nodes[node]['active'] = True
             self.calc_shape_multi(predecessors, node)
+
+    def finalize_model(layer_collection):
+        layer_collection = copy.deepcopy(layer_collection)
+        if globals.get('cropping'):
+            final_conv_time = globals.get('final_conv_size')
+        else:
+            final_conv_time = 'down_to_one'
+        conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
+                               filter_num=globals.get('n_classes'))
+        layer_collection.append(conv_layer)
+        activation = ActivationLayer('softmax')
+        layer_collection.append(activation)
+        flatten = FlattenLayer()
+        layer_collection.append(flatten)
+        return new_model_from_structure_pytorch(layer_collection)
 
     def calc_shape_multi(self, predecessors, node):
         pred_shapes = [self.layers.nodes[pred]['shape']['time'] for pred in predecessors if
@@ -362,10 +386,10 @@ class ModelFromGrid(torch.nn.Module):
                          self.layers.nodes[pred]['active']]))
         for pred in predecessors:
             if self.layers.nodes[pred]['active']:
-                self.layers.nodes[pred]['fix_amount'] = self.layers.nodes[pred]['shape']['time'] - min_time
+                self.layers.edges[pred, node]['fix_amount'] = self.layers.nodes[pred]['shape']['time'] - min_time
         self.pytorch_layers[str(node)] = self.generate_pytorch_layer[type(self.layers.nodes[node]['layer'])]\
             (self.layers.nodes[node]['layer'], sum_chans, min_time)
-        self.layers.nodes[node]['shape'] = calc_shape({'time': min_time, 'chans':1}, self.layers.nodes[node]['layer'])
+        self.layers.nodes[node]['shape'] = calc_shape_channels({'time': min_time, 'chans': sum_chans}, self.layers.nodes[node]['layer'])
 
     def forward(self, X):
         self.layers.nodes['input']['tensor'] = X
@@ -378,13 +402,28 @@ class ModelFromGrid(torch.nn.Module):
                     (self.layers.nodes[predecessors[0]]['tensor'])
             else:
                 for pred in predecessors:
-                    while self.layers.nodes[pred]['fix_amount'] > 0:
-                        self.layers.nodes[pred]['tensor'] = nn.MaxPool2d((2,1), 1)(self.layers.nodes[pred]['tensor'])
-                        self.layers.nodes[pred]['fix_amount'] -= 1
-                self.layers.nodes[node]['tensor'] = torch.cat(tuple([self.layers.nodes[pred]['tensor'] for pred in predecessors]), dim=0)
-            if node == 'output':
-                return self.layers.nodes[node]['tensor']
+                    if not self.layers.nodes[pred]['active']:
+                        continue
+                    if self.layers.edges[pred, node]['fix_amount'] > 0:
+                        fix_amount = self.layers.edges[pred, node]['fix_amount']
+                        self.layers.edges[pred, node]['fixed_tensor'] = self.layers.nodes[pred]['tensor']
+                        while fix_amount > 0:
+                            self.layers.edges[pred, node]['fixed_tensor'] = nn.MaxPool2d((2,1), 1)\
+                                (self.layers.edges[pred, node]['fixed_tensor'])
+                            fix_amount -= 1
+                to_concat = []
+                for pred in predecessors:
+                    if not self.layers.nodes[pred]['active']:
+                        continue
+                    if self.layers.edges[pred, node]['fix_amount'] > 0:
+                        to_concat.append(self.layers.edges[pred, node]['fixed_tensor'])
+                    else:
+                        to_concat.append(self.layers.nodes[pred]['tensor'])
 
+                self.layers.nodes[node]['tensor'] = self.pytorch_layers[str(node)](torch.cat(tuple(to_concat), dim=1))
+
+            if node == 'output_flatten':
+                return self.layers.nodes[node]['tensor']
 
 
 class MyModel:
@@ -443,26 +482,45 @@ def calc_shape(in_shape, layer):
     return {'time': input_time, 'chans': input_chans}
 
 
+def calc_shape_channels(in_shape, layer):
+    input_time = in_shape['time']
+    input_chans = in_shape['chans']
+    if type(layer) == ConvLayer:
+        input_time = (input_time - layer.kernel_time) + 1
+        input_chans = layer.filter_num
+    elif type(layer) == PoolingLayer:
+        input_time = int((input_time - layer.pool_time) / layer.stride_time) + 1
+    if input_time < 1:
+        raise ValueError(f"illegal model, input_time={input_time}, input_chans={input_chans}")
+    return {'time': input_time, 'chans': input_chans}
+
+
 def check_legal_grid_model(layer_grid):
-    if globals.get('channel_dim') == 'channels':
-        input_chans = 1
-    else:
-        input_chans = globals.get('eeg_chans')
+    input_chans = globals.get('eeg_chans')
     input_time = globals.get('input_time_len')
     input_shape = {'time': input_time, 'chans': input_chans}
     layer_shapes = layer_grid.copy()
     layer_shapes.nodes['input']['shape'] = input_shape
-    nodes_to_check = [(i,j) for i in range(layer_shapes.graph['width'])
-                      for j in range(layer_shapes.graph['height'])]
-    nodes_to_check.append('output')
+    nodes_to_check = list(nx.topological_sort(layer_grid))
+    for node in nodes_to_check:
+        layer_shapes.nodes[node]['active'] = False
     for node in nodes_to_check:
         predecessors = list(layer_shapes.predecessors(node))
-        if len(predecessors) == 1:
-            try:
-                layer_shapes.nodes[node]['shape'] = calc_shape(layer_shapes.nodes[predecessors[0]]['shape'],
-                                                           layer_shapes.nodes[node]['layer'])
-            except ValueError:
-                return False
+        try:
+            if len(predecessors) >= 1:
+                pred_shapes = [layer_shapes.nodes[pred]['shape']['time'] for pred in predecessors if
+                               layer_shapes.nodes[pred]['active']]
+                if len(pred_shapes) > 0:
+                    layer_shapes.nodes[node]['active'] = True
+                    min_time = int(min(pred_shapes))
+                    sum_chans = int(sum([layer_shapes.nodes[pred]['shape']['chans'] for pred in predecessors if
+                                         layer_shapes.nodes[pred]['active']]))
+                    layer_shapes.nodes[node]['shape'] = calc_shape_channels({'time': min_time, 'chans': sum_chans},
+                                                                        layer_shapes.nodes[node]['layer'])
+        except ValueError:
+            return False
+        except KeyError:
+            pass
     return True
 
 
@@ -494,23 +552,23 @@ def random_model(n_layers):
         return random_model(n_layers)
 
 
-def random_grid_model(height, width):
-    layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(height, width)))
+def random_grid_model(dim):
+    layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(dim, dim)))
     for node in layer_grid.nodes.values():
         node['layer'] = random_layer()
     layer_grid.add_node('input')
-    layer_grid.add_node('output')
-    layer_grid.nodes['output']['layer'] = IdentityLayer()
+    layer_grid.add_node('output_conv')
+    layer_grid.nodes['output_conv']['layer'] = IdentityLayer()
     layer_grid.add_edge('input', (0,0))
-    layer_grid.add_edge((0,width-1), 'output')
-    for i in range(width-1):
+    layer_grid.add_edge((0,dim-1), 'output_conv')
+    for i in range(dim-1):
         layer_grid.add_edge((0,i), (0,i+1))
-    layer_grid.graph['height'] = height
-    layer_grid.graph['width'] = width
+    layer_grid.graph['height'] = dim
+    layer_grid.graph['width'] = dim
     if check_legal_grid_model(layer_grid):
         return layer_grid
     else:
-        return random_grid_model(height, width)
+        return random_grid_model(dim)
 
 
 def uniform_model(n_layers, layer_type):
@@ -532,7 +590,6 @@ def custom_model(layers):
         return layer_collection
     else:
         return custom_model(layers)
-
 
 
 def add_layer_to_state(new_model_state, layer, index, old_model_state):
@@ -577,43 +634,34 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
     return new_model, finalized_new_model_state
 
 
-def breed_filters(first, second):
-    first_model = first['model']
-    second_model = second['model']
-    conv_indices_first = [layer.id for layer in first_model.values() if isinstance(layer, ConvLayer)]
-    conv_indices_second = [layer.id for layer in second_model.values() if isinstance(layer, ConvLayer)]
+def breed_grid(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
+    child_model = copy.deepcopy(first_model)
     if random.random() < globals.get('breed_rate'):
-        cut_point = random.randint(0, len(conv_indices_first) - 1)
+        if cut_point is None:
+            cut_point = random.randint(0, first_model.graph['width'] - 1)
         for i in range(cut_point):
-            second_model[conv_indices_second[i]].filter_num = first_model[conv_indices_first[i]].filter_num
-    if random.random() < globals.get('mutation_rate'):
-        random_rate = random.uniform(0.1,3)
-        random_index = conv_indices_second[random.randint(2, len(conv_indices_second) - 2)]
-        second_model[random_index].filter_num = \
-            np.clip(int(second_model[random_index].filter_num * random_rate), 1, None)
-    return second_model
-
-
-def base_model(n_filters_time=25, n_filters_spat=25, filter_time_length=10, random_filters=False):
-    n_chans = globals.get('eeg_chans')
-    if random_filters:
-        min_filt = globals.get('random_filter_range_min')
-        max_filt = globals.get('random_filter_range_max')
-    layer_collection = []
-    conv_time = ConvLayer(kernel_time=filter_time_length, kernel_eeg_chan=1, filter_num=
-                random.randint(min_filt, max_filt) if random_filters else n_filters_time)
-    layer_collection.append(conv_time)
-    conv_spat = ConvLayer(kernel_time=1, kernel_eeg_chan=n_chans, filter_num=
-        random.randint(min_filt, max_filt) if random_filters else n_filters_spat)
-    layer_collection.append(conv_spat)
-    batchnorm = BatchNormLayer()
-    layer_collection.append(batchnorm)
-    elu = ActivationLayer()
-    layer_collection.append(elu)
-    maxpool = PoolingLayer(pool_time=3, stride_time=3, mode='MAX')
-    layer_collection.append(maxpool)
-    return layer_collection
-
+            for j in range(cut_point, first_model.graph['width']):
+                child_model.nodes[(i, j)]['layer'] = second_model.nodes[(i, j)]['layer']
+                remove_edges = []
+                add_edges = []
+                for edge in child_model.edges([(i, j)]):
+                    if (i, j) == edge[0]:
+                        remove_edges.append(edge)
+                for edge in second_model.edges([(i, j)]):
+                    if (i, j) == edge[0]:
+                        add_edges.append(edge)
+                for edge in remove_edges:
+                    child_model.remove_edge(edge[0], edge[1])
+                for edge in add_edges:
+                    child_model.add_edge(edge[0], edge[1])
+                # child_model.edges._adjdict[(i, j)] = second_model.edges._adjdict[(i, j)]
+    if random.random() < mutation_rate:
+        add_random_connection(second_model)
+        i = random.randint(0, first_model.graph['width'] - 1)
+        j = random.randint(0, first_model.graph['width'] - 1)
+        child_model.nodes[(i, j)]['layer'] = random_layer()
+    if check_legal_grid_model(child_model):
+        return child_model, None
 
 
 def target_model(model_name):
@@ -627,32 +675,6 @@ def target_model(model_name):
     globals.set('final_conv_size', final_conv_sizes[model_name])
     model = models[model_name].create_network()
     return model
-
-
-
-def genetic_filter_experiment_model(num_blocks):
-    layer_collection = base_model(random_filters=True)
-    min_filt = globals.get('random_filter_range_min')
-    max_filt = globals.get('random_filter_range_max')
-    for block in range(num_blocks):
-        add_layer(layer_collection, DropoutLayer(), in_place=True)
-        add_layer(layer_collection, ConvLayer(filter_num=random.randint(min_filt, max_filt), kernel_eeg_chan=1, kernel_time=10),
-                  in_place=True)
-        add_layer(layer_collection, BatchNormLayer(), in_place=True)
-        add_layer(layer_collection, PoolingLayer(stride_time=2, pool_time=2, mode='MAX'), in_place=True)
-    return layer_collection
-
-
-def add_layer(layer_collection, layer_to_add, in_place=False):
-    if not in_place:
-        for layer in layer_collection.values():
-            layer.keras_layer = None
-        layer_collection = copy.deepcopy(layer_collection)
-    topo_layers = create_topo_layers(layer_collection.values())
-    last_layer_id = topo_layers[-1]
-    layer_collection[layer_to_add.id] = layer_to_add
-    layer_collection[last_layer_id].make_connection(layer_to_add)
-    return layer_collection
 
 
 def finalize_model(layer_collection):
@@ -670,27 +692,4 @@ def finalize_model(layer_collection):
     layer_collection.append(flatten)
     return new_model_from_structure_pytorch(layer_collection)
 
-
-def add_conv_maxpool_block(layer_collection, conv_width=10, conv_filter_num=50, dropout=False,
-                           pool_width=3, pool_stride=3, conv_layer_name=None, random_values=True):
-    layer_collection = copy.deepcopy(layer_collection)
-    if random_values:
-        conv_time = random.randint(5, 10)
-        conv_filter_num = random.randint(0, 50)
-        pool_time = 2
-        pool_stride = 2
-
-    if dropout:
-        dropout = DropoutLayer()
-        layer_collection.append(dropout)
-    conv_layer = ConvLayer(kernel_time=conv_width, kernel_eeg_chan=1,
-                           filter_num=conv_filter_num, name=conv_layer_name)
-    layer_collection.append(conv_layer)
-    batchnorm_layer = BatchNormLayer()
-    layer_collection.append(batchnorm_layer)
-    activation_layer = ActivationLayer()
-    layer_collection.append(activation_layer)
-    maxpool_layer = PoolingLayer(pool_time=pool_width, stride_time=pool_stride, mode='MAX')
-    layer_collection.append(maxpool_layer)
-    return layer_collection
 

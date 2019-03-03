@@ -322,11 +322,14 @@ if __name__ == '__main__':
                 with open(f"{exp_folder}/error_log_{exp_name}.txt", "w") as err_file:
                     print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
                     print(traceback.format_exc(), file=err_file)
+                print('experiment failed. Exception message: %s' % (str(e)))
+                print(traceback.format_exc())
                 new_exp_folder = exp_folder + '_fail'
                 os.rename(exp_folder, new_exp_folder)
                 write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
     finally:
-        garbage_time()
+        if globals.get('garbage_time'):
+            garbage_time()
 
 
 

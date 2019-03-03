@@ -152,7 +152,6 @@ class NaiveNAS:
 
     def finalized_model_to_dilated(self, model):
         to_dense_prediction_model(model)
-        # conv_classifier = list(model._modules.items())[-3][1]
         conv_classifier = model.conv_classifier
         model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
                                           (globals.get('final_conv_size'),
@@ -179,7 +178,6 @@ class NaiveNAS:
                 model = torch.load(self.model_from_file, map_location='cpu')
         else:
             model = target_model(globals.get('model_name'))
-            # model = finalize_model(model)
         if globals.get('cropping'):
             self.finalized_model_to_dilated(model)
         final_time, evaluations, model, model_state, num_epochs =\
@@ -206,8 +204,12 @@ class NaiveNAS:
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
                 continue
+            if globals.get('grid'):
+                finalized_model = models_generation.ModelFromGrid(pop['model'])
+            else:
+                finalized_model = finalize_model(pop['model'])
             final_time, evaluations, model, model_state, num_epochs = \
-                self.evaluate_model(finalize_model(pop['model']), pop['model_state'])
+                self.evaluate_model(finalized_model, pop['model_state'])
             NaiveNAS.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['finalized_model'] = model
@@ -311,8 +313,8 @@ class NaiveNAS:
                                                                      weighted_population[:int(len(weighted_population)/5)]],
                                                          layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
-        stats['similarity_measure'] = NaiveNAS.calculate_population_similarity(
-            [pop['model'] for pop in weighted_population], evolution_file, sim_count=globals.get('sim_count'))
+        # stats['similarity_measure'] = NaiveNAS.calculate_population_similarity(
+        #     [pop['model'] for pop in weighted_population], evolution_file, sim_count=globals.get('sim_count'))
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
@@ -418,8 +420,6 @@ class NaiveNAS:
             weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
 
         for generation in range(num_generations):
-            if self.cuda:
-                torch.cuda.empty_cache()
             if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NaiveNAS.inject_dropout(weighted_population)
             evo_strategy(weighted_population, generation)
@@ -464,7 +464,13 @@ class NaiveNAS:
         return evolution_results
 
     def evolution_layers(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers', self.one_strategy)
+        if globals.get('grid'):
+            breeding_method = models_generation.breed_grid
+            models_init = models_generation.random_grid_model
+        else:
+            breeding_method = breed_layers
+            models_init = random_model
+        return self.evolution(csv_file, evolution_file, breeding_method, models_init, 'num_layers', self.one_strategy)
 
     def evolution_layers_all(self, csv_file, evolution_file):
         return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers', self.all_strategy)
@@ -495,6 +501,8 @@ class NaiveNAS:
                 genome_set.append(layer)
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
+        if self.cuda:
+            torch.cuda.empty_cache()
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
                                  NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])

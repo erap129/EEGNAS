@@ -83,11 +83,12 @@ class TestModelGeneration(unittest.TestCase):
         assert(network_similarity(model1, model2) > network_similarity(model2, model3))
 
     def test_random_grid_model(self):
-        model = models_generation.random_grid_model(3,3)
-        for i in range(10):
+        model = models_generation.random_grid_model(10)
+        for i in range(100):
             add_random_connection(model)
+        model.add_edge('input', (0, 1))
         real_model = models_generation.ModelFromGrid(model)
-        input_shape = (2, globals.get('input_time_len'), globals.get('eeg_chans'), 1)
+        input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
         out = real_model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
         print(list(nx.topological_sort(model)))
         nx.draw(model, with_labels=True)
