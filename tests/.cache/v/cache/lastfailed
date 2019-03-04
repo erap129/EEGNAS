@@ -1,5 +1,4 @@
 {
   "models_generation_tests.py::TestModelGeneration": true,
-  "test_models_generation.py": true,
-  "test_models_generation.py::TestModelGeneration::test_random_grid_model": true
+  "test_models_generation.py": true
 }

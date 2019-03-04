@@ -5,7 +5,7 @@ from braindecode.experiments.loggers import Printer
 import models_generation
 import logging
 import torch.optim as optim
-from copy import deepcopy
+from utils import RememberBest
 import pandas as pd
 from collections import OrderedDict
 import numpy as np
@@ -19,80 +19,14 @@ import os
 import globals
 import csv
 from torch import nn
-from utils import summary, NoIncrease
+from utils import summary, NoIncrease, dump_tensors
+import NASUtils
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 log = logging.getLogger(__name__)
-
-
-class RememberBest(object):
-    """
-    Class to remember and restore
-    the parameters of the model and the parameters of the
-    optimizer at the epoch with the best performance.
-    Parameters
-    ----------
-    column_name: str
-        The lowest value in this column should indicate the epoch with the
-        best performance (e.g. misclass might make sense).
-
-    Attributes
-    ----------
-    best_epoch: int
-        Index of best epoch
-    """
-
-    def __init__(self, column_name):
-        self.column_name = column_name
-        self.best_epoch = 0
-        self.highest_val = -2
-        self.model_state_dict = None
-        self.optimizer_state_dict = None
-
-    def remember_epoch(self, epochs_df, model, optimizer):
-        """
-        Remember this epoch: Remember parameter values in case this epoch
-        has the best performance so far.
-
-        Parameters
-        ----------
-        epochs_df: `pandas.Dataframe`
-            Dataframe containing the column `column_name` with which performance
-            is evaluated.
-        model: `torch.nn.Module`
-        optimizer: `torch.optim.Optimizer`
-        """
-        i_epoch = len(epochs_df) - 1
-        current_val = float(epochs_df[self.column_name].iloc[-1])
-        if current_val >= self.highest_val:
-            self.best_epoch = i_epoch
-            self.highest_val = current_val
-            self.model_state_dict = deepcopy(model.state_dict())
-            self.optimizer_state_dict = deepcopy(optimizer.state_dict())
-            log.info("New best {:s}: {:5f}".format(self.column_name,
-                                                   current_val))
-            log.info("")
-
-    def reset_to_best_model(self, epochs_df, model, optimizer):
-        """
-        Reset parameters to parameters at best epoch and remove rows
-        after best epoch from epochs dataframe.
-
-        Modifies parameters of model and optimizer, changes epochs_df in-place.
-
-        Parameters
-        ----------
-        epochs_df: `pandas.Dataframe`
-        model: `torch.nn.Module`
-        optimizer: `torch.optim.Optimizer`
-        """
-        # Remove epochs past the best one from epochs dataframe
-        epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
-        model.load_state_dict(self.model_state_dict)
-        optimizer.load_state_dict(self.optimizer_state_dict)
 
 
 def createFolder(directory):
@@ -183,7 +117,7 @@ class NaiveNAS:
         final_time, evaluations, model, model_state, num_epochs =\
             self.evaluate_model(model, final_evaluation=True)
         stats = {'train_time': str(final_time)}
-        NaiveNAS.add_evaluations_to_stats(stats, evaluations)
+        NASUtils.add_evaluations_to_stats(stats, evaluations)
         self.write_to_csv(csv_file, stats, generation=1)
 
     def sample_subjects(self):
@@ -191,15 +125,11 @@ class NaiveNAS:
             [i for i in range(1, globals.get('num_subjects') + 1) if i not in globals.get('exclude_subjects')],
             globals.get('cross_subject_sampling_rate'))
 
-    @staticmethod
-    def check_age(model):
-        return globals.get('use_aging') and\
-            random.random() < 1 - 1 / (model['age'] + 1)
 
     def one_strategy(self, weighted_population, generation):
         self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
-            if NaiveNAS.check_age(pop):
+            if NASUtils.check_age(pop):
                 weighted_population[i] = weighted_population[i - 1]
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
@@ -210,7 +140,7 @@ class NaiveNAS:
                 finalized_model = finalize_model(pop['model'])
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'])
-            NaiveNAS.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
+            NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
@@ -219,11 +149,11 @@ class NaiveNAS:
 
     def all_strategy(self, weighted_population, generation):
         summed_parameters = ['train_time', 'num_epochs']
-        summed_parameters.extend(NaiveNAS.get_metric_strs())
+        summed_parameters.extend(NASUtils.get_metric_strs())
         if globals.get('cross_subject_sampling_method') == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
-            if NaiveNAS.check_age(pop):
+            if NASUtils.check_age(pop):
                 weighted_population[i] = weighted_population[i - 1]
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
@@ -235,9 +165,9 @@ class NaiveNAS:
             for subject in self.current_chosen_population_sample:
                 final_time, evaluations, model, model_state, num_epochs = \
                     self.evaluate_model(finalize_model(pop['model']), pop['model_state'], subject=subject)
-                NaiveNAS.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
+                NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
                                                                 str_prefix=f"{subject}_")
-                NaiveNAS.sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
+                NASUtils.sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
                 weighted_population[i]['%d_train_time' % subject] = final_time
                 weighted_population[i]['train_time'] += final_time
                 weighted_population[i]['%d_model_state' % subject] = model_state
@@ -248,47 +178,10 @@ class NaiveNAS:
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
 
-    @staticmethod
-    def get_average_param(models, layer_type, attribute):
-        attr_count = 0
-        count = 0
-        for model in models:
-            for layer in model:
-                if isinstance(layer, layer_type):
-                    attr_count += getattr(layer, attribute)
-                    count += 1
-        if count == 0:
-            return 'NAN'
-        return attr_count / count
-
-    @staticmethod
-    def calculate_population_similarity(layer_collections, evolution_file, sim_count):
-        sim = 0
-        to_output = 3
-        for i in range(sim_count):
-            idxs = random.sample(range(len(layer_collections)), 2)
-            score, output = models_generation.network_similarity(layer_collections[idxs[0]],
-                                                                 layer_collections[idxs[1]], return_output=True)
-            sim += score
-            if to_output > 0:
-                with open(evolution_file, "a") as text_file:
-                    print(output, file=text_file)
-                to_output -= 1
-        return sim / sim_count
-
-    @staticmethod
-    def calculate_one_similarity(layer_collection, other_layer_collections):
-        sim = 0
-        for other_layer_collection in other_layer_collections:
-            score, output = models_generation.network_similarity(layer_collection,
-                                                                 other_layer_collection)
-            sim += score
-        return sim / len(other_layer_collections)
-
     def calculate_stats(self, weighted_population, evolution_file):
         stats = {}
         params = ['train_time', 'num_epochs']
-        params.extend(NaiveNAS.get_metric_strs())
+        params.extend(NASUtils.get_metric_strs())
         for param in params:
             stats[param] = np.mean([sample[param] for sample in weighted_population])
         if self.subject_id == 'all':
@@ -306,23 +199,23 @@ class NaiveNAS:
                        'average_pool_width': (models_generation.PoolingLayer, 'pool_time'),
                        'average_pool_stride': (models_generation.PoolingLayer, 'stride_time')}
         for stat in layer_stats.keys():
-            stats[stat] = NaiveNAS.get_average_param([pop['model'] for pop in weighted_population],
+            stats[stat] = NASUtils.get_average_param([pop['model'] for pop in weighted_population],
                                                                  layer_stats[stat][0], layer_stats[stat][1])
             if globals.get('add_top_20_stats'):
-                stats[f'top20_{stat}'] = NaiveNAS.get_average_param([pop['model'] for pop in
+                stats[f'top20_{stat}'] = NASUtils.get_average_param([pop['model'] for pop in
                                                                      weighted_population[:int(len(weighted_population)/5)]],
                                                          layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
-        # stats['similarity_measure'] = NaiveNAS.calculate_population_similarity(
+        # stats['similarity_measure'] = NASUtils.calculate_population_similarity(
         #     [pop['model'] for pop in weighted_population], evolution_file, sim_count=globals.get('sim_count'))
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
             stats['%s_count' % layer_type.__name__] = \
-                NaiveNAS.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
+                NASUtils.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
             if globals.get('add_top_20_stats'):
                 stats['top20_%s_count' % layer_type.__name__] = \
-                    NaiveNAS.count_layer_type_in_pop([pop['model'] for pop in
+                    NASUtils.count_layer_type_in_pop([pop['model'] for pop in
                                                       weighted_population[:int(len(weighted_population)/5)]], layer_type)
         return stats
 
@@ -334,80 +227,20 @@ class NaiveNAS:
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
             _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
-            NaiveNAS.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
+            NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
-    @staticmethod
-    def get_metric_strs():
-        result = []
-        for evaluation_metric in globals.get('evaluation_metrics'):
-            if evaluation_metric == 'accuracy':
-                evaluation_metric = 'acc'
-            result.append(f"train_{evaluation_metric}")
-            result.append(f"val_{evaluation_metric}")
-            result.append(f"test_{evaluation_metric}")
-        return result
-
-    @staticmethod
-    def add_evaluations_to_stats(stats, evaluations, str_prefix=''):
-        for metric, valuedict in evaluations.items():
-            metric_str = metric
-            if metric == 'accuracy':
-                metric_str = 'acc'
-            stats[f"{str_prefix}train_{metric_str}"] = valuedict['train']
-            stats[f"{str_prefix}val_{metric_str}"] = valuedict['valid']
-            stats[f"{str_prefix}test_{metric_str}"] = valuedict['test']
-
-    @staticmethod
-    def add_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
-        for metric, valuedict in evaluations.items():
-            metric_str = metric
-            if metric == 'accuracy':
-                metric_str = 'acc'
-            pop[f"{str_prefix}train_{metric_str}"] = valuedict['train']
-            pop[f"{str_prefix}val_{metric_str}"] = valuedict['valid']
-            pop[f"{str_prefix}test_{metric_str}"] = valuedict['test']
-            
-    @staticmethod
-    def sum_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
-        for metric, valuedict in evaluations.items():
-            metric_str = metric
-            if metric == 'accuracy':
-                metric_str = 'acc'
-            pop[f"{str_prefix}train_{metric_str}"] += valuedict['train']
-            pop[f"{str_prefix}val_{metric_str}"] += valuedict['valid']
-            pop[f"{str_prefix}test_{metric_str}"] += valuedict['test']
-
-    @staticmethod
-    def get_model_state(model):
-        if globals.get('cross_subject'):
-            available_states = [x for x in model.keys() if 'model_state' in x]
-            model_state_str = random.sample(available_states, 1)[0]
-        else:
-            model_state_str = 'model_state'
-        return model[model_state_str]
 
     def save_best_model(self, weighted_population):
         try:
             save_model = weighted_population[0]['finalized_model'].to("cpu")
+            # save_model = models_generation.ModelFromGrid(weighted_population[0]['model']).to("cpu")
             model_filename = "%s/best_model_" % self.exp_folder +\
                              '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th"
             torch.save(save_model, model_filename)
         except Exception as e:
-            print("failed to save model")
+            print('failed to save model. Exception message: %s' % (str(e)))
         return model_filename
-
-    @staticmethod
-    def inject_dropout(weighted_population):
-        for pop in weighted_population:
-            layer_collection = pop['model']
-            for i in range(len(layer_collection)):
-                if random.uniform(0, 1) < globals.get('dropout_injection_rate'):
-                    old_layer = layer_collection[i]
-                    layer_collection[i] = models_generation.DropoutLayer()
-                    if not models_generation.check_legal_model(layer_collection):
-                        layer_collection[i] = old_layer
-            pop['model_state'] = None
 
     def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
         pop_size = globals.get('pop_size')
@@ -416,12 +249,15 @@ class NaiveNAS:
         weighted_population = []
         for i in range(pop_size):  # generate pop_size random models
             new_rand_model = model_init(globals.get(model_init_configuration))
-            NaiveNAS.hash_model(new_rand_model, self.models_set, self.genome_set)
+            NASUtils.hash_model(new_rand_model, self.models_set, self.genome_set)
             weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
 
         for generation in range(num_generations):
+            # if self.cuda:
+            #     print(f'starting generation {generation}')
+            #     dump_tensors()
             if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
-                NaiveNAS.inject_dropout(weighted_population)
+                NASUtils.inject_dropout(weighted_population)
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population,
                                          key=lambda x: x[f'val_{globals.get("ga_objective")}'], reverse=True)
@@ -429,7 +265,7 @@ class NaiveNAS:
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
                     if random.uniform(0, 1) < (index / pop_size):
-                        self.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
+                        NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
                         del weighted_population[index]
                     else:
                         model['age'] += 1
@@ -438,14 +274,14 @@ class NaiveNAS:
                     breeders = random.sample(range(len(weighted_population)), 2)
                     first_breeder = weighted_population[breeders[0]]
                     second_breeder = weighted_population[breeders[1]]
-                    first_model_state = NaiveNAS.get_model_state(first_breeder)
-                    second_model_state = NaiveNAS.get_model_state(second_breeder)
+                    first_model_state = NASUtils.get_model_state(first_breeder)
+                    second_model_state = NASUtils.get_model_state(second_breeder)
                     new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
                                                                 first_model=first_breeder['model'],
                                                                  second_model=second_breeder['model'],
                                                                  first_model_state=first_model_state,
                                                                  second_model_state=second_model_state)
-                    NaiveNAS.hash_model(new_model, self.models_set, self.genome_set)
+                    NASUtils.hash_model(new_model, self.models_set, self.genome_set)
                     children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
                 weighted_population.extend(children)
                 if globals.get('dynamic_mutation_rate'):
@@ -460,7 +296,7 @@ class NaiveNAS:
                 self.add_final_stats(stats, model_filename)
 
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
-            self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
+            # self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
         return evolution_results
 
     def evolution_layers(self, csv_file, evolution_file):
@@ -474,31 +310,6 @@ class NaiveNAS:
 
     def evolution_layers_all(self, csv_file, evolution_file):
         return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers', self.all_strategy)
-
-    @staticmethod
-    def remove_from_models_hash(model, model_set, genome_set):
-        for layer in model:
-            remove_layer = True
-            for other_model in model_set:
-                if model != other_model:
-                    for other_layer in other_model:
-                        if layer == other_layer:
-                            remove_layer = False
-                            break
-                if not remove_layer:
-                    break
-            if remove_layer and layer in genome_set:
-                genome_set.remove(layer)
-        if model in model_set:
-            model_set.remove(model)
-
-    @staticmethod
-    def hash_model(model, model_set, genome_set):
-        if model not in model_set:
-            model_set.append(model)
-        for layer in model:
-            if layer not in genome_set:
-                genome_set.append(layer)
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
         if self.cuda:
@@ -525,8 +336,13 @@ class NaiveNAS:
                         [int(s) for s in globals.get('gpu_select').split(',')])
             else:
                 model.cuda()
-        if globals.get('inherit_weights_normal') and state is not None:
-                model.load_state_dict(state)
+        try:
+            if globals.get('inherit_weights_normal') and state is not None:
+                    model.load_state_dict(state)
+        except RuntimeError:
+            print(f'failed weight inheritance\n,'
+                  f'state dict: {state.keys()}\n'
+                  f'current model state: {model.state_dict().keys()}')
         self.monitor_epoch(single_subj_dataset, model)
         if globals.get('log_epochs'):
             self.log_epoch()
@@ -550,6 +366,7 @@ class NaiveNAS:
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
+        model.cpu()
         return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
@@ -704,15 +521,6 @@ class NaiveNAS:
             for key, value in stats.items():
                 writer.writerow({'exp_name': self.exp_name, 'subject': subject,
                                  'generation': str(generation), 'param_name': key, 'param_value': value})
-
-    @staticmethod
-    def count_layer_type_in_pop(models, layer_type):
-        count = 0
-        for model in models:
-            for layer in model:
-                if isinstance(layer, layer_type):
-                    count += 1
-        return count
 
     def garbage_time(self):
         model = target_model('deep')

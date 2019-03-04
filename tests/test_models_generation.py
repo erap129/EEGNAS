@@ -12,6 +12,7 @@ import networkx as nx
 import numpy as np
 from globals import init_config
 import matplotlib.pyplot as plt
+from copy import deepcopy
 
 class TestModelGeneration(unittest.TestCase):
     def setUp(self):
@@ -88,6 +89,10 @@ class TestModelGeneration(unittest.TestCase):
             add_random_connection(model)
         model.add_edge('input', (0, 1))
         real_model = models_generation.ModelFromGrid(model)
+        print(real_model.state_dict().keys())
+        print(deepcopy(real_model.state_dict()).keys())
+        print(len(list(real_model.state_dict().keys())))
+        print(len(list(deepcopy(real_model.state_dict()).keys())))
         input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
         out = real_model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
         print(list(nx.topological_sort(model)))

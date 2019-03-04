@@ -49,6 +49,7 @@ def parse_args(args):
     parser.add_argument("-c", "--config", help="path to configuration file", default='configurations/config.ini')
     parser.add_argument("-e", "--experiment", help="experiment type", default='benchmark')
     parser.add_argument("-m", "--model", help="path to Pytorch model file")
+    parser.add_argument("-g", "--garbage", help="Use garbage time", default='f')
     return parser.parse_args(args)
 
 
@@ -328,7 +329,7 @@ if __name__ == '__main__':
                 os.rename(exp_folder, new_exp_folder)
                 write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
     finally:
-        if globals.get('garbage_time'):
+        if args.garbage == 't':
             garbage_time()
 
 

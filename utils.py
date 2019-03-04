@@ -7,6 +7,9 @@ from braindecode.experiments.monitors import compute_trial_labels_from_crop_pred
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import LabelBinarizer
+from copy import deepcopy
+import logging
+log = logging.getLogger(__name__)
 
 
 def summary(model, input_size, batch_size=-1, device="cuda", file=None):
@@ -584,3 +587,112 @@ class CroppedTrialGenericMonitor():
         trial_labels = np.array(trial_labels)
         trial_pred_labels = np.array(trial_pred_labels)
         return trial_labels, trial_pred_labels
+
+
+class RememberBest(object):
+    """
+    Class to remember and restore
+    the parameters of the model and the parameters of the
+    optimizer at the epoch with the best performance.
+    Parameters
+    ----------
+    column_name: str
+        The lowest value in this column should indicate the epoch with the
+        best performance (e.g. misclass might make sense).
+
+    Attributes
+    ----------
+    best_epoch: int
+        Index of best epoch
+    """
+
+    def __init__(self, column_name):
+        self.column_name = column_name
+        self.best_epoch = 0
+        self.highest_val = -2
+        self.model_state_dict = None
+        self.optimizer_state_dict = None
+
+    def remember_epoch(self, epochs_df, model, optimizer):
+        """
+        Remember this epoch: Remember parameter values in case this epoch
+        has the best performance so far.
+
+        Parameters
+        ----------
+        epochs_df: `pandas.Dataframe`
+            Dataframe containing the column `column_name` with which performance
+            is evaluated.
+        model: `torch.nn.Module`
+        optimizer: `torch.optim.Optimizer`
+        """
+        i_epoch = len(epochs_df) - 1
+        current_val = float(epochs_df[self.column_name].iloc[-1])
+        if current_val >= self.highest_val:
+            self.best_epoch = i_epoch
+            self.highest_val = current_val
+            self.model_state_dict = deepcopy(model.state_dict())
+            self.optimizer_state_dict = deepcopy(optimizer.state_dict())
+            log.info("New best {:s}: {:5f}".format(self.column_name,
+                                                   current_val))
+            log.info("")
+            # keys = model.state_dict().keys()
+            # for key in keys:
+            #     if f'(1' in key or f'(2' in key or f'(3' in key or f'(4' in key or f'(5' in key or\
+            #         f'(6' in key or f'(7' in key or f'(8' in key or f'(9' in key:
+            #         if list(model.state_dict().keys()) == list(self.model_state_dict.keys()):
+            #             print('found special. state dicts equal')
+            #         else:
+            #             print('failed: found special. state dicts not equal')
+
+    def reset_to_best_model(self, epochs_df, model, optimizer):
+        """
+        Reset parameters to parameters at best epoch and remove rows
+        after best epoch from epochs dataframe.
+
+        Modifies parameters of model and optimizer, changes epochs_df in-place.
+
+        Parameters
+        ----------
+        epochs_df: `pandas.Dataframe`
+        model: `torch.nn.Module`
+        optimizer: `torch.optim.Optimizer`
+        """
+        # Remove epochs past the best one from epochs dataframe
+        epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
+        model.load_state_dict(self.model_state_dict)
+        optimizer.load_state_dict(self.optimizer_state_dict)
+
+
+def pretty_size(size):
+	"""Pretty prints a torch.Size object"""
+	assert(isinstance(size, torch.Size))
+	return " × ".join(map(str, size))
+
+
+def dump_tensors(gpu_only=True):
+	"""Prints a list of the Tensors being tracked by the garbage collector."""
+	import gc
+	total_size = 0
+	for obj in gc.get_objects():
+		try:
+			if torch.is_tensor(obj):
+				if not gpu_only or obj.is_cuda:
+					print("%s:%s%s %s" % (type(obj).__name__,
+										  " GPU" if obj.is_cuda else "",
+										  " pinned" if obj.is_pinned else "",
+										  pretty_size(obj.size())))
+					total_size += obj.numel()
+			elif hasattr(obj, "data") and torch.is_tensor(obj.data):
+				if not gpu_only or obj.is_cuda:
+					print("%s → %s:%s%s%s%s %s" % (type(obj).__name__,
+												   type(obj.data).__name__,
+												   " GPU" if obj.is_cuda else "",
+												   " pinned" if obj.data.is_pinned else "",
+												   " grad" if obj.requires_grad else "",
+												   " volatile" if obj.volatile else "",
+												   pretty_size(obj.data.size())))
+					total_size += obj.data.numel()
+		except Exception as e:
+			pass
+	print("Total size:", total_size)

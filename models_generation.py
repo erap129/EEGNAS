@@ -335,95 +335,73 @@ class ModelFromGrid(torch.nn.Module):
             IdentityLayer: generate_identity_layer,
             FlattenLayer: generate_flatten_layer
         }
-        self.layers = layer_grid.copy()
+        layers = layer_grid.copy()
         self.pytorch_layers = nn.ModuleDict({})
-        self.layers.add_node('output_softmax')
-        self.layers.add_node('output_flatten')
-        self.layers.nodes['output_conv']['layer'] = ConvLayer(kernel_time='down_to_one')
-        self.layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
-        self.layers.nodes['output_flatten']['layer'] = FlattenLayer()
-        self.layers.add_edge('output_conv', 'output_softmax')
-        self.layers.add_edge('output_softmax', 'output_flatten')
+        layers.add_node('output_softmax')
+        layers.add_node('output_flatten')
+        layers.nodes['output_conv']['layer'] = ConvLayer(kernel_time='down_to_one')
+        layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
+        layers.nodes['output_flatten']['layer'] = FlattenLayer()
+        layers.add_edge('output_conv', 'output_softmax')
+        layers.add_edge('output_softmax', 'output_flatten')
         input_chans = globals.get('eeg_chans')
         input_time = globals.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
-        self.sorted_nodes = list(nx.topological_sort(self.layers))
-        for node in self.sorted_nodes:
-            self.layers.nodes[node]['active'] = False
-        self.layers.nodes['input']['shape'] = input_shape
-        self.layers.nodes['input']['active'] = True
-        self.layers.nodes['output_conv']['active'] = True
-        self.layers.nodes['output_softmax']['active'] = True
-        self.layers.nodes['output_flatten']['active'] = True
+        descendants = nx.descendants(layers, 'input')
+        descendants.add('input')
+        to_remove = []
+        for node in list(layers.nodes):
+            if node not in descendants:
+                to_remove.append(node)
+        for node in to_remove:
+            layers.remove_node(node)
+        self.sorted_nodes = list(nx.topological_sort(layers))
+        self.predecessors = {}
+        self.fixes = {}
+        self.tensors = {}
+        layers.nodes['input']['shape'] = input_shape
         for node in self.sorted_nodes[1:]:
-            predecessors = list(self.layers.predecessors(node))
-            predecessors = [pred for pred in predecessors if self.layers.nodes[pred]['active']]
+            predecessors = list(layers.predecessors(node))
+            self.predecessors[node] = predecessors
             if len(predecessors) == 0:
                 continue
-            self.layers.nodes[node]['active'] = True
-            self.calc_shape_multi(predecessors, node)
+            self.calc_shape_multi(predecessors, node, layers)
 
-    def finalize_model(layer_collection):
-        layer_collection = copy.deepcopy(layer_collection)
-        if globals.get('cropping'):
-            final_conv_time = globals.get('final_conv_size')
-        else:
-            final_conv_time = 'down_to_one'
-        conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
-                               filter_num=globals.get('n_classes'))
-        layer_collection.append(conv_layer)
-        activation = ActivationLayer('softmax')
-        layer_collection.append(activation)
-        flatten = FlattenLayer()
-        layer_collection.append(flatten)
-        return new_model_from_structure_pytorch(layer_collection)
-
-    def calc_shape_multi(self, predecessors, node):
-        pred_shapes = [self.layers.nodes[pred]['shape']['time'] for pred in predecessors if
-                        self.layers.nodes[pred]['active']]
+    def calc_shape_multi(self, predecessors, node, layers):
+        pred_shapes = [layers.nodes[pred]['shape']['time'] for pred in predecessors]
         min_time = int(min(pred_shapes))
-        sum_chans = int(sum([self.layers.nodes[pred]['shape']['chans'] for pred in predecessors if
-                         self.layers.nodes[pred]['active']]))
+        sum_chans = int(sum([layers.nodes[pred]['shape']['chans'] for pred in predecessors]))
         for pred in predecessors:
-            if self.layers.nodes[pred]['active']:
-                self.layers.edges[pred, node]['fix_amount'] = self.layers.nodes[pred]['shape']['time'] - min_time
-        self.pytorch_layers[str(node)] = self.generate_pytorch_layer[type(self.layers.nodes[node]['layer'])]\
-            (self.layers.nodes[node]['layer'], sum_chans, min_time)
-        self.layers.nodes[node]['shape'] = calc_shape_channels({'time': min_time, 'chans': sum_chans}, self.layers.nodes[node]['layer'])
+            self.fixes[(pred, node)] = layers.nodes[pred]['shape']['time'] - min_time
+        self.pytorch_layers[str(node)] = self.generate_pytorch_layer[type(layers.nodes[node]['layer'])]\
+            (layers.nodes[node]['layer'], sum_chans, min_time)
+        layers.nodes[node]['shape'] = calc_shape_channels({'time': min_time, 'chans': sum_chans}, layers.nodes[node]['layer'])
 
     def forward(self, X):
-        self.layers.nodes['input']['tensor'] = X
+        self.tensors['input'] = X
         for node in self.sorted_nodes[1:]:
-            if not self.layers.nodes[node]['active']:
-                continue
-            predecessors = list(self.layers.predecessors(node))
+            predecessors = self.predecessors[node]
             if len(predecessors) == 1:
-                self.layers.nodes[node]['tensor'] = self.pytorch_layers[str(node)]\
-                    (self.layers.nodes[predecessors[0]]['tensor'])
+                self.tensors[node] = self.pytorch_layers[str(node)](self.tensors[predecessors[0]])
             else:
                 for pred in predecessors:
-                    if not self.layers.nodes[pred]['active']:
-                        continue
-                    if self.layers.edges[pred, node]['fix_amount'] > 0:
-                        fix_amount = self.layers.edges[pred, node]['fix_amount']
-                        self.layers.edges[pred, node]['fixed_tensor'] = self.layers.nodes[pred]['tensor']
+                    if (pred, node) in self.fixes.keys():
+                        fix_amount = self.fixes[(pred, node)]
+                        fixed_tensor = self.tensors[pred]
                         while fix_amount > 0:
-                            self.layers.edges[pred, node]['fixed_tensor'] = nn.MaxPool2d((2,1), 1)\
-                                (self.layers.edges[pred, node]['fixed_tensor'])
+                            fixed_tensor = nn.MaxPool2d((2,1), 1)(fixed_tensor)
                             fix_amount -= 1
                 to_concat = []
                 for pred in predecessors:
-                    if not self.layers.nodes[pred]['active']:
-                        continue
-                    if self.layers.edges[pred, node]['fix_amount'] > 0:
-                        to_concat.append(self.layers.edges[pred, node]['fixed_tensor'])
+                    if (pred, node) in self.fixes.keys():
+                        to_concat.append(fixed_tensor)
                     else:
-                        to_concat.append(self.layers.nodes[pred]['tensor'])
+                        to_concat.append(self.tensors[pred])
 
-                self.layers.nodes[node]['tensor'] = self.pytorch_layers[str(node)](torch.cat(tuple(to_concat), dim=1))
+                self.tensors[node] = self.pytorch_layers[str(node)](torch.cat(tuple(to_concat), dim=1))
 
             if node == 'output_flatten':
-                return self.layers.nodes[node]['tensor']
+                return self.tensors[node]
 
 
 class MyModel:
@@ -496,12 +474,14 @@ def calc_shape_channels(in_shape, layer):
 
 
 def check_legal_grid_model(layer_grid):
+    if not nx.is_directed_acyclic_graph(layer_grid):
+        return False
     input_chans = globals.get('eeg_chans')
     input_time = globals.get('input_time_len')
     input_shape = {'time': input_time, 'chans': input_chans}
     layer_shapes = layer_grid.copy()
     layer_shapes.nodes['input']['shape'] = input_shape
-    nodes_to_check = list(nx.topological_sort(layer_grid))
+    nodes_to_check = list(nx.topological_sort(layer_shapes))
     for node in nodes_to_check:
         layer_shapes.nodes[node]['active'] = False
     for node in nodes_to_check:
@@ -600,6 +580,17 @@ def add_layer_to_state(new_model_state, layer, index, old_model_state):
                 new_model_state[k] = v
 
 
+def inherit_grid_states(dim, cut_point, child_model_state, second_model_state):
+    for i in range(dim):
+        for j in range(cut_point, dim):
+            for k, v in child_model_state.items():
+                if f'({i}, {j})' in k and k in second_model_state.keys() and second_model_state[k].shape == v.shape:
+                    child_model_state[k] = v
+    for k, v in child_model_state.items():
+        if 'output' in k and k in second_model_state.keys() and second_model_state[k].shape == v.shape:
+            child_model_state[k] = v
+
+
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
     save_weights = False
@@ -635,11 +626,12 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
 
 
 def breed_grid(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
+    globals.set('total_breedings', globals.get('total_breedings') + 1)
     child_model = copy.deepcopy(first_model)
     if random.random() < globals.get('breed_rate'):
         if cut_point is None:
             cut_point = random.randint(0, first_model.graph['width'] - 1)
-        for i in range(cut_point):
+        for i in range(first_model.graph['width']):
             for j in range(cut_point, first_model.graph['width']):
                 child_model.nodes[(i, j)]['layer'] = second_model.nodes[(i, j)]['layer']
                 remove_edges = []
@@ -654,7 +646,9 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                     child_model.remove_edge(edge[0], edge[1])
                 for edge in add_edges:
                     child_model.add_edge(edge[0], edge[1])
-                # child_model.edges._adjdict[(i, j)] = second_model.edges._adjdict[(i, j)]
+    if globals.get('inherit_weights_crossover'):
+        child_model_state = ModelFromGrid(child_model).state_dict()
+        inherit_grid_states(first_model.graph['width'], cut_point, child_model_state, second_model_state)
     if random.random() < mutation_rate:
         add_random_connection(second_model)
         i = random.randint(0, first_model.graph['width'] - 1)
@@ -662,6 +656,9 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
         child_model.nodes[(i, j)]['layer'] = random_layer()
     if check_legal_grid_model(child_model):
         return child_model, None
+    else:
+        globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+        return second_model, second_model_state
 
 
 def target_model(model_name):
