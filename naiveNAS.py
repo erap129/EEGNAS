@@ -249,7 +249,7 @@ class NaiveNAS:
         weighted_population = []
         for i in range(pop_size):  # generate pop_size random models
             new_rand_model = model_init(globals.get(model_init_configuration))
-            NASUtils.hash_model(new_rand_model, self.models_set, self.genome_set)
+            # NASUtils.hash_model(new_rand_model, self.models_set, self.genome_set)
             weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
 
         for generation in range(num_generations):
@@ -265,7 +265,7 @@ class NaiveNAS:
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
                     if random.uniform(0, 1) < (index / pop_size):
-                        NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
+                        # NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
                         del weighted_population[index]
                     else:
                         model['age'] += 1
@@ -281,7 +281,7 @@ class NaiveNAS:
                                                                  second_model=second_breeder['model'],
                                                                  first_model_state=first_model_state,
                                                                  second_model_state=second_model_state)
-                    NASUtils.hash_model(new_model, self.models_set, self.genome_set)
+                    # NASUtils.hash_model(new_model, self.models_set, self.genome_set)
                     children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
                 weighted_population.extend(children)
                 if globals.get('dynamic_mutation_rate'):
@@ -366,7 +366,8 @@ class NaiveNAS:
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
-        model.cpu()
+        # model.cpu()
+        del model
         return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):

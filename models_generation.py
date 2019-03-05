@@ -358,6 +358,7 @@ class ModelFromGrid(torch.nn.Module):
         self.sorted_nodes = list(nx.topological_sort(layers))
         self.predecessors = {}
         self.fixes = {}
+        self.fixed_tensors = {}
         self.tensors = {}
         layers.nodes['input']['shape'] = input_shape
         for node in self.sorted_nodes[1:]:
@@ -370,7 +371,8 @@ class ModelFromGrid(torch.nn.Module):
     def calc_shape_multi(self, predecessors, node, layers):
         pred_shapes = [layers.nodes[pred]['shape']['time'] for pred in predecessors]
         min_time = int(min(pred_shapes))
-        sum_chans = int(sum([layers.nodes[pred]['shape']['chans'] for pred in predecessors]))
+        pred_chans = [layers.nodes[pred]['shape']['chans'] for pred in predecessors]
+        sum_chans = int(sum(pred_chans))
         for pred in predecessors:
             self.fixes[(pred, node)] = layers.nodes[pred]['shape']['time'] - min_time
         self.pytorch_layers[str(node)] = self.generate_pytorch_layer[type(layers.nodes[node]['layer'])]\
@@ -387,19 +389,17 @@ class ModelFromGrid(torch.nn.Module):
                 for pred in predecessors:
                     if (pred, node) in self.fixes.keys():
                         fix_amount = self.fixes[(pred, node)]
-                        fixed_tensor = self.tensors[pred]
+                        self.fixed_tensors[(pred, node)] = self.tensors[pred]
                         while fix_amount > 0:
-                            fixed_tensor = nn.MaxPool2d((2,1), 1)(fixed_tensor)
+                            self.fixed_tensors[(pred, node)] = nn.MaxPool2d((2,1), 1)(self.fixed_tensors[(pred, node)])
                             fix_amount -= 1
                 to_concat = []
                 for pred in predecessors:
                     if (pred, node) in self.fixes.keys():
-                        to_concat.append(fixed_tensor)
+                        to_concat.append(self.fixed_tensors[(pred, node)])
                     else:
                         to_concat.append(self.tensors[pred])
-
                 self.tensors[node] = self.pytorch_layers[str(node)](torch.cat(tuple(to_concat), dim=1))
-
             if node == 'output_flatten':
                 return self.tensors[node]
 
@@ -479,28 +479,27 @@ def check_legal_grid_model(layer_grid):
     input_chans = globals.get('eeg_chans')
     input_time = globals.get('input_time_len')
     input_shape = {'time': input_time, 'chans': input_chans}
-    layer_shapes = layer_grid.copy()
-    layer_shapes.nodes['input']['shape'] = input_shape
-    nodes_to_check = list(nx.topological_sort(layer_shapes))
-    for node in nodes_to_check:
-        layer_shapes.nodes[node]['active'] = False
-    for node in nodes_to_check:
-        predecessors = list(layer_shapes.predecessors(node))
+    layers = layer_grid.copy()
+    layers.nodes['input']['shape'] = input_shape
+    descendants = nx.descendants(layers, 'input')
+    descendants.add('input')
+    to_remove = []
+    for node in list(layers.nodes):
+        if node not in descendants:
+            to_remove.append(node)
+    for node in to_remove:
+        layers.remove_node(node)
+    nodes_to_check = list(nx.topological_sort(layers))
+    for node in nodes_to_check[1:]:
+        predecessors = list(layers.predecessors(node))
         try:
-            if len(predecessors) >= 1:
-                pred_shapes = [layer_shapes.nodes[pred]['shape']['time'] for pred in predecessors if
-                               layer_shapes.nodes[pred]['active']]
-                if len(pred_shapes) > 0:
-                    layer_shapes.nodes[node]['active'] = True
-                    min_time = int(min(pred_shapes))
-                    sum_chans = int(sum([layer_shapes.nodes[pred]['shape']['chans'] for pred in predecessors if
-                                         layer_shapes.nodes[pred]['active']]))
-                    layer_shapes.nodes[node]['shape'] = calc_shape_channels({'time': min_time, 'chans': sum_chans},
-                                                                        layer_shapes.nodes[node]['layer'])
+            pred_shapes = [layers.nodes[pred]['shape']['time'] for pred in predecessors]
+            min_time = int(min(pred_shapes))
+            sum_chans = int(sum([layers.nodes[pred]['shape']['chans'] for pred in predecessors]))
+            layers.nodes[node]['shape'] = calc_shape_channels({'time': min_time, 'chans': sum_chans},
+                                                              layers.nodes[node]['layer'])
         except ValueError:
             return False
-        except KeyError:
-            pass
     return True
 
 
