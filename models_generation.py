@@ -347,8 +347,10 @@ class ModelFromGrid(torch.nn.Module):
         input_chans = globals.get('eeg_chans')
         input_time = globals.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
-        descendants = nx.descendants(layers, 'input')
-        descendants.add('input')
+        # descendants = nx.descendants(layers, 'input')
+        # descendants.add('input')
+        descendants = list(set([item for sublist in nx.all_simple_paths(layers, 'input', 'output_flatten')
+                                for item in sublist]))
         to_remove = []
         for node in list(layers.nodes):
             if node not in descendants:
@@ -391,8 +393,8 @@ class ModelFromGrid(torch.nn.Module):
                         fix_amount = self.fixes[(pred, node)]
                         self.fixed_tensors[(pred, node)] = self.tensors[pred]
                         while fix_amount > 0:
-                            self.fixed_tensors[(pred, node)] = nn.MaxPool2d((2,1), 1)(self.fixed_tensors[(pred, node)])
-                            fix_amount -= 1
+                            self.fixed_tensors[(pred, node)] = nn.MaxPool2d((fix_amount+1,1), 1)(self.fixed_tensors[(pred, node)])
+                            fix_amount -= fix_amount
                 to_concat = []
                 for pred in predecessors:
                     if (pred, node) in self.fixes.keys():
@@ -645,9 +647,9 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                     child_model.remove_edge(edge[0], edge[1])
                 for edge in add_edges:
                     child_model.add_edge(edge[0], edge[1])
-    if globals.get('inherit_weights_crossover'):
-        child_model_state = ModelFromGrid(child_model).state_dict()
-        inherit_grid_states(first_model.graph['width'], cut_point, child_model_state, second_model_state)
+        if globals.get('inherit_weights_crossover'):
+            child_model_state = ModelFromGrid(child_model).state_dict()
+            inherit_grid_states(first_model.graph['width'], cut_point, child_model_state, second_model_state)
     if random.random() < mutation_rate:
         add_random_connection(second_model)
         i = random.randint(0, first_model.graph['width'] - 1)

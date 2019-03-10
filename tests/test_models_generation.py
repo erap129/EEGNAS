@@ -12,7 +12,13 @@ import networkx as nx
 import numpy as np
 from globals import init_config
 import matplotlib.pyplot as plt
+from torchviz import make_dot
+import torchvision.models as models
 from copy import deepcopy
+from graphviz import Source
+import torch
+from networkx.classes.function import create_empty_copy
+from torchsummary import summary
 
 class TestModelGeneration(unittest.TestCase):
     def setUp(self):
@@ -87,17 +93,51 @@ class TestModelGeneration(unittest.TestCase):
         model = models_generation.random_grid_model(10)
         for i in range(100):
             add_random_connection(model)
-        model.add_edge('input', (0, 1))
+        model.add_edge('input', (0, 5))
         real_model = models_generation.ModelFromGrid(model)
-        print(real_model.state_dict().keys())
-        print(deepcopy(real_model.state_dict()).keys())
-        print(len(list(real_model.state_dict().keys())))
-        print(len(list(deepcopy(real_model.state_dict()).keys())))
         input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
         out = real_model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
         print(list(nx.topological_sort(model)))
         nx.draw(model, with_labels=True)
         plt.show()
+
+    def test_draw_grid_model(self):
+        layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(5, 5)))
+        for node in layer_grid.nodes.values():
+            node['layer'] = models_generation.random_layer()
+        layer_grid.add_node('input')
+        layer_grid.add_node('output_conv')
+        layer_grid.nodes['output_conv']['layer'] = models_generation.IdentityLayer()
+        layer_grid.nodes[(0,0)]['layer'] = ConvLayer(filter_num=50)
+        layer_grid.nodes[(0,1)]['layer'] = ConvLayer(filter_num=50)
+        layer_grid.nodes[(0,2)]['layer'] = DropoutLayer()
+        layer_grid.add_edge('input', (0, 0))
+        layer_grid.add_edge((0, 5 - 1), 'output_conv')
+        for i in range(5 - 1):
+            layer_grid.add_edge((0, i), (0, i + 1))
+        layer_grid.graph['height'] = 5
+        layer_grid.graph['width'] = 5
+        if models_generation.check_legal_grid_model(layer_grid):
+            print('legal model')
+        else:
+            print('illegal model')
+
+        # model = models_generation.random_grid_model(10)
+        layer_grid.add_edge((0,0), (0, 2))
+        real_model = models_generation.ModelFromGrid(layer_grid)
+
+        # model = models_generation.random_model(10)
+        # real_model = finalize_model(model)
+
+        # for i in range(100):
+        #     add_random_connection(model)
+
+
+        summary(real_model, (globals.get('eeg_chans'), globals.get('input_time_len'), 1))
+        input_shape = (60, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+        out = real_model(np_to_var(np.ones(input_shape, dtype=np.float32)))
+        s = Source(make_dot(out), filename="test.gv", format="png")
+        s.view()
 
 
 

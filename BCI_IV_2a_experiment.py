@@ -2,7 +2,7 @@ import os
 import platform
 import pandas as pd
 from collections import OrderedDict, defaultdict
-from itertools import product
+from itertools import product, chain
 import torch.nn.functional as F
 import torch
 from data_preprocessing import get_train_val_test
@@ -11,9 +11,8 @@ from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
-from utils import createFolder, AUCMonitor, AccuracyMonitor, NoIncrease, CroppedTrialGenericMonitor, KappaMonitor,\
-    accuracy_func, kappa_func, auc_func, F1Monitor
-from itertools import chain
+from utils import createFolder, GenericMonitor, NoIncrease, CroppedTrialGenericMonitor,\
+    accuracy_func, kappa_func, auc_func, f1_func
 from argparse import ArgumentParser
 import logging
 import globals
@@ -57,13 +56,13 @@ def generate_report(filename, report_filename):
     params = ['train_time', 'test_acc', 'val_acc', 'train_acc', 'num_epochs', 'final_test_acc', 'final_val_acc', 'final_train_acc',
               'final_test_auc', 'final_val_auc', 'final_train_auc', 'final_test_kappa', 'final_val_kappa', 'final_train_kappa',
               'final_test_f1', 'final_val_f1', 'final_train_f1']
-    params_to_average = defaultdict(int)
+    params_to_average = defaultdict(float)
     data = pd.read_csv(filename)
     for param in params:
         avg_count = 0
         for index, row in data.iterrows():
             if param in row['param_name']:
-                params_to_average[param] += row['param_value']
+                params_to_average[param] += float(row['param_value'])
                 avg_count += 1
         if avg_count != 0:
             params_to_average[param] /= avg_count
@@ -84,14 +83,14 @@ def get_normal_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
                          NoIncrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
-    monitors = [LossMonitor(), AccuracyMonitor(), RuntimeMonitor()]
+    monitors = [LossMonitor(), GenericMonitor('accuracy', accuracy_func), RuntimeMonitor()]
     loss_function = F.nll_loss
     if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b', 'Bloomberg']:
-        monitors.append(AUCMonitor())
+        monitors.append(GenericMonitor('auc', auc_func))
     if globals.get('dataset') in ['BCI_IV_2b']:
-        monitors.append(KappaMonitor())
+        monitors.append(GenericMonitor('kappa', kappa_func))
     if globals.get('dataset') in ['Opportunity']:
-        monitors.append(F1Monitor())
+        monitors.append(GenericMonitor('f1', f1_func))
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -102,7 +101,7 @@ def get_cropped_settings():
                                        input_time_length=globals.get('input_time_len'),
                                        n_preds_per_input=globals.get('n_preds_per_input'))
     loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
-    monitors = [LossMonitor(), AccuracyMonitor(col_suffix='sample_accuracy'),
+    monitors = [LossMonitor(), GenericMonitor('accuracy', accuracy_func),
                 CroppedTrialGenericMonitor('accuracy', accuracy_func,
                     input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
     if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b']:
@@ -284,6 +283,7 @@ if __name__ == '__main__':
                         and not globals.get('force_gpu_off'):
                     globals.set('cuda', True)
                     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+                    os.environ["CUDA_LAUNCH_BLOCKING"] = '1'
                     assert torch.cuda.is_available(), "Cuda not available"
                 if globals.get('cropping'):
                     globals.set('input_time_len', globals.get('input_time_cropping'))

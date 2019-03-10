@@ -21,6 +21,7 @@ import csv
 from torch import nn
 from utils import summary, NoIncrease, dump_tensors
 import NASUtils
+import pdb
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
@@ -114,7 +115,7 @@ class NaiveNAS:
             model = target_model(globals.get('model_name'))
         if globals.get('cropping'):
             self.finalized_model_to_dilated(model)
-        final_time, evaluations, model, model_state, num_epochs =\
+        final_time, evaluations, model_state, num_epochs =\
             self.evaluate_model(model, final_evaluation=True)
         stats = {'train_time': str(final_time)}
         NASUtils.add_evaluations_to_stats(stats, evaluations)
@@ -138,11 +139,11 @@ class NaiveNAS:
                 finalized_model = models_generation.ModelFromGrid(pop['model'])
             else:
                 finalized_model = finalize_model(pop['model'])
-            final_time, evaluations, model, model_state, num_epochs = \
+            final_time, evaluations, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'])
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
-            weighted_population[i]['finalized_model'] = model
+            # weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
             weighted_population[i]['num_epochs'] = num_epochs
             print('trained model %d in generation %d' % (i + 1, generation))
@@ -163,7 +164,7 @@ class NaiveNAS:
             for key in summed_parameters:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
-                final_time, evaluations, model, model_state, num_epochs = \
+                final_time, evaluations, model_state, num_epochs = \
                     self.evaluate_model(finalize_model(pop['model']), pop['model_state'], subject=subject)
                 NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
                                                                 str_prefix=f"{subject}_")
@@ -174,7 +175,7 @@ class NaiveNAS:
                 weighted_population[i]['%d_num_epochs' % subject] = num_epochs
                 weighted_population[i]['num_epochs'] += num_epochs
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
-            weighted_population[i]['finalized_model'] = model
+            # weighted_population[i]['finalized_model'] = model
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
 
@@ -226,15 +227,15 @@ class NaiveNAS:
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
-            _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
+            _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
             NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
 
     def save_best_model(self, weighted_population):
         try:
-            save_model = weighted_population[0]['finalized_model'].to("cpu")
-            # save_model = models_generation.ModelFromGrid(weighted_population[0]['model']).to("cpu")
+            # save_model = weighted_population[0]['finalized_model'].to("cpu")
+            save_model = models_generation.ModelFromGrid(weighted_population[0]['model']).to("cpu")
             model_filename = "%s/best_model_" % self.exp_folder +\
                              '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th"
             torch.save(save_model, model_filename)
@@ -253,9 +254,6 @@ class NaiveNAS:
             weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
 
         for generation in range(num_generations):
-            # if self.cuda:
-            #     print(f'starting generation {generation}')
-            #     dump_tensors()
             if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NASUtils.inject_dropout(weighted_population)
             evo_strategy(weighted_population, generation)
@@ -336,13 +334,20 @@ class NaiveNAS:
                         [int(s) for s in globals.get('gpu_select').split(',')])
             else:
                 model.cuda()
+
         try:
             if globals.get('inherit_weights_normal') and state is not None:
-                    model.load_state_dict(state)
-        except RuntimeError:
+                    current_state = model.state_dict()
+                    for k, v in state.items():
+                        if current_state[k].shape == v.shape:
+                            current_state.update({k: v})
+                    model.load_state_dict(current_state)
+        except RuntimeError as e:
             print(f'failed weight inheritance\n,'
                   f'state dict: {state.keys()}\n'
                   f'current model state: {model.state_dict().keys()}')
+            print('load state dict failed. Exception message: %s' % (str(e)))
+            pdb.set_trace()
         self.monitor_epoch(single_subj_dataset, model)
         if globals.get('log_epochs'):
             self.log_epoch()
@@ -366,9 +371,10 @@ class NaiveNAS:
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
-        # model.cpu()
         del model
-        return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
+        if self.cuda:
+            torch.cuda.empty_cache()
+        return final_time, evaluations, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
         self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
@@ -396,7 +402,11 @@ class NaiveNAS:
                     input_vars = input_vars.cuda()
                     target_vars = target_vars.cuda()
             self.optimizer.zero_grad()
-            outputs = model(input_vars)
+            try:
+                outputs = model(input_vars)
+            except RuntimeError as e:
+                print('run model failed. Exception message: %s' % (str(e)))
+                pdb.set_trace()
             loss = self.loss_function(outputs, target_vars)
             loss.backward()
             self.optimizer.step()

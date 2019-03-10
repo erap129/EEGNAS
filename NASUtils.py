@@ -1,3 +1,4 @@
+import networkx as nx
 import random
 import models_generation
 import globals
@@ -125,8 +126,17 @@ def remove_from_models_hash(model, model_set, genome_set):
 
 
 def hash_model(model, model_set, genome_set):
-    if model not in model_set:
-        model_set.append(model)
+    if globals.get('grid'):
+        for other_model in model_set:
+            if nx.is_isomorphic(model, other_model):
+                break
+            model_set.append(model)
+    else:
+        if model not in model_set:
+            model_set.append(model)
+    if globals.get('grid'):
+        # for layer in model.nodes
+        pass
     for layer in model:
         if layer not in genome_set:
             genome_set.append(layer)

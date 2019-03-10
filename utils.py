@@ -126,75 +126,19 @@ def createFolder(directory):
         print ('Error: Creating directory. ' +  directory)
 
 
-class AUCMonitor(object):
-    """
-    Monitor the examplewise AUC rate.
+def accuracy_func(all_pred_labels, all_trial_labels):
+    accuracy = 1 - np.mean(all_pred_labels == all_trial_labels)
+    return accuracy
 
-    Parameters
-    ----------
-    col_suffix: str, optional
-        Name of the column in the monitoring output.
-    threshold_for_binary_case: bool, optional
-        In case of binary classification with only one output prediction
-        per target, define the threshold for separating the classes, i.e.
-        0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
-    """
 
-    def __init__(self, col_suffix='auc', threshold_for_binary_case=None):
-        self.col_suffix = col_suffix
-        self.threshold_for_binary_case = threshold_for_binary_case
+def kappa_func(all_pred_labels, all_target_labels):
+    kappa = metrics.cohen_kappa_score(all_pred_labels, all_target_labels)
+    return kappa
 
-    def monitor_epoch(self, ):
-        return
 
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
-        all_pred_labels = []
-        all_target_labels = []
-        for i_batch in range(len(all_batch_sizes)):
-            preds = all_preds[i_batch]
-            # preds could be examples x classes x time
-            # or just
-            # examples x classes
-            # make sure not to remove first dimension if it only has size one
-            if preds.ndim > 1:
-                only_one_row = preds.shape[0] == 1
-
-                pred_labels = np.argmax(preds, axis=1).squeeze()
-                # add first dimension again if needed
-                if only_one_row:
-                    pred_labels = pred_labels[None]
-            else:
-                assert self.threshold_for_binary_case is not None, (
-                    "In case of only one output, please supply the "
-                    "threshold_for_binary_case parameter")
-                # binary classification case... assume logits
-                pred_labels = np.int32(preds > self.threshold_for_binary_case)
-            # now examples x time or examples
-            all_pred_labels.extend(pred_labels)
-            targets = all_targets[i_batch]
-            if targets.ndim > pred_labels.ndim:
-                # targets may be one-hot-encoded
-                targets = np.argmax(targets, axis=1)
-            elif targets.ndim < pred_labels.ndim:
-                # targets may not have time dimension,
-                # in that case just repeat targets on time dimension
-                extra_dim = pred_labels.ndim - 1
-                targets = np.repeat(np.expand_dims(targets, extra_dim),
-                                    pred_labels.shape[extra_dim],
-                                    extra_dim)
-            assert targets.shape == pred_labels.shape
-            all_target_labels.extend(targets)
-        all_pred_labels = np.array(all_pred_labels)
-        all_target_labels = np.array(all_target_labels)
-        assert all_pred_labels.shape == all_target_labels.shape
-        if len(np.unique(all_pred_labels)) == len(np.unique(all_target_labels)) == 2:  # binary classification
-            fpr, tpr, thresholds = metrics.roc_curve(all_target_labels, all_pred_labels, pos_label=1)
-            auc = metrics.auc(fpr, tpr)
-        else:
-            auc = multiclass_roc_auc_score(all_target_labels, all_pred_labels)
-        column_name = "{:s}_{:s}".format(setname, self.col_suffix)
-        return {column_name: float(auc)}
+def f1_func(all_pred_labels, all_target_labels):
+    f1 = metrics.f1_score(all_target_labels, all_pred_labels, average='weighted')
+    return f1
 
 
 def multiclass_roc_auc_score(y_test, y_pred, average="macro"):
@@ -205,9 +149,18 @@ def multiclass_roc_auc_score(y_test, y_pred, average="macro"):
     return roc_auc_score(y_test, y_pred, average=average)
 
 
-class KappaMonitor(object):
+def auc_func(all_pred_labels, all_target_labels):
+    if len(np.unique(all_pred_labels)) == len(np.unique(all_target_labels)) == 2:  # binary classification
+        fpr, tpr, thresholds = metrics.roc_curve(all_target_labels, all_pred_labels, pos_label=1)
+        auc = metrics.auc(fpr, tpr)
+    else:
+        auc = multiclass_roc_auc_score(all_target_labels, all_pred_labels)
+    return auc
+
+
+class GenericMonitor(object):
     """
-    Monitor the examplewise Kappa rate.
+    Monitor the examplewise rate.
 
     Parameters
     ----------
@@ -219,74 +172,9 @@ class KappaMonitor(object):
         0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
     """
 
-    def __init__(self, col_suffix='kappa', threshold_for_binary_case=None):
-        self.col_suffix = col_suffix
-        self.threshold_for_binary_case = threshold_for_binary_case
-
-    def monitor_epoch(self, ):
-        return
-
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
-        all_pred_labels = []
-        all_target_labels = []
-        for i_batch in range(len(all_batch_sizes)):
-            preds = all_preds[i_batch]
-            # preds could be examples x classes x time
-            # or just
-            # examples x classes
-            # make sure not to remove first dimension if it only has size one
-            if preds.ndim > 1:
-                only_one_row = preds.shape[0] == 1
-
-                pred_labels = np.argmax(preds, axis=1).squeeze()
-                # add first dimension again if needed
-                if only_one_row:
-                    pred_labels = pred_labels[None]
-            else:
-                assert self.threshold_for_binary_case is not None, (
-                    "In case of only one output, please supply the "
-                    "threshold_for_binary_case parameter")
-                # binary classification case... assume logits
-                pred_labels = np.int32(preds > self.threshold_for_binary_case)
-            # now examples x time or examples
-            all_pred_labels.extend(pred_labels)
-            targets = all_targets[i_batch]
-            if targets.ndim > pred_labels.ndim:
-                # targets may be one-hot-encoded
-                targets = np.argmax(targets, axis=1)
-            elif targets.ndim < pred_labels.ndim:
-                # targets may not have time dimension,
-                # in that case just repeat targets on time dimension
-                extra_dim = pred_labels.ndim - 1
-                targets = np.repeat(np.expand_dims(targets, extra_dim),
-                                    pred_labels.shape[extra_dim],
-                                    extra_dim)
-            assert targets.shape == pred_labels.shape
-            all_target_labels.extend(targets)
-        all_pred_labels = np.array(all_pred_labels)
-        all_target_labels = np.array(all_target_labels)
-        kappa = metrics.cohen_kappa_score(all_pred_labels, all_target_labels)
-        column_name = "{:s}_{:s}".format(setname, self.col_suffix)
-        return {column_name: float(kappa)}
-
-
-class AccuracyMonitor(object):
-    """
-    Monitor the examplewise accuracy rate.
-
-    Parameters
-    ----------
-    col_suffix: str, optional
-        Name of the column in the monitoring output.
-    threshold_for_binary_case: bool, optional
-        In case of binary classification with only one output prediction
-        per target, define the threshold for separating the classes, i.e.
-        0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
-    """
-
-    def __init__(self, col_suffix='accuracy', threshold_for_binary_case=None):
-        self.col_suffix = col_suffix
+    def __init__(self, measure_name, measure_func,threshold_for_binary_case=None):
+        self.measure_name = measure_name
+        self.measure_func = measure_func
         self.threshold_for_binary_case = threshold_for_binary_case
 
     def monitor_epoch(self, ):
@@ -333,77 +221,9 @@ class AccuracyMonitor(object):
         all_pred_labels = np.array(all_pred_labels)
         all_target_labels = np.array(all_target_labels)
         assert all_pred_labels.shape == all_target_labels.shape
-
-        accuracy = np.mean(all_target_labels == all_pred_labels)
-        column_name = "{:s}_{:s}".format(setname, self.col_suffix)
-        return {column_name: float(accuracy)}
-
-
-class F1Monitor(object):
-    """
-    Monitor the examplewise f1 rate.
-
-    Parameters
-    ----------
-    col_suffix: str, optional
-        Name of the column in the monitoring output.
-    threshold_for_binary_case: bool, optional
-        In case of binary classification with only one output prediction
-        per target, define the threshold for separating the classes, i.e.
-        0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
-    """
-
-    def __init__(self, col_suffix='f1', threshold_for_binary_case=None):
-        self.col_suffix = col_suffix
-        self.threshold_for_binary_case = threshold_for_binary_case
-
-    def monitor_epoch(self, ):
-        return
-
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
-        all_pred_labels = []
-        all_target_labels = []
-        for i_batch in range(len(all_batch_sizes)):
-            preds = all_preds[i_batch]
-            # preds could be examples x classes x time
-            # or just
-            # examples x classes
-            # make sure not to remove first dimension if it only has size one
-            if preds.ndim > 1:
-                only_one_row = preds.shape[0] == 1
-
-                pred_labels = np.argmax(preds, axis=1).squeeze()
-                # add first dimension again if needed
-                if only_one_row:
-                    pred_labels = pred_labels[None]
-            else:
-                assert self.threshold_for_binary_case is not None, (
-                    "In case of only one output, please supply the "
-                    "threshold_for_binary_case parameter")
-                # binary classification case... assume logits
-                pred_labels = np.int32(preds > self.threshold_for_binary_case)
-            # now examples x time or examples
-            all_pred_labels.extend(pred_labels)
-            targets = all_targets[i_batch]
-            if targets.ndim > pred_labels.ndim:
-                # targets may be one-hot-encoded
-                targets = np.argmax(targets, axis=1)
-            elif targets.ndim < pred_labels.ndim:
-                # targets may not have time dimension,
-                # in that case just repeat targets on time dimension
-                extra_dim = pred_labels.ndim - 1
-                targets = np.repeat(np.expand_dims(targets, extra_dim),
-                                    pred_labels.shape[extra_dim],
-                                    extra_dim)
-            assert targets.shape == pred_labels.shape
-            all_target_labels.extend(targets)
-        all_pred_labels = np.array(all_pred_labels)
-        all_target_labels = np.array(all_target_labels)
-        assert all_pred_labels.shape == all_target_labels.shape
-        f1 = metrics.f1_score(all_target_labels, all_pred_labels, average='weighted')
-        column_name = "{:s}_{:s}".format(setname, self.col_suffix)
-        return {column_name: float(f1)}
+        measure = self.measure_func(all_pred_labels, all_target_labels)
+        column_name = "{:s}_{:s}".format(setname, self.measure_name)
+        return {column_name: float(measure)}
 
 
 class MultiLabelAccuracyMonitor(object):
@@ -498,22 +318,6 @@ class NoIncrease(object):
             self.highest_val = current_val
 
         return (i_epoch - self.best_epoch) >= self.num_epochs
-
-
-def accuracy_func(all_pred_labels, all_trial_labels):
-    accuracy = 1 - np.mean(all_pred_labels == all_trial_labels)
-    return accuracy
-
-
-def kappa_func(all_pred_labels, all_target_labels):
-    kappa = metrics.cohen_kappa_score(all_pred_labels, all_target_labels)
-    return kappa
-
-
-def auc_func(all_pred_labels, all_target_labels):
-    fpr, tpr, thresholds = metrics.roc_curve(all_target_labels, all_pred_labels, pos_label=1)
-    auc = metrics.auc(fpr, tpr)
-    return auc
 
 
 class CroppedTrialGenericMonitor():
