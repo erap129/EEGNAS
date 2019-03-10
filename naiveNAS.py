@@ -164,8 +164,12 @@ class NaiveNAS:
             for key in summed_parameters:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
+                if globals.get('grid'):
+                    finalized_model = models_generation.ModelFromGrid(pop['model'])
+                else:
+                    finalized_model = finalize_model(pop['model'])
                 final_time, evaluations, model_state, num_epochs = \
-                    self.evaluate_model(finalize_model(pop['model']), pop['model_state'], subject=subject)
+                    self.evaluate_model(finalized_model, pop['model_state'], subject=subject)
                 NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
                                                                 str_prefix=f"{subject}_")
                 NASUtils.sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
@@ -175,7 +179,6 @@ class NaiveNAS:
                 weighted_population[i]['%d_num_epochs' % subject] = num_epochs
                 weighted_population[i]['num_epochs'] += num_epochs
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
-            # weighted_population[i]['finalized_model'] = model
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
 
@@ -235,15 +238,26 @@ class NaiveNAS:
     def save_best_model(self, weighted_population):
         try:
             # save_model = weighted_population[0]['finalized_model'].to("cpu")
-            save_model = models_generation.ModelFromGrid(weighted_population[0]['model']).to("cpu")
+            if globals.get('grid'):
+                save_model = models_generation.ModelFromGrid(weighted_population[0]['model']).to("cpu")
+            else:
+                save_model = finalize_model(weighted_population[0]['model']).to("cpu")
             model_filename = "%s/best_model_" % self.exp_folder +\
                              '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th"
             torch.save(save_model, model_filename)
         except Exception as e:
             print('failed to save model. Exception message: %s' % (str(e)))
+            pdb.set_trace()
         return model_filename
 
-    def evolution(self, csv_file, evolution_file, breeding_method, model_init, model_init_configuration, evo_strategy):
+    def evolution(self, csv_file, evolution_file, model_init_configuration, evo_strategy):
+        if globals.get('grid'):
+            breeding_method = models_generation.breed_grid
+            model_init = models_generation.random_grid_model
+        else:
+            breeding_method = breed_layers
+            model_init = random_model
+
         pop_size = globals.get('pop_size')
         num_generations = globals.get('num_generations')
         evolution_results = pd.DataFrame()
@@ -280,7 +294,8 @@ class NaiveNAS:
                                                                  first_model_state=first_model_state,
                                                                  second_model_state=second_model_state)
                     # NASUtils.hash_model(new_model, self.models_set, self.genome_set)
-                    children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
+                    if new_model is not None:
+                        children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
                 weighted_population.extend(children)
                 if globals.get('dynamic_mutation_rate'):
                     if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
@@ -298,16 +313,10 @@ class NaiveNAS:
         return evolution_results
 
     def evolution_layers(self, csv_file, evolution_file):
-        if globals.get('grid'):
-            breeding_method = models_generation.breed_grid
-            models_init = models_generation.random_grid_model
-        else:
-            breeding_method = breed_layers
-            models_init = random_model
-        return self.evolution(csv_file, evolution_file, breeding_method, models_init, 'num_layers', self.one_strategy)
+        return self.evolution(csv_file, evolution_file, 'num_layers', self.one_strategy)
 
     def evolution_layers_all(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, breed_layers, random_model, 'num_layers', self.all_strategy)
+        return self.evolution(csv_file, evolution_file, 'num_layers', self.all_strategy)
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
         if self.cuda:
@@ -342,7 +351,7 @@ class NaiveNAS:
                         if current_state[k].shape == v.shape:
                             current_state.update({k: v})
                     model.load_state_dict(current_state)
-        except RuntimeError as e:
+        except Exception as e:
             print(f'failed weight inheritance\n,'
                   f'state dict: {state.keys()}\n'
                   f'current model state: {model.state_dict().keys()}')

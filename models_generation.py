@@ -581,8 +581,12 @@ def add_layer_to_state(new_model_state, layer, index, old_model_state):
                 new_model_state[k] = v
 
 
-def inherit_grid_states(dim, cut_point, child_model_state, second_model_state):
+def inherit_grid_states(dim, cut_point, child_model_state, first_model_state, second_model_state):
     for i in range(dim):
+        for j in range(cut_point):
+            for k, v in child_model_state.items():
+                if f'({i}, {j})' in k and k in first_model_state.keys() and first_model_state[k].shape == v.shape:
+                    child_model_state[k] = v
         for j in range(cut_point, dim):
             for k, v in child_model_state.items():
                 if f'({i}, {j})' in k and k in second_model_state.keys() and second_model_state[k].shape == v.shape:
@@ -629,6 +633,7 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
 def breed_grid(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     globals.set('total_breedings', globals.get('total_breedings') + 1)
     child_model = copy.deepcopy(first_model)
+    child_model_state = None
     if random.random() < globals.get('breed_rate'):
         if cut_point is None:
             cut_point = random.randint(0, first_model.graph['width'] - 1)
@@ -647,19 +652,23 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                     child_model.remove_edge(edge[0], edge[1])
                 for edge in add_edges:
                     child_model.add_edge(edge[0], edge[1])
-        if globals.get('inherit_weights_crossover'):
+        if not check_legal_grid_model(child_model):
+            globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+            return None, None
+        if globals.get('inherit_weights_crossover') and first_model_state is not None and second_model is not None:
             child_model_state = ModelFromGrid(child_model).state_dict()
-            inherit_grid_states(first_model.graph['width'], cut_point, child_model_state, second_model_state)
+            inherit_grid_states(first_model.graph['width'], cut_point, child_model_state,
+                                first_model_state, second_model_state)
     if random.random() < mutation_rate:
         add_random_connection(second_model)
         i = random.randint(0, first_model.graph['width'] - 1)
         j = random.randint(0, first_model.graph['width'] - 1)
         child_model.nodes[(i, j)]['layer'] = random_layer()
     if check_legal_grid_model(child_model):
-        return child_model, None
+        return child_model, child_model_state
     else:
         globals.set('failed_breedings', globals.get('failed_breedings') + 1)
-        return second_model, second_model_state
+        return None, None
 
 
 def target_model(model_name):

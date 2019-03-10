@@ -127,7 +127,7 @@ def createFolder(directory):
 
 
 def accuracy_func(all_pred_labels, all_trial_labels):
-    accuracy = 1 - np.mean(all_pred_labels == all_trial_labels)
+    accuracy = np.mean(all_pred_labels == all_trial_labels)
     return accuracy
 
 
