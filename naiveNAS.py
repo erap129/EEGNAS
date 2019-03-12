@@ -135,10 +135,7 @@ class NaiveNAS:
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
                 continue
-            if globals.get('grid'):
-                finalized_model = models_generation.ModelFromGrid(pop['model'])
-            else:
-                finalized_model = finalize_model(pop['model'])
+            finalized_model = finalize_model(pop['model'])
             final_time, evaluations, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'])
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
@@ -164,10 +161,7 @@ class NaiveNAS:
             for key in summed_parameters:
                 weighted_population[i][key] = 0
             for subject in self.current_chosen_population_sample:
-                if globals.get('grid'):
-                    finalized_model = models_generation.ModelFromGrid(pop['model'])
-                else:
-                    finalized_model = finalize_model(pop['model'])
+                finalized_model = finalize_model(pop['model'])
                 final_time, evaluations, model_state, num_epochs = \
                     self.evaluate_model(finalized_model, pop['model_state'], subject=subject)
                 NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
@@ -237,11 +231,7 @@ class NaiveNAS:
 
     def save_best_model(self, weighted_population):
         try:
-            # save_model = weighted_population[0]['finalized_model'].to("cpu")
-            if globals.get('grid'):
-                save_model = models_generation.ModelFromGrid(weighted_population[0]['model']).to("cpu")
-            else:
-                save_model = finalize_model(weighted_population[0]['model']).to("cpu")
+            save_model = finalize_model(weighted_population[0]['model']).to("cpu")
             model_filename = "%s/best_model_" % self.exp_folder +\
                              '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th"
             torch.save(save_model, model_filename)
@@ -309,7 +299,7 @@ class NaiveNAS:
                 self.add_final_stats(stats, model_filename)
 
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
-            # self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
+            self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
         return evolution_results
 
     def evolution_layers(self, csv_file, evolution_file):
@@ -348,7 +338,7 @@ class NaiveNAS:
             if globals.get('inherit_weights_normal') and state is not None:
                     current_state = model.state_dict()
                     for k, v in state.items():
-                        if current_state[k].shape == v.shape:
+                        if k in current_state and current_state[k].shape == v.shape:
                             current_state.update({k: v})
                     model.load_state_dict(current_state)
         except Exception as e:
@@ -555,7 +545,8 @@ class NaiveNAS:
             print('Architectures for Subject %s, Generation %d\n' % (str(self.subject_id), generation), file=text_file)
             for model in models:
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
-                print_model = model['finalized_model'].to(device)
+                finalized_model = finalize_model(model['model'])
+                print_model = finalized_model.to(device)
                 summary(print_model, (globals.get('eeg_chans'), globals.get('input_time_len'), 1), file=text_file)
 
 

@@ -634,10 +634,11 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
     globals.set('total_breedings', globals.get('total_breedings') + 1)
     child_model = copy.deepcopy(first_model)
     child_model_state = None
+
     if random.random() < globals.get('breed_rate'):
         if cut_point is None:
             cut_point = random.randint(0, first_model.graph['width'] - 1)
-        for i in range(first_model.graph['width']):
+        for i in range(first_model.graph['height']):
             for j in range(cut_point, first_model.graph['width']):
                 child_model.nodes[(i, j)]['layer'] = second_model.nodes[(i, j)]['layer']
                 remove_edges = []
@@ -655,15 +656,17 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
         if not check_legal_grid_model(child_model):
             globals.set('failed_breedings', globals.get('failed_breedings') + 1)
             return None, None
-        if globals.get('inherit_weights_crossover') and first_model_state is not None and second_model is not None:
+        if globals.get('inherit_weights_crossover') and first_model_state is not None and second_model_state is not None:
             child_model_state = ModelFromGrid(child_model).state_dict()
             inherit_grid_states(first_model.graph['width'], cut_point, child_model_state,
                                 first_model_state, second_model_state)
+
     if random.random() < mutation_rate:
-        add_random_connection(second_model)
-        i = random.randint(0, first_model.graph['width'] - 1)
-        j = random.randint(0, first_model.graph['width'] - 1)
+        add_random_connection(child_model)
+        i = random.randint(0, child_model.graph['width'] - 1)
+        j = random.randint(0, child_model.graph['width'] - 1)
         child_model.nodes[(i, j)]['layer'] = random_layer()
+
     if check_legal_grid_model(child_model):
         return child_model, child_model_state
     else:
@@ -685,6 +688,8 @@ def target_model(model_name):
 
 
 def finalize_model(layer_collection):
+    if globals.get('grid'):
+        return ModelFromGrid(layer_collection)
     layer_collection = copy.deepcopy(layer_collection)
     if globals.get('cropping'):
         final_conv_time = globals.get('final_conv_size')

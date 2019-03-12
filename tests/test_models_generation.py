@@ -4,7 +4,8 @@ from braindecode.torch_ext.util import np_to_var
 
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
-    MyModel, ActivationLayer, network_similarity, PoolingLayer, add_random_connection
+    MyModel, ActivationLayer, network_similarity, PoolingLayer, add_random_connection, IdentityLayer,\
+    breed_grid
 import models_generation
 from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset
 import globals
@@ -139,6 +140,77 @@ class TestModelGeneration(unittest.TestCase):
         s = Source(make_dot(out), filename="test.gv", format="png")
         s.view()
 
+    def test_breed_grid(self):
+        globals.set('grid', True)
+        layer_grid_1 = models_generation.random_grid_model(5)
+        layer_grid_2 = models_generation.random_grid_model(5)
+        for node in layer_grid_1.nodes.values():
+            node['layer'] = models_generation.random_layer()
+        for node in layer_grid_2.nodes.values():
+            node['layer'] = models_generation.random_layer()
+        layer_grid_1.nodes[(0,0)]['layer'] = ConvLayer()
+        layer_grid_1.nodes[(0,1)]['layer'] = BatchNormLayer()
+        layer_grid_1.nodes[(0,2)]['layer'] = PoolingLayer()
+        layer_grid_1.nodes[(0,3)]['layer'] = BatchNormLayer()
+        layer_grid_1.nodes[(0,4)]['layer'] = DropoutLayer()
+        layer_grid_1.nodes[(1,1)]['layer'] = BatchNormLayer()
+        layer_grid_1.nodes[(2,2)]['layer'] = ConvLayer()
+
+        layer_grid_2.nodes[(0, 0)]['layer'] = BatchNormLayer()
+        layer_grid_2.nodes[(0, 1)]['layer'] = PoolingLayer()
+        layer_grid_2.nodes[(0, 2)]['layer'] = ConvLayer()
+        layer_grid_2.nodes[(0, 3)]['layer'] = BatchNormLayer()
+        layer_grid_2.nodes[(0, 4)]['layer'] = IdentityLayer()
+        layer_grid_2.nodes[(1, 1)]['layer'] = ConvLayer()
+        layer_grid_2.nodes[(2, 2)]['layer'] = IdentityLayer()
+        layer_grid_2.nodes[(3, 3)]['layer'] = BatchNormLayer()
+        layer_grid_2.nodes[(2, 4)]['layer'] = IdentityLayer()
+        layer_grid_2.nodes[(2, 0)]['layer'] = PoolingLayer()
+
+        layer_grid_1.add_edge((0, 1), (2, 1))
+        layer_grid_1.add_edge((0, 1), (2, 2))
+        layer_grid_1.add_edge((0, 2), (2, 0))
+        layer_grid_1.add_edge((0, 2), (2, 3))
+        layer_grid_1.add_edge((2, 2), (0, 4))
+        layer_grid_1.add_edge((2, 3), (0, 3))
+        layer_grid_1.add_edge((3, 1), (2, 3))
+
+        layer_grid_2.add_edge((0, 0), (1, 1))
+        layer_grid_2.add_edge((0, 1), (0, 2))
+        layer_grid_2.add_edge((0, 1), (3, 3))
+        layer_grid_2.add_edge((0, 3), (1, 1))
+        layer_grid_2.add_edge((0, 3), (2, 4))
+        layer_grid_2.add_edge((1, 1), (0, 4))
+        layer_grid_2.add_edge((2, 2), (3, 3))
+        layer_grid_2.add_edge((3, 3), (0, 3))
+
+        model_1 = models_generation.ModelFromGrid(layer_grid_1)
+        model_2 = models_generation.ModelFromGrid(layer_grid_2)
+
+        child_model, child_model_state = breed_grid(0, layer_grid_1, layer_grid_2, model_1.state_dict(), model_2.state_dict(),
+                                 cut_point=2)
+
+        assert (type(child_model.nodes[(0, 0)]['layer']) == ConvLayer)
+        assert (type(child_model.nodes[(0, 1)]['layer']) == BatchNormLayer)
+        assert (type(child_model.nodes[(0, 2)]['layer']) == ConvLayer)
+        assert (type(child_model.nodes[(0, 3)]['layer']) == BatchNormLayer)
+        assert (type(child_model.nodes[(0, 4)]['layer']) == IdentityLayer)
+        assert (type(child_model.nodes[(1, 1)]['layer']) == BatchNormLayer)
+        assert (type(child_model.nodes[(2, 2)]['layer']) == IdentityLayer)
+        assert (type(child_model.nodes[(3, 3)]['layer']) == BatchNormLayer)
+        assert (type(child_model.nodes[(2, 4)]['layer']) == IdentityLayer)
+
+        finalized_model = finalize_model(child_model)
+        finalized_model.load_state_dict(child_model_state)
+
+        child_state = child_model.state_dict()
+        for key in child_state.keys():
+            if '(0, 0)' in key:
+                # assert child_state[key] ==
+                pass
+        assert (child_model)
+
+        pass
 
 
 if __name__ == '__main__':
