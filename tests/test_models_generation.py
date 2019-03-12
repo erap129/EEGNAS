@@ -13,7 +13,7 @@ import networkx as nx
 import numpy as np
 from globals import init_config
 import matplotlib.pyplot as plt
-from torchviz import make_dot
+# from torchviz import make_dot
 import torchvision.models as models
 from copy import deepcopy
 from graphviz import Source
@@ -200,17 +200,29 @@ class TestModelGeneration(unittest.TestCase):
         assert (type(child_model.nodes[(3, 3)]['layer']) == BatchNormLayer)
         assert (type(child_model.nodes[(2, 4)]['layer']) == IdentityLayer)
 
-        finalized_model = finalize_model(child_model)
-        finalized_model.load_state_dict(child_model_state)
+        finalized_child_model = finalize_model(child_model)
+        finalized_child_model.load_state_dict(child_model_state)
 
-        child_state = child_model.state_dict()
+        model_1_state = model_1.state_dict()
+        model_2_state = model_2.state_dict()
+        child_state = finalized_child_model.state_dict()
         for key in child_state.keys():
             if '(0, 0)' in key:
-                # assert child_state[key] ==
-                pass
-        assert (child_model)
+                assert child_state[key].equal(model_1_state[key])
+            if '(0, 1)' in key:
+                assert child_state[key].equal(model_1_state[key])
+            if '(0, 3)' in key:
+                 assert child_state[key].equal(model_2_state[key])
+            # if '(0, 4)' in key:
+            #     assert child_state[key].equal(model_2_state[key])
+            # if 'conv' in key:
+            #     assert child_state[key].equal(model_2_state[key])
+            # if '(1, 1)' in key:
+            #     assert child_state[key].equal(model_1_state[key])
+            # if '(3, 3)' in key:
+            #     assert child_state[key].equal(model_2_state[key])
 
-        pass
+
 
 
 if __name__ == '__main__':

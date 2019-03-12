@@ -581,19 +581,24 @@ def add_layer_to_state(new_model_state, layer, index, old_model_state):
                 new_model_state[k] = v
 
 
+def copy_one_layer_states(str, child_model_state, other_model_state):
+    copy_weights = True
+    for k, v in child_model_state.items():
+        if str in k and k in other_model_state.keys() and other_model_state[k].shape != v.shape:
+            copy_weights = False
+    for k, v in child_model_state.items():
+        if str in k and k in other_model_state.keys() and other_model_state[k].shape == v.shape \
+                and copy_weights:
+            child_model_state[k] = other_model_state[k]
+
+
 def inherit_grid_states(dim, cut_point, child_model_state, first_model_state, second_model_state):
     for i in range(dim):
         for j in range(cut_point):
-            for k, v in child_model_state.items():
-                if f'({i}, {j})' in k and k in first_model_state.keys() and first_model_state[k].shape == v.shape:
-                    child_model_state[k] = v
+            copy_one_layer_states(f'({i}, {j})', child_model_state, first_model_state)
         for j in range(cut_point, dim):
-            for k, v in child_model_state.items():
-                if f'({i}, {j})' in k and k in second_model_state.keys() and second_model_state[k].shape == v.shape:
-                    child_model_state[k] = v
-    for k, v in child_model_state.items():
-        if 'output' in k and k in second_model_state.keys() and second_model_state[k].shape == v.shape:
-            child_model_state[k] = v
+            copy_one_layer_states(f'({i}, {j})', child_model_state, second_model_state)
+    copy_one_layer_states('output', child_model_state, second_model_state)
 
 
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
