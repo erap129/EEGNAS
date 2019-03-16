@@ -63,7 +63,8 @@ def get_average_param(models, layer_type, attribute):
     attr_count = 0
     count = 0
     for model in models:
-        for layer in model:
+        layers = get_model_layers(model)
+        for layer in layers:
             if isinstance(layer, layer_type):
                 attr_count += getattr(layer, attribute)
                 count += 1
@@ -109,35 +110,58 @@ def inject_dropout(weighted_population):
 
 
 def remove_from_models_hash(model, model_set, genome_set):
-    for layer in model:
-        remove_layer = True
-        for other_model in model_set:
-            if model != other_model:
-                for other_layer in other_model:
-                    if layer == other_layer:
-                        remove_layer = False
-                        break
-            if not remove_layer:
-                break
-        if remove_layer and layer in genome_set:
-            genome_set.remove(layer)
-    if model in model_set:
-        model_set.remove(model)
+    if globals.get('grid'):
+        for layer in model.nodes.values():
+            remove_layer = True
+            for other_model in model_set:
+                if not equal_grid_models(model, other_model):
+                    for other_layer in other_model.nodes.values():
+                        if layer['layer'] == other_layer['layer']:
+                            remove_layer = False
+                            break
+                if not remove_layer:
+                    break
+            if remove_layer and layer['layer'] in genome_set:
+                genome_set.remove(layer['layer'])
+        if model in model_set:
+            model_set.remove(model)
+    else:
+        for layer in model:
+            remove_layer = True
+            for other_model in model_set:
+                if model != other_model:
+                    for other_layer in other_model:
+                        if layer == other_layer:
+                            remove_layer = False
+                            break
+                if not remove_layer:
+                    break
+            if remove_layer and layer in genome_set:
+                genome_set.remove(layer)
+        if model in model_set:
+            model_set.remove(model)
+
+
+def get_model_layers(model):
+    if globals.get('grid'):
+        return [layer['layer'] for layer in model.nodes.values()]
+    else:
+        return model
 
 
 def hash_model(model, model_set, genome_set):
     if globals.get('grid'):
+        add_model = True
         for other_model in model_set:
-            if nx.is_isomorphic(model, other_model):
-                break
+            if equal_grid_models(model, other_model):
+                add_model = False
+        if add_model:
             model_set.append(model)
     else:
         if model not in model_set:
             model_set.append(model)
-    if globals.get('grid'):
-        # for layer in model.nodes
-        pass
-    for layer in model:
+    layers = get_model_layers(model)
+    for layer in layers:
         if layer not in genome_set:
             genome_set.append(layer)
 
@@ -145,7 +169,30 @@ def hash_model(model, model_set, genome_set):
 def count_layer_type_in_pop(models, layer_type):
     count = 0
     for model in models:
-        for layer in model:
+        layers = get_model_layers(model)
+        for layer in layers:
             if isinstance(layer, layer_type):
                 count += 1
     return count
+
+
+def num_of_models_with_skip_connection(weighted_population):
+    total = 0
+    for pop in weighted_population:
+        if len(list(nx.all_simple_paths(pop['model'], 'input', 'output_conv'))) > 1:
+            total += 1
+    return total
+
+
+def equal_grid_models(layer_grid_1, layer_grid_2):
+    for i in range(layer_grid_1.graph['height']):
+        for j in range(layer_grid_2.graph['width']):
+            if layer_grid_1.nodes[(i,j)]['layer'] != layer_grid_2.nodes[(i,j)]['layer']:
+                return False
+    for edge in layer_grid_1.edges:
+        if edge not in layer_grid_2.edges:
+            return False
+    for edge in layer_grid_2.edges:
+        if edge not in layer_grid_1.edges:
+            return False
+    return True

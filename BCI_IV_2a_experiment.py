@@ -46,7 +46,7 @@ def listen():
 def parse_args(args):
     parser = ArgumentParser()
     parser.add_argument("-c", "--config", help="path to configuration file", default='configurations/config.ini')
-    parser.add_argument("-e", "--experiment", help="experiment type", default='benchmark')
+    parser.add_argument("-e", "--experiment", help="experiment type", default='tests')
     parser.add_argument("-m", "--model", help="path to Pytorch model file")
     parser.add_argument("-g", "--garbage", help="Use garbage time", default='f')
     return parser.parse_args(args)
@@ -117,7 +117,6 @@ def garbage_time():
     print('ENTERING GARBAGE TIME')
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     loss_function = F.nll_loss
-    args.experiment = 'target'
     globals.set('dataset', 'BCI_IV_2a')
     globals.set('channel_dim', 'one')
     globals.set('input_time_len', 1125)
@@ -133,13 +132,13 @@ def garbage_time():
     garbageNAS.garbage_time()
 
 
-def get_configurations(args):
+def get_configurations(experiment):
     configurations = []
     default_config = globals.init_config._defaults
-    exp_config = globals.init_config._sections[args.experiment]
+    exp_config = globals.init_config._sections[experiment]
     for key in default_config.keys():
         default_config[key] = json.loads(default_config[key])
-    default_config['exp_name'] = [args.experiment]
+    default_config['exp_name'] = [experiment]
     for key in exp_config.keys():
         exp_config[key] = json.loads(exp_config[key])
     both_configs = list(default_config.values())
@@ -148,13 +147,13 @@ def get_configurations(args):
     config_keys.extend(list(exp_config.keys()))
     all_configs = list(product(*both_configs))
     for config_index in range(len(all_configs)):
-        configurations.append({'DEFAULT': OrderedDict([]), args.experiment: OrderedDict([])})
+        configurations.append({'DEFAULT': OrderedDict([]), experiment: OrderedDict([])})
         i = 0
         for key in default_config.keys():
             configurations[config_index]['DEFAULT'][key] = all_configs[config_index][i]
             i += 1
         for key in exp_config.keys():
-            configurations[config_index][args.experiment][key] = all_configs[config_index][i]
+            configurations[config_index][experiment][key] = all_configs[config_index][i]
             i += 1
     return configurations
 
@@ -212,14 +211,13 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
         naiveNAS.evolution_layers(csv_file, evolution_file)
 
 
-def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
+def cross_subject_exp(stop_criterion, iterator, loss_function):
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
     train_set_all = {}
     val_set_all = {}
     test_set_all = {}
-    # for subject_id in subjects:
     for subject_id in range(1, globals.get('num_subjects')+1):
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         train_set_all[subject_id] = train_set
@@ -239,16 +237,38 @@ def cross_subject_exp(subjects, stop_criterion, iterator, loss_function):
 def set_params_by_dataset():
     num_subjects = {'HG': 14, 'BCI_IV_2a': 9, 'BCI_IV_2b': 9, 'NER15': 1, 'Cho': 52, 'Bloomberg': 1, 'NYSE': 1,
                     'HumanActivity': 19, 'Opportunity': 1}
+    cross_subject_sampling_rate = num_subjects
     eeg_chans = {'HG': 44, 'BCI_IV_2a': 22, 'BCI_IV_2b': 3, 'NER15': 56, 'Cho': 64, 'Bloomberg': 32, 'NYSE': 5,
                  'HumanActivity': 45, 'Opportunity': 113}
     input_time_len = {'HG': 1125, 'BCI_IV_2a': 1125, 'BCI_IV_2b': 1126, 'NER15': 260, 'Cho': 1537, 'Bloomberg': 950,
                       'NYSE': 200, 'HumanActivity': 124, 'Opportunity': 128}
     n_classes = {'HG': 4, 'BCI_IV_2a': 4, 'BCI_IV_2b': 2, 'NER15': 2, 'Cho': 2, 'Bloomberg': 3, 'NYSE': 2,
                  'HumanActivity': 8, 'Opportunity': 18}
+    subjects_to_check = {'HG': list(range(1,14+1)), 'BCI_IV_2a': list(range(1,9+1)), 'BCI_IV_2b': list(range(1,9+1)),
+                            'NER15': [1], 'Cho': [[1,2,3,4,5,6,7,8,9,10,
+                            11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,38,39,40,
+                            41,42,43,44,45,47,48,50,51,52]], 'Bloomberg': [1], 'NYSE': [1],
+                            'HumanActivity': list(range(1,19+1)), 'Opportunity': [1]}
+    evaluation_metrics = {'HG': ['accuracy'], 'BCI_IV_2a': ['accuracy'], 'BCI_IV_2b': ["accuracy", "auc", "kappa"],
+                          'NER15': ["accuracy", "auc"], 'Cho': ['accuracy'], 'Bloomberg': ["accuracy", "auc"],
+                          'NYSE': ['accuracy'], 'HumanActivity': ['accuracy'], 'Opportunity': ["accuracy", "f1"]}
+    ga_objective = {'HG': 'acc', 'BCI_IV_2a': 'acc', 'BCI_IV_2b': "kappa",
+                          'NER15': "auc", 'Cho': 'acc', 'Bloomberg': "auc",
+                          'NYSE': 'acc', 'HumanActivity': 'acc', 'Opportunity': "f1"}
+    nn_objective = {'HG': 'accuracy', 'BCI_IV_2a': 'accuracy', 'BCI_IV_2b': "kappa",
+                          'NER15': "auc", 'Cho': 'accuracy', 'Bloomberg': "auc",
+                          'NYSE': 'accuracy', 'HumanActivity': 'accuracy', 'Opportunity': "f1"}
     globals.set('num_subjects', num_subjects[globals.get('dataset')])
+    globals.set('cross_subject_sampling_rate', cross_subject_sampling_rate[globals.get('dataset')])
     globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
     globals.set('input_time_len', input_time_len[globals.get('dataset')])
     globals.set('n_classes', n_classes[globals.get('dataset')])
+    globals.set('subjects_to_check', subjects_to_check[globals.get('dataset')])
+    globals.set('evaluation_metrics', evaluation_metrics[globals.get('dataset')])
+    globals.set('ga_objective', ga_objective[globals.get('dataset')])
+    globals.set('nn_objective', nn_objective[globals.get('dataset')])
+    if globals.get('dataset') == 'Cho':
+        globals.set('exclude_subjects', [32, 46, 49])
 
 
 if __name__ == '__main__':
@@ -272,62 +292,63 @@ if __name__ == '__main__':
         subdir_names.sort()
         exp_id = subdir_names[-1] + 1
 
-    configurations = get_configurations(args)
-    multiple_values = get_multiple_values(configurations)
     try:
-        for index, configuration in enumerate(configurations):
-            try:
-                globals.set_config(configuration)
-                set_params_by_dataset()
-                if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2')\
-                        and not globals.get('force_gpu_off'):
-                    globals.set('cuda', True)
-                    os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
-                    os.environ["CUDA_LAUNCH_BLOCKING"] = '1'
-                    assert torch.cuda.is_available(), "Cuda not available"
-                if globals.get('cropping'):
-                    globals.set('input_time_len', globals.get('input_time_cropping'))
-                    stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
-                else:
-                    stop_criterion, iterator, loss_function, monitors = get_normal_settings()
-                if type(globals.get('subjects_to_check')) == list:
-                    subjects = globals.get('subjects_to_check')
-                else:
-                    subjects = random.sample(range(1, globals.get('num_subjects')),
-                                             globals.get('subjects_to_check'))
-                exp_name = f"{exp_id}_{index+1}_{args.experiment}"
-                exp_folder = 'results/' + exp_name
-                createFolder(exp_folder)
-                write_dict(globals.config, f"{exp_folder}/config_{exp_name}.ini")
-                csv_file = f"{exp_folder}/{exp_name}.csv"
-                report_file = f"{exp_folder}/report_{exp_name}.csv"
-                fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
-                if 'cross_subject' in multiple_values and not globals.get('cross_subject'):
-                    globals.set('num_generations', globals.get('num_generations') *
-                                globals.get('cross_subject_compensation_rate'))
-                    # make num of generations equal for cross and per subject
-                start_time = time.time()
-                if globals.get('exp_type') in ['target', 'benchmark']:
-                    target_exp(stop_criterion, iterator, loss_function)
-                elif globals.get('exp_type') == 'from_file':
-                    target_exp(stop_criterion, iterator, loss_function,
-                               model_from_file=f"models/{globals.get('models_dir')}/{globals.get('model_file_name')}")
-                elif globals.get('cross_subject'):
-                    cross_subject_exp(subjects, stop_criterion, iterator, loss_function)
-                else:
-                    per_subject_exp(subjects, stop_criterion, iterator, loss_function)
-                globals.set('total_time', str(time.time() - start_time))
-                write_dict(globals.config, f"{exp_folder}/final_config_{exp_name}.ini")
-                generate_report(csv_file, report_file)
-            except Exception as e:
-                with open(f"{exp_folder}/error_log_{exp_name}.txt", "w") as err_file:
-                    print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
-                    print(traceback.format_exc(), file=err_file)
-                print('experiment failed. Exception message: %s' % (str(e)))
-                print(traceback.format_exc())
-                new_exp_folder = exp_folder + '_fail'
-                os.rename(exp_folder, new_exp_folder)
-                write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
+        experiments = args.experiment.split(',')
+        for experiment in experiments:
+            configurations = get_configurations(experiment)
+            multiple_values = get_multiple_values(configurations)
+            for index, configuration in enumerate(configurations):
+                try:
+                    globals.set_config(configuration)
+                    set_params_by_dataset()
+                    if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2')\
+                            and not globals.get('force_gpu_off'):
+                        globals.set('cuda', True)
+                        os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+                        os.environ["CUDA_LAUNCH_BLOCKING"] = '1'
+                        assert torch.cuda.is_available(), "Cuda not available"
+                    if globals.get('cropping'):
+                        globals.set('input_time_len', globals.get('input_time_cropping'))
+                        stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
+                    else:
+                        stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+                    if type(globals.get('subjects_to_check')) == list:
+                        subjects = globals.get('subjects_to_check')
+                    else:
+                        subjects = random.sample(range(1, globals.get('num_subjects')),
+                                                 globals.get('subjects_to_check'))
+                    exp_name = f"{exp_id}_{index+1}_{experiment}"
+                    exp_folder = f"results/{exp_name}_{globals.get('dataset')}"
+                    createFolder(exp_folder)
+                    write_dict(globals.config, f"{exp_folder}/config_{exp_name}.ini")
+                    csv_file = f"{exp_folder}/{exp_name}.csv"
+                    report_file = f"{exp_folder}/report_{exp_name}.csv"
+                    fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
+                    if 'cross_subject' in multiple_values and not globals.get('cross_subject'):
+                        globals.set('num_generations', globals.get('num_generations') *
+                                    globals.get('cross_subject_compensation_rate'))
+                    start_time = time.time()
+                    if globals.get('exp_type') in ['target', 'benchmark']:
+                        target_exp(stop_criterion, iterator, loss_function)
+                    elif globals.get('exp_type') == 'from_file':
+                        target_exp(stop_criterion, iterator, loss_function,
+                                   model_from_file=f"models/{globals.get('models_dir')}/{globals.get('model_file_name')}")
+                    elif globals.get('cross_subject'):
+                        cross_subject_exp(stop_criterion, iterator, loss_function)
+                    else:
+                        per_subject_exp(subjects, stop_criterion, iterator, loss_function)
+                    globals.set('total_time', str(time.time() - start_time))
+                    write_dict(globals.config, f"{exp_folder}/final_config_{exp_name}.ini")
+                    generate_report(csv_file, report_file)
+                except Exception as e:
+                    with open(f"{exp_folder}/error_log_{exp_name}.txt", "w") as err_file:
+                        print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
+                        print(traceback.format_exc(), file=err_file)
+                    print('experiment failed. Exception message: %s' % (str(e)))
+                    print(traceback.format_exc())
+                    new_exp_folder = exp_folder + '_fail'
+                    os.rename(exp_folder, new_exp_folder)
+                    write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
     finally:
         if args.garbage == 't':
             garbage_time()

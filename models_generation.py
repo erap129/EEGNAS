@@ -18,6 +18,7 @@ os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 
+
 def print_structure(structure):
     print('---------------model structure-----------------')
     for layer in structure.values():
@@ -347,8 +348,6 @@ class ModelFromGrid(torch.nn.Module):
         input_chans = globals.get('eeg_chans')
         input_time = globals.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
-        # descendants = nx.descendants(layers, 'input')
-        # descendants.add('input')
         descendants = list(set([item for sublist in nx.all_simple_paths(layers, 'input', 'output_flatten')
                                 for item in sublist]))
         to_remove = []
@@ -505,6 +504,11 @@ def check_legal_grid_model(layer_grid):
     return True
 
 
+def remove_random_connection(layer_grid):
+    random_edge = random.choice(list(layer_grid.edges))
+    layer_grid.remove_edge(*random_edge)
+
+
 def add_random_connection(layer_grid):
     i1 = j1 = i2 = j2 = 0
     while i1 == i2 and j1 == j2:
@@ -516,6 +520,21 @@ def add_random_connection(layer_grid):
     if not nx.is_directed_acyclic_graph(layer_grid):
         layer_grid.remove_edge((i1, j1), (i2, j2))
         add_random_connection(layer_grid)
+
+
+def add_parallel_connection(layer_grid):
+    i1 = i2 = 0
+    j = random.randint(0, layer_grid.graph['width'] - 2)
+    while i1 == i2:
+        i1 = random.randint(0, layer_grid.graph['height'] - 1)
+        i2 = random.randint(0, layer_grid.graph['height'] - 1)
+    layer_grid.add_edge((i1, j), (i2, j+1))
+
+
+def swap_random_layer(layer_grid):
+    i = random.randint(0, layer_grid.graph['height'] - 1)
+    j = random.randint(0, layer_grid.graph['width'] - 1)
+    layer_grid.nodes[(i, j)]['layer'] = random_layer()
 
 
 def random_layer():
@@ -533,19 +552,35 @@ def random_model(n_layers):
         return random_model(n_layers)
 
 
+def set_parallel_paths(layer_grid):
+    layers = [ConvLayer(), BatchNormLayer(), ActivationLayer(),
+              ConvLayer(), BatchNormLayer(), ActivationLayer(),
+              ConvLayer(), BatchNormLayer(), ActivationLayer(),DropoutLayer()]
+    for i in range(layer_grid.graph['height']):
+        layer_grid.add_edge('input', (i, 0))
+        for j in range(layer_grid.graph['width']):
+            layer_grid.nodes[(i,j)]['layer'] = layers[j]
+            if j > 0:
+                layer_grid.add_edge((i, j-1), (i, j))
+        layer_grid.add_edge((i, layer_grid.graph['width'] - 1), 'output_conv')
+
+
 def random_grid_model(dim):
-    layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(dim, dim)))
+    layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(dim[0], dim[1])))
     for node in layer_grid.nodes.values():
         node['layer'] = random_layer()
     layer_grid.add_node('input')
+    layer_grid.nodes['input']['layer'] = IdentityLayer()
     layer_grid.add_node('output_conv')
     layer_grid.nodes['output_conv']['layer'] = IdentityLayer()
     layer_grid.add_edge('input', (0,0))
-    layer_grid.add_edge((0,dim-1), 'output_conv')
-    for i in range(dim-1):
+    layer_grid.add_edge((0,dim[1]-1), 'output_conv')
+    for i in range(dim[1]-1):
         layer_grid.add_edge((0,i), (0,i+1))
-    layer_grid.graph['height'] = dim
-    layer_grid.graph['width'] = dim
+    layer_grid.graph['height'] = dim[0]
+    layer_grid.graph['width'] = dim[1]
+    if globals.get('parallel_paths_experiment'):
+        set_parallel_paths(layer_grid)
     if check_legal_grid_model(layer_grid):
         return layer_grid
     else:
@@ -667,11 +702,13 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                                 first_model_state, second_model_state)
 
     if random.random() < mutation_rate:
-        add_random_connection(child_model)
-        i = random.randint(0, child_model.graph['width'] - 1)
-        j = random.randint(0, child_model.graph['width'] - 1)
-        child_model.nodes[(i, j)]['layer'] = random_layer()
-
+        mutations = {'add_random_connection': add_random_connection,
+                     'remove_random_connection': remove_random_connection,
+                     'add_parallel_connection': add_parallel_connection,
+                     'swap_random_layer': swap_random_layer}
+        available_mutations = list(set(mutations.keys()).intersection(set(globals.get('mutations'))))
+        chosen_mutation = mutations[random.choice(available_mutations)]
+        chosen_mutation(child_model)
     if check_legal_grid_model(child_model):
         return child_model, child_model_state
     else:

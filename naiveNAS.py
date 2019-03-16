@@ -28,24 +28,39 @@ import random
 WARNING = '\033[93m'
 ENDC = '\033[0m'
 log = logging.getLogger(__name__)
+model_train_times = []
+trainings_so_far = 0
 
 
-def createFolder(directory):
+def time_f(t_secs):
     try:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-    except OSError:
-        print ('Error: Creating directory. ' +  directory)
+        val = int(t_secs)
+    except ValueError:
+        return "!!!ERROR: ARGUMENT NOT AN INTEGER!!!"
+    pos = abs(int(t_secs))
+    day = pos / (3600*24)
+    rem = pos % (3600*24)
+    hour = rem / 3600
+    rem = rem % 3600
+    mins = rem / 60
+    secs = rem % 60
+    res = '%02d:%02d:%02d:%02d' % (day, hour, mins, secs)
+    if int(t_secs) < 0:
+        res = "-%s" % res
+    return res
 
 
-def delete_from_folder(folder):
-    for the_file in os.listdir(folder):
-        file_path = os.path.join(folder, the_file)
-        try:
-            if os.path.isfile(file_path):
-                os.unlink(file_path)
-        except Exception as e:
-            print(e)
+def show_progress(train_time):
+    global avg_generation_time, trainings_so_far
+    total_trainings = globals.get('num_generations') * globals.get('pop_size') * len(globals.get('subjects_to_check'))
+    trainings_so_far += 1
+    model_train_times.append(train_time)
+    if len(model_train_times) > 100:
+        del model_train_times[0]
+    avg_model_train_time = sum(model_train_times) / len(model_train_times)
+    time_left = (total_trainings - trainings_so_far) * avg_model_train_time
+    print(f"time left: {time_f(time_left)}")
+
 
 class NaiveNAS:
     def __init__(self, iterator, exp_folder, exp_name, loss_function,
@@ -130,6 +145,7 @@ class NaiveNAS:
     def one_strategy(self, weighted_population, generation):
         self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
+            start_time = time.time()
             if NASUtils.check_age(pop):
                 weighted_population[i] = weighted_population[i - 1]
                 weighted_population[i]['train_time'] = 0
@@ -143,6 +159,8 @@ class NaiveNAS:
             # weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
             weighted_population[i]['num_epochs'] = num_epochs
+            end_time = time.time()
+            show_progress(end_time - start_time)
             print('trained model %d in generation %d' % (i + 1, generation))
 
     def all_strategy(self, weighted_population, generation):
@@ -151,6 +169,7 @@ class NaiveNAS:
         if globals.get('cross_subject_sampling_method') == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
+            start_time = time.time()
             if NASUtils.check_age(pop):
                 weighted_population[i] = weighted_population[i - 1]
                 weighted_population[i]['train_time'] = 0
@@ -172,6 +191,8 @@ class NaiveNAS:
                 weighted_population[i]['%d_model_state' % subject] = model_state
                 weighted_population[i]['%d_num_epochs' % subject] = num_epochs
                 weighted_population[i]['num_epochs'] += num_epochs
+                end_time = time.time()
+                show_progress(end_time - start_time)
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
@@ -215,6 +236,8 @@ class NaiveNAS:
                 stats['top20_%s_count' % layer_type.__name__] = \
                     NASUtils.count_layer_type_in_pop([pop['model'] for pop in
                                                       weighted_population[:int(len(weighted_population)/5)]], layer_type)
+        if globals.get('grid'):
+            stats['num_of_models_with_skip'] = NASUtils.num_of_models_with_skip_connection(weighted_population)
         return stats
 
     def add_final_stats(self, stats, model_filename):
@@ -254,7 +277,7 @@ class NaiveNAS:
         weighted_population = []
         for i in range(pop_size):  # generate pop_size random models
             new_rand_model = model_init(globals.get(model_init_configuration))
-            # NASUtils.hash_model(new_rand_model, self.models_set, self.genome_set)
+            NASUtils.hash_model(new_rand_model, self.models_set, self.genome_set)
             weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
 
         for generation in range(num_generations):
@@ -267,7 +290,7 @@ class NaiveNAS:
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
                     if random.uniform(0, 1) < (index / pop_size):
-                        # NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
+                        NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
                         del weighted_population[index]
                     else:
                         model['age'] += 1
@@ -283,9 +306,9 @@ class NaiveNAS:
                                                                  second_model=second_breeder['model'],
                                                                  first_model_state=first_model_state,
                                                                  second_model_state=second_model_state)
-                    # NASUtils.hash_model(new_model, self.models_set, self.genome_set)
                     if new_model is not None:
                         children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
+                        NASUtils.hash_model(new_model, self.models_set, self.genome_set)
                 weighted_population.extend(children)
                 if globals.get('dynamic_mutation_rate'):
                     if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):

@@ -9,6 +9,7 @@ from models_generation import uniform_model, breed_layers,\
 import models_generation
 from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset
 import globals
+from NASUtils import equal_grid_models
 import networkx as nx
 import numpy as np
 from globals import init_config
@@ -25,7 +26,7 @@ class TestModelGeneration(unittest.TestCase):
     def setUp(self):
         args = parse_args(['-e', 'tests', '-c', '../configurations/config.ini'])
         init_config(args.config)
-        configs = get_configurations(args)
+        configs = get_configurations('tests')
         assert(len(configs) == 1)
         globals.set_config(configs[0])
         set_params_by_dataset()
@@ -101,6 +102,12 @@ class TestModelGeneration(unittest.TestCase):
         print(list(nx.topological_sort(model)))
         nx.draw(model, with_labels=True)
         plt.show()
+
+    def test_remove_random_connection(self):
+        model = models_generation.random_grid_model(10)
+        num_connections = len(list(model.edges))
+        models_generation.remove_random_connection(model)
+        assert(len(list(model.edges)) == num_connections - 1)
 
     def test_draw_grid_model(self):
         layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(5, 5)))
@@ -204,26 +211,43 @@ class TestModelGeneration(unittest.TestCase):
         finalized_child_model.load_state_dict(child_model_state)
 
         model_1_state = model_1.state_dict()
-        model_2_state = model_2.state_dict()
         child_state = finalized_child_model.state_dict()
         for key in child_state.keys():
             if '(0, 0)' in key:
                 assert child_state[key].equal(model_1_state[key])
             if '(0, 1)' in key:
                 assert child_state[key].equal(model_1_state[key])
-            if '(0, 3)' in key:
-                 assert child_state[key].equal(model_2_state[key])
-            # if '(0, 4)' in key:
-            #     assert child_state[key].equal(model_2_state[key])
-            # if 'conv' in key:
-            #     assert child_state[key].equal(model_2_state[key])
-            # if '(1, 1)' in key:
-            #     assert child_state[key].equal(model_1_state[key])
-            # if '(3, 3)' in key:
-            #     assert child_state[key].equal(model_2_state[key])
 
+    def test_grid_equality(self):
+        globals.set('grid', True)
+        layer_grid_1 = models_generation.random_grid_model(2)
+        layer_grid_2 = models_generation.random_grid_model(2)
+        layer_grid_3 = models_generation.random_grid_model(2)
 
+        layer_grid_1.nodes[(0,0)]['layer'] = ConvLayer(filter_num=10, kernel_time=10)
+        layer_grid_1.nodes[(0,1)]['layer'] = BatchNormLayer()
+        layer_grid_1.nodes[(1,0)]['layer'] = PoolingLayer(stride_time=3, pool_time=3)
+        layer_grid_1.nodes[(1,1)]['layer'] = BatchNormLayer()
 
+        layer_grid_2.nodes[(0,0)]['layer'] = ConvLayer(filter_num=10, kernel_time=10)
+        layer_grid_2.nodes[(0,1)]['layer'] = BatchNormLayer()
+        layer_grid_2.nodes[(1,0)]['layer'] = PoolingLayer(stride_time=3, pool_time=3)
+        layer_grid_2.nodes[(1,1)]['layer'] = BatchNormLayer()
+
+        layer_grid_3.nodes[(0, 0)]['layer'] = ConvLayer(filter_num=10, kernel_time=10)
+        layer_grid_3.nodes[(0, 1)]['layer'] = BatchNormLayer()
+        layer_grid_3.nodes[(1, 0)]['layer'] = PoolingLayer(stride_time=2, pool_time=3)
+        layer_grid_3.nodes[(1, 1)]['layer'] = BatchNormLayer()
+
+        assert(equal_grid_models(layer_grid_1, layer_grid_2))
+        assert(not equal_grid_models(layer_grid_1, layer_grid_3))
+
+        layer_grid_2.add_edge((0,0),(1,1))
+        layer_grid_1.add_edge((0,0),(1,1))
+        assert (equal_grid_models(layer_grid_1, layer_grid_2))
+
+        layer_grid_2.add_edge((0,0),(1,0))
+        assert (not equal_grid_models(layer_grid_1, layer_grid_2))
 
 if __name__ == '__main__':
     unittest.main()
