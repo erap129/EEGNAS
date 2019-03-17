@@ -149,8 +149,8 @@ class TestModelGeneration(unittest.TestCase):
 
     def test_breed_grid(self):
         globals.set('grid', True)
-        layer_grid_1 = models_generation.random_grid_model(5)
-        layer_grid_2 = models_generation.random_grid_model(5)
+        layer_grid_1 = models_generation.random_grid_model([5, 5])
+        layer_grid_2 = models_generation.random_grid_model([5, 5])
         for node in layer_grid_1.nodes.values():
             node['layer'] = models_generation.random_layer()
         for node in layer_grid_2.nodes.values():
@@ -248,6 +248,18 @@ class TestModelGeneration(unittest.TestCase):
 
         layer_grid_2.add_edge((0,0),(1,0))
         assert (not equal_grid_models(layer_grid_1, layer_grid_2))
+
+    def test_remove_all_edges_from_input(self):
+        globals.set('grid', True)
+        globals.set('parallel_paths_experiment', True)
+        layer_grid_1 = models_generation.random_grid_model([5, 10])
+        layer_grid_1.remove_edge('input', (0, 0))
+        layer_grid_1.remove_edge('input', (1, 0))
+        layer_grid_1.remove_edge('input', (2, 0))
+        layer_grid_1.remove_edge('input', (3, 0))
+        layer_grid_1.remove_edge('input', (4, 0))
+        model = models_generation.ModelFromGrid(layer_grid_1)
+
 
 if __name__ == '__main__':
     unittest.main()

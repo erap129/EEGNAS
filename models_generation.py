@@ -512,6 +512,8 @@ def check_legal_grid_model(layer_grid):
 def remove_random_connection(layer_grid):
     random_edge = random.choice(list(layer_grid.edges))
     layer_grid.remove_edge(*random_edge)
+    if len(list(nx.all_simple_paths(layer_grid, 'input', 'output_conv'))) == 0:
+        layer_grid.add_edge(*random_edge)  # don't leave the input and output unconnected
 
 
 def add_random_connection(layer_grid):
