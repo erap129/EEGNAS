@@ -263,7 +263,7 @@ def set_params_by_dataset():
     globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
     globals.set('input_time_len', input_time_len[globals.get('dataset')])
     globals.set('n_classes', n_classes[globals.get('dataset')])
-    globals.set('subjects_to_check', subjects_to_check[globals.get('dataset')])
+    globals.set_if_not_exists('subjects_to_check', subjects_to_check[globals.get('dataset')])
     globals.set('evaluation_metrics', evaluation_metrics[globals.get('dataset')])
     globals.set('ga_objective', ga_objective[globals.get('dataset')])
     globals.set('nn_objective', nn_objective[globals.get('dataset')])

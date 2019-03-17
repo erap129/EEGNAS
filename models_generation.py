@@ -1,3 +1,4 @@
+import pdb
 import torch
 import numpy as np
 from Bio.pairwise2 import format_alignment
@@ -361,7 +362,11 @@ class ModelFromGrid(torch.nn.Module):
         self.fixes = {}
         self.fixed_tensors = {}
         self.tensors = {}
-        layers.nodes['input']['shape'] = input_shape
+        try:
+            layers.nodes['input']['shape'] = input_shape
+        except Exception as e:
+            print(e)
+            pdb.set_trace()
         for node in self.sorted_nodes[1:]:
             predecessors = list(layers.predecessors(node))
             self.predecessors[node] = predecessors
