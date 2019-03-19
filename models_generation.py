@@ -373,6 +373,8 @@ class ModelFromGrid(torch.nn.Module):
             if len(predecessors) == 0:
                 continue
             self.calc_shape_multi(predecessors, node, layers)
+        init.xavier_uniform_(self.pytorch_layers['output_conv'].weight, gain=1)
+        init.constant_(self.pytorch_layers['output_conv'].bias, 0)
 
     def calc_shape_multi(self, predecessors, node, layers):
         pred_shapes = [layers.nodes[pred]['shape']['time'] for pred in predecessors]
@@ -560,7 +562,10 @@ def random_layer():
 def random_model(n_layers):
     layer_collection = []
     for i in range(n_layers):
-        layer_collection.append(random_layer())
+        if globals.get('simple_start'):
+            layer_collection.append(IdentityLayer())
+        else:
+            layer_collection.append(random_layer())
     if check_legal_model(layer_collection):
         return layer_collection
     else:
@@ -583,15 +588,18 @@ def set_parallel_paths(layer_grid):
 def random_grid_model(dim):
     layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(dim[0], dim[1])))
     for node in layer_grid.nodes.values():
-        node['layer'] = random_layer()
+        if globals.get('simple_start'):
+            node['layer'] = IdentityLayer()
+        else:
+            node['layer'] = random_layer()
     layer_grid.add_node('input')
     layer_grid.nodes['input']['layer'] = IdentityLayer()
     layer_grid.add_node('output_conv')
     layer_grid.nodes['output_conv']['layer'] = IdentityLayer()
-    layer_grid.add_edge('input', (0,0))
-    layer_grid.add_edge((0,dim[1]-1), 'output_conv')
+    layer_grid.add_edge('input', (0, 0))
+    layer_grid.add_edge((0, dim[1]-1), 'output_conv')
     for i in range(dim[1]-1):
-        layer_grid.add_edge((0,i), (0,i+1))
+        layer_grid.add_edge((0, i), (0, i+1))
     layer_grid.graph['height'] = dim[0]
     layer_grid.graph['width'] = dim[1]
     if globals.get('parallel_paths_experiment'):
