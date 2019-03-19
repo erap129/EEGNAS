@@ -273,8 +273,8 @@ def get_nyse_train_val_test(data_folder):
     sequence_length = 200 + 1  # index starting from 0
     result = []
 
-    for index in range(len(data) - sequence_length):  # maxmimum date = lastest date - sequence length
-        result.append(data[index: index + sequence_length])  # index : index + 22days
+    for index in range(len(data) - sequence_length):
+        result.append(data[index: index + sequence_length])
 
     result = np.array(result)
     row = round(0.7 * result.shape[0])  # 90% split

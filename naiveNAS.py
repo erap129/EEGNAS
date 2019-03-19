@@ -29,7 +29,6 @@ WARNING = '\033[93m'
 ENDC = '\033[0m'
 log = logging.getLogger(__name__)
 model_train_times = []
-trainings_so_far = 0
 
 
 def time_f(t_secs):
@@ -51,14 +50,11 @@ def time_f(t_secs):
 
 
 def show_progress(train_time):
-    global avg_generation_time, trainings_so_far
+    global model_train_times
     total_trainings = globals.get('num_generations') * globals.get('pop_size') * len(globals.get('subjects_to_check'))
-    trainings_so_far += 1
     model_train_times.append(train_time)
-    if len(model_train_times) > 100:
-        del model_train_times[0]
     avg_model_train_time = sum(model_train_times) / len(model_train_times)
-    time_left = (total_trainings - trainings_so_far) * avg_model_train_time
+    time_left = (total_trainings - len(model_train_times)) * avg_model_train_time
     print(f"time left: {time_f(time_left)}")
 
 
@@ -66,6 +62,8 @@ class NaiveNAS:
     def __init__(self, iterator, exp_folder, exp_name, loss_function,
                  train_set, val_set, test_set, stop_criterion, monitors,
                  config, subject_id, fieldnames, model_from_file=None):
+        global model_train_times
+        model_train_times = []
         self.iterator = iterator
         self.exp_folder = exp_folder
         self.exp_name = exp_name

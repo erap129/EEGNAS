@@ -479,9 +479,7 @@ def calc_shape_channels(in_shape, layer):
     return {'time': input_time, 'chans': input_chans}
 
 
-def check_legal_grid_model(layer_grid):
-    if not nx.is_directed_acyclic_graph(layer_grid):
-        return False
+def check_grid_shapes(layer_grid):
     input_chans = globals.get('eeg_chans')
     input_time = globals.get('input_time_len')
     input_shape = {'time': input_time, 'chans': input_chans}
@@ -506,6 +504,16 @@ def check_legal_grid_model(layer_grid):
                                                               layers.nodes[node]['layer'])
         except ValueError:
             return False
+    return True
+
+
+def check_legal_grid_model(layer_grid):
+    if not nx.is_directed_acyclic_graph(layer_grid):
+        return False
+    if not check_grid_shapes(layer_grid):
+        return False
+    if len(list(nx.all_simple_paths(layer_grid, 'input', 'output_conv'))) == 0:
+        return False
     return True
 
 
