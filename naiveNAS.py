@@ -287,7 +287,9 @@ class NaiveNAS:
             stats = self.calculate_stats(weighted_population, evolution_file)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
-                    if random.uniform(0, 1) < (index / pop_size):
+                    decay_functions = {'linear': lambda x: x,
+                                       'log': lambda x: np.sqrt(np.log(x + 1))}
+                    if random.uniform(0, 1) < decay_functions[globals.get('decay_function')](index / pop_size):
                         NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
                         del weighted_population[index]
                     else:
