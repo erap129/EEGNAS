@@ -1,3 +1,5 @@
+import pickle
+
 from models_generation import random_model, finalize_model, target_model,\
     breed_layers
 from braindecode.torch_ext.util import np_to_var
@@ -135,10 +137,9 @@ class NaiveNAS:
         self.write_to_csv(csv_file, stats, generation=1)
 
     def sample_subjects(self):
-        self.current_chosen_population_sample = random.sample(
+        self.current_chosen_population_sample = sorted(random.sample(
             [i for i in range(1, globals.get('num_subjects') + 1) if i not in globals.get('exclude_subjects')],
-            globals.get('cross_subject_sampling_rate'))
-
+            globals.get('cross_subject_sampling_rate')))
 
     def one_strategy(self, weighted_population, generation):
         self.current_chosen_population_sample = [self.subject_id]
@@ -253,37 +254,31 @@ class NaiveNAS:
     def save_best_model(self, weighted_population):
         try:
             save_model = finalize_model(weighted_population[0]['model']).to("cpu")
-            model_filename = "%s/best_model_" % self.exp_folder +\
-                             '_'.join(str(x) for x in self.current_chosen_population_sample) + ".th"
+            subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
+            model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
             torch.save(save_model, model_filename)
+            pickle.dump(weighted_population, open(f'{self.exp_folder}/weighted_population_{subject_nums}.p', 'wb'))
         except Exception as e:
             print('failed to save model. Exception message: %s' % (str(e)))
             pdb.set_trace()
         return model_filename
 
-    def evolution(self, csv_file, evolution_file, model_init_configuration, evo_strategy):
+    def evolution(self, csv_file, evolution_file, evo_strategy):
+        fitness_functions = {'normal_fitness': NASUtils.normal_fitness,
+                             'cross_subject_shared_fitness': NASUtils.cross_subject_shared_fitness}
         if globals.get('grid'):
             breeding_method = models_generation.breed_grid
-            model_init = models_generation.random_grid_model
         else:
             breeding_method = breed_layers
-            model_init = random_model
-
         pop_size = globals.get('pop_size')
         num_generations = globals.get('num_generations')
-        evolution_results = pd.DataFrame()
-        weighted_population = []
-        for i in range(pop_size):  # generate pop_size random models
-            new_rand_model = model_init(globals.get(model_init_configuration))
-            NASUtils.hash_model(new_rand_model, self.models_set, self.genome_set)
-            weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
-
+        weighted_population = NASUtils.initialize_population(self.models_set, self.genome_set, self.subject_id)
         for generation in range(num_generations):
             if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NASUtils.inject_dropout(weighted_population)
             evo_strategy(weighted_population, generation)
             weighted_population = sorted(weighted_population,
-                                         key=lambda x: x[f'val_{globals.get("ga_objective")}'], reverse=True)
+                                         key=fitness_functions[globals.get('fitness_function')], reverse=True)
             stats = self.calculate_stats(weighted_population, evolution_file)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
@@ -323,13 +318,12 @@ class NaiveNAS:
 
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
-        return evolution_results
 
     def evolution_layers(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, 'num_layers', self.one_strategy)
+        return self.evolution(csv_file, evolution_file, self.one_strategy)
 
     def evolution_layers_all(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, 'num_layers', self.all_strategy)
+        return self.evolution(csv_file, evolution_file, self.all_strategy)
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
         if self.cuda:

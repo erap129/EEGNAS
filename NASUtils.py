@@ -1,7 +1,10 @@
+import pickle
+
 import networkx as nx
 import random
 import models_generation
 import globals
+from scipy.spatial.distance import pdist
 
 
 def get_metric_strs():
@@ -196,3 +199,41 @@ def equal_grid_models(layer_grid_1, layer_grid_2):
         if edge not in layer_grid_1.edges:
             return False
     return True
+
+
+def initialize_population(models_set, genome_set, subject_id):
+    if globals.get('grid'):
+        model_init = models_generation.random_grid_model
+    else:
+        model_init = models_generation.random_model
+    weighted_population = []
+    if globals.get('weighted_population_from_file'):
+        folder = f"models/{globals.get('models_dir')}"
+        if globals.get('cross_subject'):
+            return pickle.load(f'{folder}/weighted_population_'
+                               f'{"_".join([i for i in range(1, globals.get("num_subjects") + 1)])}.p')
+        else:
+            return pickle.load(f'{folder}/weighted_population_{subject_id}.p')
+    for i in range(globals.get('pop_size')):  # generate pop_size random models
+        new_rand_model = model_init(globals.get('num_layers'))
+        hash_model(new_rand_model, models_set, genome_set)
+        weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
+
+
+def cross_subject_shared_fitness(item, weighted_population):
+    fitness = item[f'val_{globals.get("ga_objective")}']
+    subject_array = [i in range (1, globals.get('num_subjects')+1)]
+    fitness_vector = [item[f'{i}_val_{globals.get("ga_objective")}'] for i in subject_array]
+    denominator = 1
+    max_pdist = pdist([[0 for i in subject_array], [100 for i in subject_array]])
+    for pop in weighted_population:
+        pop_fitness = [pop[f'{i}_val_{globals.get("ga_objective")}'] for i in range(1, globals.get('num_subjects')+1)]
+        dist = pdist([fitness_vector, pop_fitness])[0] / max_pdist
+        if dist < globals.get('min_dist'):
+            denominator += 1-dist
+    return fitness / denominator
+
+
+def normal_fitness(item):
+    return item[f'val_{globals.get("ga_objective")}']
+
