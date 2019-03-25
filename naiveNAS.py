@@ -250,7 +250,6 @@ class NaiveNAS:
             NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
-
     def save_best_model(self, weighted_population):
         try:
             save_model = finalize_model(weighted_population[0]['model']).to("cpu")
@@ -264,8 +263,6 @@ class NaiveNAS:
         return model_filename
 
     def evolution(self, csv_file, evolution_file, evo_strategy):
-        fitness_functions = {'normal_fitness': NASUtils.normal_fitness,
-                             'cross_subject_shared_fitness': NASUtils.cross_subject_shared_fitness}
         if globals.get('grid'):
             breeding_method = models_generation.breed_grid
         else:
@@ -277,8 +274,8 @@ class NaiveNAS:
             if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NASUtils.inject_dropout(weighted_population)
             evo_strategy(weighted_population, generation)
-            weighted_population = sorted(weighted_population,
-                                         key=fitness_functions[globals.get('fitness_function')], reverse=True)
+            getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
+            weighted_population = sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
             stats = self.calculate_stats(weighted_population, evolution_file)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):

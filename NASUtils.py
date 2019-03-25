@@ -206,34 +206,41 @@ def initialize_population(models_set, genome_set, subject_id):
         model_init = models_generation.random_grid_model
     else:
         model_init = models_generation.random_model
-    weighted_population = []
     if globals.get('weighted_population_from_file'):
         folder = f"models/{globals.get('models_dir')}"
         if globals.get('cross_subject'):
-            return pickle.load(f'{folder}/weighted_population_'
+            weighted_population = pickle.load(f'{folder}/weighted_population_'
                                f'{"_".join([i for i in range(1, globals.get("num_subjects") + 1)])}.p')
         else:
-            return pickle.load(f'{folder}/weighted_population_{subject_id}.p')
-    for i in range(globals.get('pop_size')):  # generate pop_size random models
-        new_rand_model = model_init(globals.get('num_layers'))
-        hash_model(new_rand_model, models_set, genome_set)
-        weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
+            weighted_population = pickle.load(f'{folder}/weighted_population_{subject_id}.p')
+    else:
+        weighted_population = []
+        for i in range(globals.get('pop_size')):
+            new_rand_model = model_init(globals.get('num_layers'))
+            weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
+    for i in range(globals.get('pop_size')):
+        hash_model(weighted_population[i]['model'], models_set, genome_set)
+    return weighted_population
 
 
-def cross_subject_shared_fitness(item, weighted_population):
-    fitness = item[f'val_{globals.get("ga_objective")}']
-    subject_array = [i in range (1, globals.get('num_subjects')+1)]
-    fitness_vector = [item[f'{i}_val_{globals.get("ga_objective")}'] for i in subject_array]
-    denominator = 1
-    max_pdist = pdist([[0 for i in subject_array], [100 for i in subject_array]])
+def cross_subject_shared_fitness(weighted_population):
+    for item in weighted_population:
+        fitness = item[f'val_{globals.get("ga_objective")}']
+        subject_array = range(1, globals.get('num_subjects')+1)
+        fitness_vector = [item[f'{i}_val_{globals.get("ga_objective")}'] for i in subject_array]
+        denominator = 1
+        dists = []
+        for pop in weighted_population:
+            pop_fitness = [pop[f'{i}_val_{globals.get("ga_objective")}'] for i in range(1, globals.get('num_subjects')+1)]
+            dists.append(pdist([fitness_vector, pop_fitness])[0])
+        dists_norm = [float(i)/max(dists) for i in dists]
+        for dist in dists_norm:
+            if dist < globals.get('min_dist'):
+                denominator += 1-dist
+        item['fitness'] = fitness / denominator
+
+
+def normal_fitness(weighted_population):
     for pop in weighted_population:
-        pop_fitness = [pop[f'{i}_val_{globals.get("ga_objective")}'] for i in range(1, globals.get('num_subjects')+1)]
-        dist = pdist([fitness_vector, pop_fitness])[0] / max_pdist
-        if dist < globals.get('min_dist'):
-            denominator += 1-dist
-    return fitness / denominator
-
-
-def normal_fitness(item):
-    return item[f'val_{globals.get("ga_objective")}']
+        pop['fitness'] = pop[f'val_{globals.get("ga_objective")}']
 
