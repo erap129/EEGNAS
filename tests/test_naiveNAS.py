@@ -1,7 +1,7 @@
 import unittest
 from braindecode.datautil.iterators import BalancedBatchSizeIterator
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, RuntimeMonitor
-from utils import GenericMonitor, accuracy_func
+from utils import GenericMonitor, acc_func
 import numpy as np
 from naiveNAS import NaiveNAS, finalize_model
 import NASUtils
@@ -34,7 +34,7 @@ class TestModelGeneration(unittest.TestCase):
         dummy_data = Dummy(X=np.ones(input_shape, dtype=np.float32), y=np.ones(50, dtype=np.longlong))
         self.iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
         self.loss_function = F.nll_loss
-        self.monitors = [LossMonitor(), MisclassMonitor(), GenericMonitor('accuracy', accuracy_func), RuntimeMonitor()]
+        self.monitors = [LossMonitor(), MisclassMonitor(), GenericMonitor('accuracy', acc_func), RuntimeMonitor()]
         self.stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
                              NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
         self.naiveNAS = NaiveNAS(iterator=self.iterator, exp_folder='../tests', exp_name='',

@@ -12,7 +12,7 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromT
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
 from utils import createFolder, GenericMonitor, NoIncrease, CroppedTrialGenericMonitor,\
-    accuracy_func, kappa_func, auc_func, f1_func
+    acc_func, kappa_func, auc_func, f1_func
 from argparse import ArgumentParser
 import logging
 import globals
@@ -83,7 +83,7 @@ def get_normal_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
                          NoIncrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
-    monitors = [LossMonitor(), GenericMonitor('accuracy', accuracy_func), RuntimeMonitor()]
+    monitors = [LossMonitor(), GenericMonitor('accuracy', acc_func), RuntimeMonitor()]
     loss_function = F.nll_loss
     if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b', 'Bloomberg']:
         monitors.append(GenericMonitor('auc', auc_func))
@@ -101,8 +101,8 @@ def get_cropped_settings():
                                        input_time_length=globals.get('input_time_len'),
                                        n_preds_per_input=globals.get('n_preds_per_input'))
     loss_function = lambda preds, targets: F.nll_loss(torch.mean(preds, dim=2, keepdim=False), targets)
-    monitors = [LossMonitor(), GenericMonitor('accuracy', accuracy_func),
-                CroppedTrialGenericMonitor('accuracy', accuracy_func,
+    monitors = [LossMonitor(), GenericMonitor('accuracy', acc_func),
+                CroppedTrialGenericMonitor('accuracy', acc_func,
                     input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
     if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b']:
         monitors.append(CroppedTrialGenericMonitor('auc', auc_func,
@@ -269,7 +269,8 @@ def set_params_by_dataset():
     globals.set('nn_objective', nn_objective[globals.get('dataset')])
     if globals.get('dataset') == 'Cho':
         globals.set('exclude_subjects', [32, 46, 49])
-
+    if globals.get('ensemble_iterations'):
+        globals.set('evaluation_metrics', globals.get('evaluation_metrics') + ['raw', 'target'])
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])

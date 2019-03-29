@@ -1,10 +1,14 @@
 import pickle
+from collections import defaultdict
 
 import networkx as nx
 import random
 import models_generation
 import globals
 from scipy.spatial.distance import pdist
+import numpy as np
+
+import utils
 
 
 def get_metric_strs():
@@ -36,6 +40,11 @@ def add_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
         pop[f"{str_prefix}train_{metric_str}"] = valuedict['train']
         pop[f"{str_prefix}val_{metric_str}"] = valuedict['valid']
         pop[f"{str_prefix}test_{metric_str}"] = valuedict['test']
+
+
+def add_raw_to_weighted_population(pop, raw):
+    for key, value in raw.items():
+        pop[key] = value
 
 
 def sum_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
@@ -243,4 +252,28 @@ def cross_subject_shared_fitness(weighted_population):
 def normal_fitness(weighted_population):
     for pop in weighted_population:
         pop['fitness'] = pop[f'val_{globals.get("ga_objective")}']
+
+
+def chunks(l, n):
+    """Yield successive n-sized chunks from l."""
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
+
+def ensemble_fitness(weighted_population):
+    pop_fitnesses = defaultdict(list)
+    for iteration in range(globals.get('ensemble_iterations')):
+        pop_indices = list(range(globals.get('pop_size')))
+        random.shuffle(pop_indices)
+        ensembles = list(chunks(pop_indices, globals.get('ensemble_size')))
+        for ensemble in ensembles:
+            ensemble_preds = np.mean([weighted_population[i]['val_raw'] for i in ensemble], axis=0)
+            pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
+            ensemble_targets = weighted_population[ensemble[0]]['val_target']
+            ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
+            for pop in ensemble:
+                pop_fitnesses[pop].append(ensemble_fit)
+    for pop_fitness in pop_fitnesses.items():
+        weighted_population[pop_fitness[0]]['fitness'] = np.average(pop_fitness[1])
+
 

@@ -126,7 +126,7 @@ def createFolder(directory):
         print ('Error: Creating directory. ' +  directory)
 
 
-def accuracy_func(all_pred_labels, all_trial_labels):
+def acc_func(all_pred_labels, all_trial_labels):
     accuracy = np.mean(all_pred_labels == all_trial_labels)
     return accuracy
 

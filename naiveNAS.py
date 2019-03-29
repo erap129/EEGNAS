@@ -1,5 +1,7 @@
+import itertools
 import pickle
 
+import utils
 from models_generation import random_model, finalize_model, target_model,\
     breed_layers
 from braindecode.torch_ext.util import np_to_var
@@ -9,7 +11,7 @@ import logging
 import torch.optim as optim
 from utils import RememberBest
 import pandas as pd
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import numpy as np
 import time
 import torch
@@ -24,6 +26,7 @@ from torch import nn
 from utils import summary, NoIncrease, dump_tensors
 import NASUtils
 import pdb
+from copy import deepcopy
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
@@ -155,7 +158,6 @@ class NaiveNAS:
                 self.evaluate_model(finalized_model, pop['model_state'])
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
-            # weighted_population[i]['finalized_model'] = model
             weighted_population[i]['train_time'] = final_time
             weighted_population[i]['num_epochs'] = num_epochs
             end_time = time.time()
@@ -198,7 +200,7 @@ class NaiveNAS:
 
     def calculate_stats(self, weighted_population, evolution_file):
         stats = {}
-        params = ['train_time', 'num_epochs']
+        params = ['train_time', 'num_epochs', 'fitness']
         params.extend(NASUtils.get_metric_strs())
         for param in params:
             stats[param] = np.mean([sample[param] for sample in weighted_population])
@@ -224,8 +226,6 @@ class NaiveNAS:
                                                                      weighted_population[:int(len(weighted_population)/5)]],
                                                          layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
-        # stats['similarity_measure'] = NASUtils.calculate_population_similarity(
-        #     [pop['model'] for pop in weighted_population], evolution_file, sim_count=globals.get('sim_count'))
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
@@ -239,14 +239,19 @@ class NaiveNAS:
             stats['num_of_models_with_skip'] = NASUtils.num_of_models_with_skip_connection(weighted_population)
         return stats
 
-    def add_final_stats(self, stats, model_filename):
-        model = torch.load(model_filename)
+    def add_final_stats(self, stats, weighted_population):
+        model = finalize_model(weighted_population[0]['model'])
+        if globals.get('ensemble_iterations'):
+            model = [finalize_model(weighted_population[i]['model']) for i in range(globals.get('ensemble_size'))]
         if globals.get('cropping'):
             self.finalized_model_to_dilated(model)
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
-            _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
+            if globals.get('ensemble_iterations'):
+                _, evaluations, _, num_epochs = self.ensemble_evaluate_model(model, final_evaluation=True, subject=subject)
+            else:
+                _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
             NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
@@ -310,8 +315,8 @@ class NaiveNAS:
                 if globals.get('save_every_generation'):
                     self.save_best_model(weighted_population)
             else:  # last generation
-                model_filename = self.save_best_model(weighted_population)
-                self.add_final_stats(stats, model_filename)
+                self.save_best_model(weighted_population)
+                self.add_final_stats(stats, weighted_population)
 
             self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
@@ -321,6 +326,44 @@ class NaiveNAS:
 
     def evolution_layers_all(self, csv_file, evolution_file):
         return self.evolution(csv_file, evolution_file, self.all_strategy)
+
+    def ensemble_evaluate_model(self, models, states=None, subject=None, final_evaluation=False):
+        if states is None:
+            states = [None for i in range(len(models))]
+        avg_final_time = 0
+        avg_num_epochs = 0
+        avg_evaluations = {}
+        _, evaluations, _, _ = self.evaluate_model(models[0], states[0], subject, final_evaluation)
+        for eval in evaluations.items():
+            avg_evaluations[eval[0]] = defaultdict(list)
+        for model, state in zip(models, states):
+            final_time, evaluations, state, num_epochs = self.evaluate_model(model, state, subject, final_evaluation)
+            for eval in evaluations.items():
+                for eval_spec in eval[1].items():
+                    avg_evaluations[eval[0]][eval_spec[0]].append(eval_spec[1])
+            avg_final_time += final_time
+            avg_num_epochs += num_epochs
+            states.append(state)
+        for eval in avg_evaluations.items():
+            for eval_spec in eval[1].items():
+                if type(eval_spec[1] == list):
+                    try:
+                        avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1], axis=0)
+                    except TypeError as e:
+                        print(f'the exception is: {str(e)}')
+                        pdb.set_trace()
+                else:
+                    avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1])
+        for dataset in ['train', 'valid', 'test']:
+            ensemble_preds = avg_evaluations['raw'][dataset]
+            pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
+            ensemble_targets = avg_evaluations['target'][dataset]
+            ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
+            objective_str = globals.get("ga_objective")
+            if objective_str == 'acc':
+                objective_str = 'accuracy'
+            avg_evaluations[objective_str][dataset] = ensemble_fit
+        return avg_final_time, avg_evaluations, states, avg_num_epochs
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
         if self.cuda:
@@ -333,7 +376,7 @@ class NaiveNAS:
                                                ('valid', self.datasets['valid'][subject]),
                                                ('test', self.datasets['test'][subject])))
         else:
-            single_subj_dataset = self.datasets
+            single_subj_dataset = deepcopy(self.datasets)
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop'):
             self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
@@ -361,6 +404,8 @@ class NaiveNAS:
                   f'current model state: {model.state_dict().keys()}')
             print('load state dict failed. Exception message: %s' % (str(e)))
             pdb.set_trace()
+        if final_evaluation:
+            single_subj_dataset['train'] = concatenate_sets([single_subj_dataset['train'], single_subj_dataset['valid']])
         self.monitor_epoch(single_subj_dataset, model)
         if globals.get('log_epochs'):
             self.log_epoch()
@@ -372,9 +417,9 @@ class NaiveNAS:
         self.setup_after_stop_training(model, final_evaluation)
         if final_evaluation:
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
-            datasets = single_subj_dataset
-            datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
-            num_epochs += self.run_until_stop(model, datasets)
+            # datasets = single_subj_dataset
+            # datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
+            num_epochs += self.run_until_stop(model, single_subj_dataset)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
@@ -437,6 +482,8 @@ class NaiveNAS:
             result_dict = m.monitor_epoch()
             if result_dict is not None:
                 result_dicts_per_monitor[m].update(result_dict)
+        raws = {}
+        targets = {}
         for setname in datasets:
             assert setname in ['train', 'valid', 'test']
             dataset = datasets[setname]
@@ -457,7 +504,14 @@ class NaiveNAS:
                                             dataset)
                 if result_dict is not None:
                     result_dicts_per_monitor[m].update(result_dict)
+
+            if globals.get('ensemble_iterations'):
+                raws.update({f'{setname}_raw': list(itertools.chain.from_iterable(all_preds))})
+                targets.update({f'{setname}_target': list(itertools.chain.from_iterable(all_targets))})
         row_dict = OrderedDict()
+        if globals.get('ensemble_iterations'):
+            row_dict.update(raws)
+            row_dict.update(targets)
         for m in self.monitors:
             row_dict.update(result_dicts_per_monitor[m])
         self.epochs_df = self.epochs_df.append(row_dict, ignore_index=True)
