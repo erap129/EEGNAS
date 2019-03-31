@@ -25,6 +25,7 @@ import code, traceback, signal
 
 global data_folder, valid_set_fraction, config
 
+
 def debug(sig, frame):
     """Interrupt running process, and provide a python prompt for
     interactive debugging."""
@@ -271,6 +272,7 @@ def set_params_by_dataset():
         globals.set('exclude_subjects', [32, 46, 49])
     if globals.get('ensemble_iterations'):
         globals.set('evaluation_metrics', globals.get('evaluation_metrics') + ['raw', 'target'])
+
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])

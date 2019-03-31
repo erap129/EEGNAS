@@ -241,17 +241,16 @@ class NaiveNAS:
 
     def add_final_stats(self, stats, weighted_population):
         model = finalize_model(weighted_population[0]['model'])
-        if globals.get('ensemble_iterations'):
-            model = [finalize_model(weighted_population[i]['model']) for i in range(globals.get('ensemble_size'))]
         if globals.get('cropping'):
             self.finalized_model_to_dilated(model)
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
             if globals.get('ensemble_iterations'):
-                _, evaluations, _, num_epochs = self.ensemble_evaluate_model(model, final_evaluation=True, subject=subject)
-            else:
-                _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
+                ensemble = [finalize_model(weighted_population[i]['model']) for i in range(globals.get('ensemble_size'))]
+                _, evaluations, _, num_epochs = self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
+                NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
+            _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
             NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
@@ -354,6 +353,7 @@ class NaiveNAS:
                         pdb.set_trace()
                 else:
                     avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1])
+        new_avg_evaluations = defaultdict(dict)
         for dataset in ['train', 'valid', 'test']:
             ensemble_preds = avg_evaluations['raw'][dataset]
             pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
@@ -362,8 +362,8 @@ class NaiveNAS:
             objective_str = globals.get("ga_objective")
             if objective_str == 'acc':
                 objective_str = 'accuracy'
-            avg_evaluations[objective_str][dataset] = ensemble_fit
-        return avg_final_time, avg_evaluations, states, avg_num_epochs
+            new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
+        return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
         if self.cuda:
