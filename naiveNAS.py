@@ -281,6 +281,8 @@ class NaiveNAS:
             getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
             weighted_population = sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
             stats = self.calculate_stats(weighted_population, evolution_file)
+            if globals.get('ranking_correlation_num_iterations'):
+                NASUtils.ranking_correlations(weighted_population, stats)
             if generation < num_generations - 1:
                 for index, model in enumerate(weighted_population):
                     decay_functions = {'linear': lambda x: x,
