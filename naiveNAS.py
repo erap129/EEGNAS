@@ -419,8 +419,6 @@ class NaiveNAS:
         self.setup_after_stop_training(model, final_evaluation)
         if final_evaluation:
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
-            # datasets = single_subj_dataset
-            # datasets['train'] = concatenate_sets([datasets['train'], datasets['valid']])
             num_epochs += self.run_until_stop(model, single_subj_dataset)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
