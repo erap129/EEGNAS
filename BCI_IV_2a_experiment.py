@@ -1,5 +1,7 @@
 import os
 import platform
+import re
+
 import pandas as pd
 from collections import OrderedDict, defaultdict
 from itertools import product, chain
@@ -54,19 +56,21 @@ def parse_args(args):
 
 
 def generate_report(filename, report_filename):
-    params = ['train_time', 'test_acc', 'val_acc', 'train_acc', 'num_epochs', 'final_test_acc', 'final_val_acc', 'final_train_acc',
-              'final_test_auc', 'final_val_auc', 'final_train_auc', 'final_test_kappa', 'final_val_kappa', 'final_train_kappa',
-              'final_test_f1', 'final_val_f1', 'final_train_f1']
+    params = ['final']
     params_to_average = defaultdict(float)
+    avg_count = defaultdict(int)
     data = pd.read_csv(filename)
     for param in params:
-        avg_count = 0
         for index, row in data.iterrows():
-            if param in row['param_name']:
-                params_to_average[param] += float(row['param_value'])
-                avg_count += 1
-        if avg_count != 0:
-            params_to_average[param] /= avg_count
+            if param in row['param_name'] and 'raw' not in row['param_name'] and 'target' not in row['param_name']:
+                row_param = row['param_name']
+                intro = re.compile('\d_')
+                if intro.match(row_param):
+                    row_param = row_param[2:]
+                params_to_average[row_param] += float(row['param_value'])
+                avg_count[row_param] += 1
+        for key, value in params_to_average.items():
+            params_to_average[key] = params_to_average[key] / avg_count[key]
     pd.DataFrame(params_to_average, index=[0]).to_csv(report_filename)
 
 
@@ -355,6 +359,3 @@ if __name__ == '__main__':
     finally:
         if args.garbage == 't':
             garbage_time()
-
-
-
