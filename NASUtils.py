@@ -17,6 +17,8 @@ def get_metric_strs():
     for evaluation_metric in globals.get('evaluation_metrics'):
         if evaluation_metric == 'accuracy':
             evaluation_metric = 'acc'
+        if evaluation_metric in ['raw', 'target']:
+            continue
         result.append(f"train_{evaluation_metric}")
         result.append(f"val_{evaluation_metric}")
         result.append(f"test_{evaluation_metric}")
@@ -53,9 +55,10 @@ def sum_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
         metric_str = metric
         if metric == 'accuracy':
             metric_str = 'acc'
-        pop[f"{str_prefix}train_{metric_str}"] += valuedict['train']
-        pop[f"{str_prefix}val_{metric_str}"] += valuedict['valid']
-        pop[f"{str_prefix}test_{metric_str}"] += valuedict['test']
+        if f"{str_prefix}train_{metric_str}" in pop:
+            pop[f"{str_prefix}train_{metric_str}"] += valuedict['train']
+            pop[f"{str_prefix}val_{metric_str}"] += valuedict['valid']
+            pop[f"{str_prefix}test_{metric_str}"] += valuedict['test']
 
 
 def get_model_state(model):
@@ -299,13 +302,13 @@ def ranking_correlations(weighted_population, stats):
         globals.set('ensemble_iterations', num_iterations)
         for fitness_func in globals.get('ranking_correlation_fitness_funcs'):
             weighted_pop_copy = deepcopy(weighted_population)
-            for pop, i in enumerate(weighted_pop_copy):
+            for i, pop in enumerate(weighted_pop_copy):
                 pop['order'] = i
-            fitness_funcs[fitness_func](weighted_population)
+            fitness_funcs[fitness_func](weighted_pop_copy)
             weighted_pop_copy = sorted(weighted_pop_copy, key=lambda x: x['fitness'], reverse=True)
             ranking = [pop['order'] for pop in weighted_pop_copy]
             rankings.append(ranking)
-        correlation = spearmanr(*[rankings])
+        correlation = spearmanr(*rankings)
         stats[f'ranking_correlation_{num_iterations}'] = correlation[0]
     globals.set('ensemble_iterations', old_ensemble_iterations)
 
