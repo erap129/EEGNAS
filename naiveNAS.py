@@ -279,7 +279,7 @@ class NaiveNAS:
                 NASUtils.inject_dropout(weighted_population)
             evo_strategy(weighted_population, generation)
             getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
-            weighted_population = sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
+            weighted_population = NASUtils.sort_population(weighted_population)
             stats = self.calculate_stats(weighted_population, evolution_file)
             if globals.get('ranking_correlation_num_iterations'):
                 NASUtils.ranking_correlations(weighted_population, stats)

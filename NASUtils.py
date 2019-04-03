@@ -266,12 +266,10 @@ def chunks(l, n):
 
 def calc_ensembles_fitness(ensembles, pop_fitnesses, weighted_population):
     for ensemble in ensembles:
-        ensemble_preds = np.mean([weighted_population[i]['val_raw'] for i in ensemble], axis=0)
-        pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
-        ensemble_targets = weighted_population[ensemble[0]]['val_target']
-        ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
+        ensemble_fit = one_ensemble_fitness(weighted_population, ensemble)
         for pop in ensemble:
             pop_fitnesses[pop].append(ensemble_fit)
+        return ensemble_fit
 
 
 def ensemble_fitness(weighted_population):
@@ -285,13 +283,27 @@ def ensemble_fitness(weighted_population):
         weighted_population[pop_fitness[0]]['fitness'] = np.average(pop_fitness[1])
 
 
+def one_ensemble_fitness(weighted_population, ensemble):
+    ensemble_preds = np.mean([weighted_population[i]['val_raw'] for i in ensemble], axis=0)
+    pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
+    ensemble_targets = weighted_population[ensemble[0]]['val_target']
+    ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
+    return ensemble_fit
+
+
 def permanent_ensemble_fitness(weighted_population):
-    pop_fitnesses = defaultdict(list)
     pop_indices = list(range(globals.get('pop_size')))
     ensembles = list(chunks(pop_indices, globals.get('ensemble_size')))
-    calc_ensembles_fitness(ensembles, pop_fitnesses, weighted_population)
-    for pop_fitness in pop_fitnesses.items():
-        weighted_population[pop_fitness[0]]['fitness'] = np.average(pop_fitness[1])
+    perm_ensemble_fitnesses = []
+    for i, ensemble in enumerate(ensembles):
+        ensemble_fit = one_ensemble_fitness(ensemble, weighted_population)
+        ensemble_fit_dict = {'group_id': i, 'fitness': ensemble_fit}
+        perm_ensemble_fitnesses.append(ensemble_fit_dict)
+        for pop_index in ensemble:
+            weighted_population[pop_index]['fitness'] = ensemble_fit_dict['fitness']
+            weighted_population[pop_index]['group_id'] = ensemble_fit_dict['group_id']
+    perm_ensemble_fitnesses.sort(reverse=True, key=lambda x: x['fitness'])
+    weighted_population.append(perm_ensemble_fitnesses)
 
 
 def ranking_correlations(weighted_population, stats):
@@ -311,6 +323,21 @@ def ranking_correlations(weighted_population, stats):
         correlation = spearmanr(*rankings)
         stats[f'ranking_correlation_{num_iterations}'] = correlation[0]
     globals.set('ensemble_iterations', old_ensemble_iterations)
+
+
+def sort_population(weighted_population):
+    new_weighted_pop = []
+    if globals.get('permanent_ensembles'):
+        ensemble_order = weighted_population[globals.get('pop_size')]
+        del weighted_population[globals.get('pop_size')]
+        for order in ensemble_order:
+            pops = [weighted_population[i] for i in range(globals.get('pop_size'))
+                    if weighted_population[i]['group_id'] == order['group_id']]
+            new_weighted_pop.extend(pops)
+        return new_weighted_pop
+    else:
+        return sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
+
 
 
 
