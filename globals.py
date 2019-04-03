@@ -12,6 +12,11 @@ def set_config(configuration):
     config = configuration
 
 
+def set_dummy_config():
+    global config
+    config = {'DEFAULT': {'exp_name':'dummy'}, 'dummy': {}}
+
+
 def get(key):
     global config
     if key in config[config['DEFAULT']['exp_name']]:
