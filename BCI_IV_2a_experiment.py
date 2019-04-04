@@ -260,7 +260,7 @@ def set_params_by_dataset():
                           'SonarSub': ["accuracy"]}
     ga_objective = {'HG': 'acc', 'BCI_IV_2a': 'acc', 'BCI_IV_2b': "kappa",
                           'NER15': "auc", 'Cho': 'acc', 'Bloomberg': "auc",
-                          'NYSE': 'acc', 'HumanActivity': 'acc', 'Opportunity': "f1", 'SonarSub': 'accuracy'}
+                          'NYSE': 'acc', 'HumanActivity': 'acc', 'Opportunity': "f1", 'SonarSub': 'acc'}
     nn_objective = {'HG': 'accuracy', 'BCI_IV_2a': 'accuracy', 'BCI_IV_2b': "kappa",
                           'NER15': "auc", 'Cho': 'accuracy', 'Bloomberg': "auc",
                           'NYSE': 'accuracy', 'HumanActivity': 'accuracy', 'Opportunity': "f1", 'SonarSub': 'accuracy'}
