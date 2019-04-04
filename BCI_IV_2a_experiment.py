@@ -90,7 +90,7 @@ def get_normal_settings():
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
     monitors = [LossMonitor(), GenericMonitor('accuracy', acc_func), RuntimeMonitor()]
     loss_function = F.nll_loss
-    if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b', 'Bloomberg', 'SonarSub']:
+    if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b', 'Bloomberg']:
         monitors.append(GenericMonitor('auc', auc_func))
     if globals.get('dataset') in ['BCI_IV_2b']:
         monitors.append(GenericMonitor('kappa', kappa_func))
@@ -257,13 +257,13 @@ def set_params_by_dataset():
     evaluation_metrics = {'HG': ['accuracy'], 'BCI_IV_2a': ['accuracy'], 'BCI_IV_2b': ["accuracy", "auc", "kappa"],
                           'NER15': ["accuracy", "auc"], 'Cho': ['accuracy'], 'Bloomberg': ["accuracy", "auc"],
                           'NYSE': ['accuracy'], 'HumanActivity': ['accuracy'], 'Opportunity': ["accuracy", "f1"],
-                          'SonarSub': ["accuracy", "auc"]}
+                          'SonarSub': ["accuracy"]}
     ga_objective = {'HG': 'acc', 'BCI_IV_2a': 'acc', 'BCI_IV_2b': "kappa",
                           'NER15': "auc", 'Cho': 'acc', 'Bloomberg': "auc",
-                          'NYSE': 'acc', 'HumanActivity': 'acc', 'Opportunity': "f1", 'SonarSub': 'auc'}
+                          'NYSE': 'acc', 'HumanActivity': 'acc', 'Opportunity': "f1", 'SonarSub': 'accuracy'}
     nn_objective = {'HG': 'accuracy', 'BCI_IV_2a': 'accuracy', 'BCI_IV_2b': "kappa",
                           'NER15': "auc", 'Cho': 'accuracy', 'Bloomberg': "auc",
-                          'NYSE': 'accuracy', 'HumanActivity': 'accuracy', 'Opportunity': "f1", 'SonarSub': 'auc'}
+                          'NYSE': 'accuracy', 'HumanActivity': 'accuracy', 'Opportunity': "f1", 'SonarSub': 'accuracy'}
     globals.set('num_subjects', num_subjects[globals.get('dataset')])
     globals.set('cross_subject_sampling_rate', cross_subject_sampling_rate[globals.get('dataset')])
     globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
