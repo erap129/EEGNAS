@@ -329,6 +329,16 @@ def get_opportunity_train_val_test(data_folder):
         return train_set, valid_set, test_set
 
 
+def get_sonarsub_train_val_test(data_folder):
+    X = np.load(f"{data_folder}SonarSub/data_file_aug.npy")
+    y = np.load(f"{data_folder}SonarSub/labels_file_aug.npy")
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=globals.get('valid_set_fraction'))
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=globals.get('valid_set_fraction'))
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
+
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
     if globals.get('dataset') == 'BCI_IV_2a':
         return get_bci_iv_2a_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)
@@ -348,3 +358,5 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_human_activity_train_val_test(data_folder, subject_id)
     elif globals.get('dataset') == 'Opportunity':
         return get_opportunity_train_val_test(data_folder)
+    elif globals.get('dataset') == 'SonarSub':
+        return get_sonarsub_train_val_test(data_folder)
