@@ -296,7 +296,7 @@ def permanent_ensemble_fitness(weighted_population):
     ensembles = list(chunks(pop_indices, globals.get('ensemble_size')))
     perm_ensemble_fitnesses = []
     for i, ensemble in enumerate(ensembles):
-        ensemble_fit = one_ensemble_fitness(ensemble, weighted_population)
+        ensemble_fit = one_ensemble_fitness(weighted_population, ensemble)
         ensemble_fit_dict = {'group_id': i, 'fitness': ensemble_fit}
         perm_ensemble_fitnesses.append(ensemble_fit_dict)
         for pop_index in ensemble:
@@ -337,7 +337,6 @@ def sort_population(weighted_population):
         return new_weighted_pop
     else:
         return sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
-
 
 
 

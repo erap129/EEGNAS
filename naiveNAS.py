@@ -267,10 +267,6 @@ class NaiveNAS:
         return model_filename
 
     def evolution(self, csv_file, evolution_file, evo_strategy):
-        if globals.get('grid'):
-            breeding_method = models_generation.breed_grid
-        else:
-            breeding_method = breed_layers
         pop_size = globals.get('pop_size')
         num_generations = globals.get('num_generations')
         weighted_population = NASUtils.initialize_population(self.models_set, self.genome_set, self.subject_id)
@@ -292,22 +288,7 @@ class NaiveNAS:
                         del weighted_population[index]
                     else:
                         model['age'] += 1
-                children = []
-                while len(weighted_population) + len(children) < pop_size:
-                    breeders = random.sample(range(len(weighted_population)), 2)
-                    first_breeder = weighted_population[breeders[0]]
-                    second_breeder = weighted_population[breeders[1]]
-                    first_model_state = NASUtils.get_model_state(first_breeder)
-                    second_model_state = NASUtils.get_model_state(second_breeder)
-                    new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
-                                                                first_model=first_breeder['model'],
-                                                                 second_model=second_breeder['model'],
-                                                                 first_model_state=first_model_state,
-                                                                 second_model_state=second_model_state)
-                    if new_model is not None:
-                        children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
-                        NASUtils.hash_model(new_model, self.models_set, self.genome_set)
-                weighted_population.extend(children)
+                NASUtils.breed_population(weighted_population)
                 if globals.get('dynamic_mutation_rate'):
                     if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
                         self.mutation_rate *= globals.get('mutation_rate_change_factor')
@@ -327,6 +308,53 @@ class NaiveNAS:
 
     def evolution_layers_all(self, csv_file, evolution_file):
         return self.evolution(csv_file, evolution_file, self.all_strategy)
+
+    def breed_population(self, weighted_population):
+        if globals.get('grid'):
+            breeding_method = models_generation.breed_grid
+        else:
+            breeding_method = breed_layers
+        if globals.get('perm_ensembles'):
+            self.breed_perm_ensembles(weighted_population, breeding_method)
+        else:
+            self.breed_normal_population(weighted_population, breeding_method)
+
+    def breed_perm_ensembles(self, weighted_population, breeding_method):
+        children = []
+        ensembles = list(NASUtils.chunks(list(range(globals.get('pop_size'))), globals.get('ensemble_size')))
+        while len(weighted_population) + len(children) < globals.get('pop_size') * globals.get('ensemble_size'):
+            breeders = random.sample(ensembles, 2)
+            first_breeder = weighted_population[breeders[0]]
+            second_breeder = weighted_population[breeders[1]]
+            first_model_state = [NASUtils.get_model_state(first_breeder[i]) for i in breeders[0]]
+            second_model_state = [NASUtils.get_model_state(second_breeder[i]) for i in breeders[1]]
+            new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
+                                                         first_model=first_breeder['model'],
+                                                         second_model=second_breeder['model'],
+                                                         first_model_state=first_model_state,
+                                                         second_model_state=second_model_state)
+            if new_model is not None:
+                children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
+                NASUtils.hash_model(new_model, self.models_set, self.genome_set)
+        weighted_population.extend(children)
+
+    def breed_normal_population(self, weighted_population, breeding_method):
+        children = []
+        while len(weighted_population) + len(children) < globals.get('pop_size'):
+            breeders = random.sample(range(len(weighted_population)), 2)
+            first_breeder = weighted_population[breeders[0]]
+            second_breeder = weighted_population[breeders[1]]
+            first_model_state = NASUtils.get_model_state(first_breeder)
+            second_model_state = NASUtils.get_model_state(second_breeder)
+            new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
+                                                         first_model=first_breeder['model'],
+                                                         second_model=second_breeder['model'],
+                                                         first_model_state=first_model_state,
+                                                         second_model_state=second_model_state)
+            if new_model is not None:
+                children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
+                NASUtils.hash_model(new_model, self.models_set, self.genome_set)
+        weighted_population.extend(children)
 
     def ensemble_evaluate_model(self, models, states=None, subject=None, final_evaluation=False):
         if states is None:
