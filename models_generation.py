@@ -739,6 +739,23 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
         return None, None
 
 
+def breed_two_ensembles(breeding_method, mutation_rate, first_ensemble, second_ensemble, first_ensemble_states=None,
+                        second_ensemble_states=None, cut_point=None):
+    if cut_point is None:
+        if globals.get('grid'):
+            cut_point = random.randint(0, globals.get('num_layers')[1] - 1)
+        else:
+            cut_point = random.randint(0, globals.get('num_layers') - 1)
+    models = []
+    states = []
+    for m1, m2, s1, s2 in zip(first_ensemble, second_ensemble, first_ensemble_states, second_ensemble_states):
+        assert(m1['perm_ensemble_id'] == m2['perm_ensemble_id'])
+        combined, combined_state = breeding_method(mutation_rate, m1['model'], m2['model'], s1, s2, cut_point)
+        models.append(combined)
+        states.append(combined_state)
+    return models, states
+
+
 def target_model(model_name):
     input_time_len = globals.get('input_time_len')
     n_classes = globals.get('n_classes')

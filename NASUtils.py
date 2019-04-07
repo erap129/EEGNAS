@@ -283,12 +283,22 @@ def ensemble_fitness(weighted_population):
         weighted_population[pop_fitness[0]]['fitness'] = np.average(pop_fitness[1])
 
 
-def one_ensemble_fitness(weighted_population, ensemble):
-    ensemble_preds = np.mean([weighted_population[i]['val_raw'] for i in ensemble], axis=0)
+def one_ensemble_fitness(weighted_population, ensemble, str_prefix=''):
+    ensemble_preds = np.mean([weighted_population[i][f'{str_prefix}val_raw'] for i in ensemble], axis=0)
     pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
-    ensemble_targets = weighted_population[ensemble[0]]['val_target']
+    ensemble_targets = weighted_population[ensemble[0]][f'{str_prefix}val_target']
     ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
     return ensemble_fit
+
+
+def calculate_ensemble_fitness(weighted_population, ensemble):
+    if globals.get('cross_subject'):
+        ensemble_fit = 0
+        for subject in range(1, globals.get('num_subjects') + 1):
+            ensemble_fit += one_ensemble_fitness(weighted_population, ensemble, str_prefix=f'{subject}_')
+        return ensemble_fit / globals.get('num_subjects')
+    else:
+        return one_ensemble_fitness(weighted_population, ensemble)
 
 
 def permanent_ensemble_fitness(weighted_population):
@@ -296,7 +306,7 @@ def permanent_ensemble_fitness(weighted_population):
     ensembles = list(chunks(pop_indices, globals.get('ensemble_size')))
     perm_ensemble_fitnesses = []
     for i, ensemble in enumerate(ensembles):
-        ensemble_fit = one_ensemble_fitness(weighted_population, ensemble)
+        ensemble_fit = calculate_ensemble_fitness(weighted_population, ensemble)
         ensemble_fit_dict = {'group_id': i, 'fitness': ensemble_fit}
         perm_ensemble_fitnesses.append(ensemble_fit_dict)
         for pop_index in ensemble:
@@ -327,7 +337,7 @@ def ranking_correlations(weighted_population, stats):
 
 def sort_population(weighted_population):
     new_weighted_pop = []
-    if globals.get('permanent_ensembles'):
+    if globals.get('perm_ensembles'):
         ensemble_order = weighted_population[globals.get('pop_size')]
         del weighted_population[globals.get('pop_size')]
         for order in ensemble_order:

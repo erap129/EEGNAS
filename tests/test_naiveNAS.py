@@ -7,11 +7,12 @@ from naiveNAS import NaiveNAS, finalize_model
 import NASUtils
 from models_generation import uniform_model, breed_layers,\
     ConvLayer, ActivationLayer
-from BCI_IV_2a_experiment import get_configurations, parse_args
+from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset, get_normal_settings
 from models_generation import target_model, random_model, random_grid_model
 import globals
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
 from globals import init_config
+from data_preprocessing import DummySignalTarget
 import torch.nn.functional as F
 
 
@@ -19,13 +20,14 @@ class TestModelGeneration(unittest.TestCase):
     def setUp(self):
         args = parse_args(['-e', 'tests', '-c', '../configurations/config.ini'])
         init_config(args.config)
-        configs = get_configurations(args)
+        configs = get_configurations(args.experiment)
         assert(len(configs) == 1)
         globals.set_config(configs[0])
         globals.set('eeg_chans', 22)
         globals.set('num_subjects', 9)
         globals.set('input_time_len', 1125)
         globals.set('n_classes', 4)
+        set_params_by_dataset()
         input_shape = (50, globals.get('eeg_chans'), globals.get('input_time_len'))
         class Dummy:
             def __init__(self, X, y):
@@ -42,6 +44,12 @@ class TestModelGeneration(unittest.TestCase):
                             stop_criterion=self.stop_criterion, monitors=self.monitors, loss_function=self.loss_function,
                             config=globals.config, subject_id=1, fieldnames=None,
                             model_from_file=None)
+
+    @staticmethod
+    def generate_dummy_data(batch_size):
+        dummy_data = DummySignalTarget(np.random.rand(batch_size, globals.get('eeg_chans'), globals.get('input_time_len')),
+                                 np.random.randint(0, globals.get('n_classes')-1, batch_size))
+        return dummy_data, dummy_data, dummy_data
 
     def test_hash_model_nochange(self):
         model1 = uniform_model(10, ActivationLayer)
@@ -99,9 +107,18 @@ class TestModelGeneration(unittest.TestCase):
 
     def test_save_best_model_grid(self):
         globals.set('grid', True)
-        weighted_population = [{'model': random_grid_model(10)}]
+        globals.set('layer_num', [10, 10])
+        weighted_population = [{'model': random_grid_model([10,10])}]
         self.naiveNAS.save_best_model(weighted_population)
-    
+
+    # def test_perm_ensembles(self):
+    #     train_dummy, val_dummy, test_dummy = self.generate_dummy_data(10)
+    #     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+    #     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
+    #                         train_set=train_dummy, val_set=val_dummy, test_set=test_dummy,
+    #                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
+    #                         config=globals.config, subject_id=1, fieldnames=None)
+    #     naiveNAS.evolution_layers(None, None)
 
 if __name__ == '__main__':
     unittest.main()

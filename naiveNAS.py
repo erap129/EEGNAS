@@ -3,7 +3,7 @@ import pickle
 
 import utils
 from models_generation import random_model, finalize_model, target_model,\
-    breed_layers
+    breed_layers, breed_two_ensembles
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import models_generation
@@ -66,7 +66,7 @@ def show_progress(train_time):
 class NaiveNAS:
     def __init__(self, iterator, exp_folder, exp_name, loss_function,
                  train_set, val_set, test_set, stop_criterion, monitors,
-                 config, subject_id, fieldnames, model_from_file=None):
+                 config, subject_id, fieldnames, strategy, evolution_file, csv_file, model_from_file=None):
         global model_train_times
         model_train_times = []
         self.iterator = iterator
@@ -90,6 +90,9 @@ class NaiveNAS:
         self.fieldnames = fieldnames
         self.models_set = []
         self.genome_set = []
+        self.evo_strategy = {'cross_subject': self.all_strategy, 'per_subject': self.one_strategy}[strategy]
+        self.csv_file = csv_file
+        self.evolution_file = evolution_file
         if isinstance(self.subject_id, int):
             self.current_chosen_population_sample = [self.subject_id]
         else:
@@ -121,7 +124,7 @@ class NaiveNAS:
                                                 input_time_length=globals.get('input_time_len'),
                                                 n_preds_per_input=globals.get('n_preds_per_input'))
 
-    def run_target_model(self, csv_file):
+    def run_target_model(self):
         globals.set('max_epochs', globals.get('final_max_epochs'))
         globals.set('max_increase_epochs', globals.get('final_max_increase_epochs'))
         if self.model_from_file is not None:
@@ -137,7 +140,7 @@ class NaiveNAS:
             self.evaluate_model(model, final_evaluation=True)
         stats = {'train_time': str(final_time)}
         NASUtils.add_evaluations_to_stats(stats, evaluations)
-        self.write_to_csv(csv_file, stats, generation=1)
+        self.write_to_csv(stats, generation=1)
 
     def sample_subjects(self):
         self.current_chosen_population_sample = sorted(random.sample(
@@ -198,7 +201,7 @@ class NaiveNAS:
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
 
-    def calculate_stats(self, weighted_population, evolution_file):
+    def calculate_stats(self, weighted_population):
         stats = {}
         params = ['train_time', 'num_epochs', 'fitness']
         params.extend(NASUtils.get_metric_strs())
@@ -266,29 +269,32 @@ class NaiveNAS:
             pdb.set_trace()
         return model_filename
 
-    def evolution(self, csv_file, evolution_file, evo_strategy):
-        pop_size = globals.get('pop_size')
+    def evaluate_and_sort(self, weighted_population, generation):
+        self.evo_strategy(weighted_population, generation)
+        getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
+        weighted_population = NASUtils.sort_population(weighted_population)
+        stats = self.calculate_stats(weighted_population)
+        if globals.get('ranking_correlation_num_iterations'):
+            NASUtils.ranking_correlations(weighted_population, stats)
+        return stats, weighted_population
+
+    @staticmethod
+    def mark_perm_ensembles(weighted_population):
+        for i, pop in enumerate(weighted_population):
+            pop['perm_ensemble_id'] = i % globals.get('ensemble_size')
+
+    def evolution(self):
         num_generations = globals.get('num_generations')
         weighted_population = NASUtils.initialize_population(self.models_set, self.genome_set, self.subject_id)
         for generation in range(num_generations):
+            if globals.get('perm_ensembles'):
+                self.mark_perm_ensembles(weighted_population)
             if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NASUtils.inject_dropout(weighted_population)
-            evo_strategy(weighted_population, generation)
-            getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
-            weighted_population = NASUtils.sort_population(weighted_population)
-            stats = self.calculate_stats(weighted_population, evolution_file)
-            if globals.get('ranking_correlation_num_iterations'):
-                NASUtils.ranking_correlations(weighted_population, stats)
+            stats, weighted_population = self.evaluate_and_sort(weighted_population, generation)
             if generation < num_generations - 1:
-                for index, model in enumerate(weighted_population):
-                    decay_functions = {'linear': lambda x: x,
-                                       'log': lambda x: np.sqrt(np.log(x + 1))}
-                    if random.uniform(0, 1) < decay_functions[globals.get('decay_function')](index / pop_size):
-                        NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
-                        del weighted_population[index]
-                    else:
-                        model['age'] += 1
-                NASUtils.breed_population(weighted_population)
+                weighted_population = self.selection(weighted_population)
+                self.breed_population(weighted_population)
                 if globals.get('dynamic_mutation_rate'):
                     if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
                         self.mutation_rate *= globals.get('mutation_rate_change_factor')
@@ -300,14 +306,40 @@ class NaiveNAS:
                 self.save_best_model(weighted_population)
                 self.add_final_stats(stats, weighted_population)
 
-            self.write_to_csv(csv_file, {k: str(v) for k, v in stats.items()}, generation + 1)
-            self.print_to_evolution_file(evolution_file, weighted_population[:3], generation)
+            self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
+            self.print_to_evolution_file(weighted_population[:3], generation)
 
-    def evolution_layers(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, self.one_strategy)
+    def selection(self, weighted_population):
+        if globals.get('perm_ensembles'):
+            return self.selection_perm_ensembles(weighted_population)
+        else:
+            return self.selection_normal(weighted_population)
 
-    def evolution_layers_all(self, csv_file, evolution_file):
-        return self.evolution(csv_file, evolution_file, self.all_strategy)
+    def selection_normal(self, weighted_population):
+        for index, model in enumerate(weighted_population):
+            decay_functions = {'linear': lambda x: x,
+                               'log': lambda x: np.sqrt(np.log(x + 1))}
+            if random.uniform(0, 1) < decay_functions[globals.get('decay_function')](index / globals.get('pop_size')):
+                NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
+                del weighted_population[index]
+            else:
+                model['age'] += 1
+        return weighted_population
+
+    def selection_perm_ensembles(self, weighted_population):
+        ensembles = list(NASUtils.chunks(list(range(globals.get('pop_size'))), globals.get('ensemble_size')))
+        for index, ensemble in enumerate(ensembles):
+            decay_functions = {'linear': lambda x: x,
+                               'log': lambda x: np.sqrt(np.log(x + 1))}
+            if random.uniform(0, 1) < decay_functions[globals.get('decay_function')](index / len(ensembles)) and\
+                len([pop for pop in weighted_population if pop is not None]) > 2 * globals.get('ensemble_size'):
+                for pop in ensemble:
+                    NASUtils.remove_from_models_hash(weighted_population[pop]['model'], self.models_set, self.genome_set)
+                    weighted_population[pop] = None
+            else:
+                for pop in ensemble:
+                    weighted_population[pop]['age'] += 1
+        return [pop for pop in weighted_population if pop is not None]
 
     def breed_population(self, weighted_population):
         if globals.get('grid'):
@@ -321,21 +353,22 @@ class NaiveNAS:
 
     def breed_perm_ensembles(self, weighted_population, breeding_method):
         children = []
-        ensembles = list(NASUtils.chunks(list(range(globals.get('pop_size'))), globals.get('ensemble_size')))
-        while len(weighted_population) + len(children) < globals.get('pop_size') * globals.get('ensemble_size'):
+        ensembles = list(NASUtils.chunks(list(range(len(weighted_population))), globals.get('ensemble_size')))
+        while len(weighted_population) + len(children) < globals.get('pop_size'):
             breeders = random.sample(ensembles, 2)
-            first_breeder = weighted_population[breeders[0]]
-            second_breeder = weighted_population[breeders[1]]
-            first_model_state = [NASUtils.get_model_state(first_breeder[i]) for i in breeders[0]]
-            second_model_state = [NASUtils.get_model_state(second_breeder[i]) for i in breeders[1]]
-            new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
-                                                         first_model=first_breeder['model'],
-                                                         second_model=second_breeder['model'],
-                                                         first_model_state=first_model_state,
-                                                         second_model_state=second_model_state)
-            if new_model is not None:
-                children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
-                NASUtils.hash_model(new_model, self.models_set, self.genome_set)
+            first_ensemble = [weighted_population[i] for i in breeders[0]]
+            second_ensemble = [weighted_population[i] for i in breeders[1]]
+            first_ensemble_states = [NASUtils.get_model_state(pop) for pop in first_ensemble]
+            second_ensemble_states = [NASUtils.get_model_state(pop) for pop in second_ensemble]
+            new_ensemble, new_ensemble_states = breed_two_ensembles(breeding_method, mutation_rate=self.mutation_rate,
+                                                                     first_ensemble=first_ensemble,
+                                                                     second_ensemble=second_ensemble,
+                                                                     first_ensemble_states=first_ensemble_states,
+                                                                     second_ensemble_states=second_ensemble_states)
+            if None not in new_ensemble:
+                for new_model, new_model_state in zip(new_ensemble, new_ensemble_states):
+                    children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
+                    NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
 
     def breed_normal_population(self, weighted_population, breeding_method):
@@ -615,18 +648,17 @@ class NaiveNAS:
             val_loss /= len(data.X)
         return correct / len(data.X)
 
-    fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
-
-    def write_to_csv(self, csv_file, stats, generation):
-        with open(csv_file, 'a', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=self.fieldnames)
-            if self.subject_id == 'all':
-                subject = ','.join(str(x) for x in self.current_chosen_population_sample)
-            else:
-                subject = str(self.subject_id)
-            for key, value in stats.items():
-                writer.writerow({'exp_name': self.exp_name, 'subject': subject,
-                                 'generation': str(generation), 'param_name': key, 'param_value': value})
+    def write_to_csv(self, stats, generation):
+        if self.csv_file is not None:
+            with open(self.csv_file, 'a', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=self.fieldnames)
+                if self.subject_id == 'all':
+                    subject = ','.join(str(x) for x in self.current_chosen_population_sample)
+                else:
+                    subject = str(self.subject_id)
+                for key, value in stats.items():
+                    writer.writerow({'exp_name': self.exp_name, 'subject': subject,
+                                     'generation': str(generation), 'param_name': key, 'param_value': value})
 
     def garbage_time(self):
         model = target_model('deep')
@@ -634,16 +666,17 @@ class NaiveNAS:
             print('GARBAGE TIME GARBAGE TIME GARBAGE TIME')
             self.evaluate_model(model)
 
-    def print_to_evolution_file(self, evolution_file, models, generation):
+    def print_to_evolution_file(self, models, generation):
         global text_file
-        with open(evolution_file, "a") as text_file_local:
-            text_file = text_file_local
-            print('Architectures for Subject %s, Generation %d\n' % (str(self.subject_id), generation), file=text_file)
-            for model in models:
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
-                finalized_model = finalize_model(model['model'])
-                print_model = finalized_model.to(device)
-                summary(print_model, (globals.get('eeg_chans'), globals.get('input_time_len'), 1), file=text_file)
+        if self.evolution_file is not None:
+            with open(self.evolution_file, "a") as text_file_local:
+                text_file = text_file_local
+                print('Architectures for Subject %s, Generation %d\n' % (str(self.subject_id), generation), file=text_file)
+                for model in models:
+                    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
+                    finalized_model = finalize_model(model['model'])
+                    print_model = finalized_model.to(device)
+                    summary(print_model, (globals.get('eeg_chans'), globals.get('input_time_len'), 1), file=text_file)
 
 
 

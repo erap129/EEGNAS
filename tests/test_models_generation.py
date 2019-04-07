@@ -46,12 +46,12 @@ class TestModelGeneration(unittest.TestCase):
     def test_fix_model(self):
         model1 = uniform_model(3, ConvLayer)
         try:
-            MyModel.new_model_from_structure_pytorch(model1)
+            models_generation.new_model_from_structure_pytorch(model1)
             assert False
         except Exception:
             assert True
         try:
-            MyModel.new_model_from_structure_pytorch(model1, applyFix=True)
+            models_generation.new_model_from_structure_pytorch(model1, applyFix=True)
             assert True
         except Exception:
             assert False
@@ -68,9 +68,9 @@ class TestModelGeneration(unittest.TestCase):
         globals.set('num_layers', 4)
         globals.set('mutation_rate', 0)
         model1 = uniform_model(4, ConvLayer)
-        model1_state = finalize_model(model1).model.state_dict()
+        model1_state = finalize_model(model1).state_dict()
         model2 = uniform_model(4, ConvLayer)
-        model2_state = finalize_model(model2).model.state_dict()
+        model2_state = finalize_model(model2).state_dict()
         model3, model3_state = breed_layers(0, model1, model2, model1_state, model2_state, 2)
         for s1, s3 in zip(list(model1_state.values())[:4], list(model3_state.values())[:4]):
             assert((s1==s3).all())
@@ -92,7 +92,7 @@ class TestModelGeneration(unittest.TestCase):
         assert(network_similarity(model1, model2) > network_similarity(model2, model3))
 
     def test_random_grid_model(self):
-        model = models_generation.random_grid_model(10)
+        model = models_generation.random_grid_model([10, 10])
         for i in range(100):
             add_random_connection(model)
         model.add_edge('input', (0, 5))
@@ -104,7 +104,7 @@ class TestModelGeneration(unittest.TestCase):
         plt.show()
 
     def test_remove_random_connection(self):
-        model = models_generation.random_grid_model(10)
+        model = models_generation.random_grid_model([10, 10])
         num_connections = len(list(model.edges))
         models_generation.remove_random_connection(model)
         assert(len(list(model.edges)) == num_connections - 1)
@@ -139,9 +139,6 @@ class TestModelGeneration(unittest.TestCase):
 
         # for i in range(100):
         #     add_random_connection(model)
-
-
-        summary(real_model, (globals.get('eeg_chans'), globals.get('input_time_len'), 1))
         input_shape = (60, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
         out = real_model(np_to_var(np.ones(input_shape, dtype=np.float32)))
         s = Source(make_dot(out), filename="test.gv", format="png")
@@ -220,9 +217,9 @@ class TestModelGeneration(unittest.TestCase):
 
     def test_grid_equality(self):
         globals.set('grid', True)
-        layer_grid_1 = models_generation.random_grid_model(2)
-        layer_grid_2 = models_generation.random_grid_model(2)
-        layer_grid_3 = models_generation.random_grid_model(2)
+        layer_grid_1 = models_generation.random_grid_model([2, 2])
+        layer_grid_2 = models_generation.random_grid_model([2, 2])
+        layer_grid_3 = models_generation.random_grid_model([2, 2])
 
         layer_grid_1.nodes[(0,0)]['layer'] = ConvLayer(filter_num=10, kernel_time=10)
         layer_grid_1.nodes[(0,1)]['layer'] = BatchNormLayer()

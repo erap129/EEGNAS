@@ -198,6 +198,7 @@ def target_exp(stop_criterion, iterator, loss_function, model_from_file=None):
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
+                            strategy='per_subject', evolution_file=None, csv_file=csv_file,
                             model_from_file=model_from_file)
         naiveNAS.run_target_model(csv_file)
 
@@ -208,12 +209,13 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
         writer.writeheader()
     for subject_id in subjects:
         train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
+        evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames)
-        evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
-        naiveNAS.evolution_layers(csv_file, evolution_file)
+                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
+                            evolution_file=evolution_file, csv_file=csv_file)
+        naiveNAS.evolution()
 
 
 def cross_subject_exp(stop_criterion, iterator, loss_function):
@@ -228,13 +230,14 @@ def cross_subject_exp(stop_criterion, iterator, loss_function):
         train_set_all[subject_id] = train_set
         val_set_all[subject_id] = val_set
         test_set_all[subject_id] = test_set
+    evolution_file = '%s/archs.txt' % (exp_folder)
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id='all', fieldnames=fieldnames)
-    evolution_file = '%s/archs.txt' % (exp_folder)
+                        config=globals.config, subject_id='all', fieldnames=fieldnames, strategy='cross_subject',
+                        evolution_file=evolution_file, csv_file=csv_file)
     if globals.get('exp_type') == 'evolution_layers':
-        naiveNAS.evolution_layers_all(csv_file, evolution_file)
+        naiveNAS.evolution()
     elif globals.get('exp_type') == 'target':
         naiveNAS.run_target_model(csv_file)
 
