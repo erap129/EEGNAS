@@ -27,6 +27,18 @@ log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
 
 
+def get_ch_names():
+    train_filename = 'A01T.gdf'
+    test_filename = 'A01E.gdf'
+    train_filepath = os.path.join('../data/BCI_IV/', train_filename)
+    test_filepath = os.path.join('../data/BCI_IV/', test_filename)
+    train_label_filepath = train_filepath.replace('.gdf', '.mat')
+
+    train_loader = BCI_IV_2a(train_filepath, train_label_filepath)
+    train_cnt = train_loader.load()
+    return train_cnt.ch_names
+
+
 def get_bci_iv_2a_train_val_test(data_folder,subject_id, low_cut_hz):
     ival = [-500, 4000]  # this is the window around the event from which we will take data to feed to the classifier
     high_cut_hz = 38  # cut off parts of signal higher than 38 hz

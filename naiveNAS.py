@@ -297,9 +297,9 @@ class NaiveNAS:
                 self.breed_population(weighted_population)
                 if globals.get('dynamic_mutation_rate'):
                     if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
-                        self.mutation_rate *= globals.get('mutation_rate_change_factor')
+                        self.mutation_rate *= globals.get('mutation_rate_increase_rate')
                     else:
-                        self.mutation_rate = globals.get('mutation_rate')
+                        self.mutation_rate /= globals.get('mutation_rate_decrease_rate')
                 if globals.get('save_every_generation'):
                     self.save_best_model(weighted_population)
             else:  # last generation
@@ -428,7 +428,7 @@ class NaiveNAS:
             new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
-    def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
+    def evaluate_model(self, model, state=None, subject=None, final_evaluation=False, delete_model=True):
         if self.cuda:
             torch.cuda.empty_cache()
         if final_evaluation:
@@ -490,7 +490,8 @@ class NaiveNAS:
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
-        del model
+        if delete_model:
+            del model
         if self.cuda:
             torch.cuda.empty_cache()
         return final_time, evaluations, self.rememberer.model_state_dict, num_epochs

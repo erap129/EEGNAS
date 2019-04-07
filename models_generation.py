@@ -659,6 +659,13 @@ def inherit_grid_states(dim, cut_point, child_model_state, first_model_state, se
     copy_one_layer_states('output', child_model_state, second_model_state)
 
 
+def mutate_layer(model, layer_index):
+    old_layer = model[layer_index]
+    model[layer_index] = random_layer()
+    if not check_legal_model(model):
+        model[layer_index] = old_layer
+
+
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
     save_weights = False
@@ -668,12 +675,9 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
         for i in range(cut_point):
             second_model[i] = first_model[i]
         save_weights = globals.get('inherit_weights_crossover') and globals.get('inherit_weights_normal')
-    if random.random() < mutation_rate:
-        while True:
-            rand_layer = random.randint(0, globals.get('num_layers') - 1)
-            second_model[rand_layer] = random_layer()
-            if check_legal_model(second_model):
-                break
+    for layer_index in range(len(second_model)):
+        if random.random() < mutation_rate:
+            mutate_layer(second_model, layer_index)
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
