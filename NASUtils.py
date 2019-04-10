@@ -30,6 +30,8 @@ def add_evaluations_to_stats(stats, evaluations, str_prefix=''):
         metric_str = metric
         if metric == 'accuracy':
             metric_str = 'acc'
+        if metric in ['raw', 'target']:
+            continue
         stats[f"{str_prefix}train_{metric_str}"] = valuedict['train']
         stats[f"{str_prefix}val_{metric_str}"] = valuedict['valid']
         stats[f"{str_prefix}test_{metric_str}"] = valuedict['test']

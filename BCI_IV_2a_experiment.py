@@ -24,7 +24,10 @@ import csv
 import time
 import json
 import code, traceback, signal
-
+from os import listdir
+from os.path import isfile, join
+from pydrive.drive import GoogleDrive
+from pydrive.auth import GoogleAuth
 global data_folder, valid_set_fraction, config
 
 
@@ -52,11 +55,12 @@ def parse_args(args):
     parser.add_argument("-e", "--experiment", help="experiment type", default='tests')
     parser.add_argument("-m", "--model", help="path to Pytorch model file")
     parser.add_argument("-g", "--garbage", help="Use garbage time", default='f')
+    parser.add_argument("-d", "--drive", help="Save results to google drive", default='f')
     return parser.parse_args(args)
 
 
 def generate_report(filename, report_filename):
-    params = ['final']
+    params = ['final', 'from_file']
     params_to_average = defaultdict(float)
     avg_count = defaultdict(int)
     data = pd.read_csv(filename)
@@ -67,6 +71,9 @@ def generate_report(filename, report_filename):
                 intro = re.compile('\d_')
                 if intro.match(row_param):
                     row_param = row_param[2:]
+                outro = row_param.find('from_file')
+                if outro != -1:
+                    row_param = row_param[outro:]
                 params_to_average[row_param] += float(row['param_value'])
                 avg_count[row_param] += 1
         for key, value in params_to_average.items():
@@ -200,7 +207,7 @@ def target_exp(stop_criterion, iterator, loss_function, model_from_file=None):
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
                             strategy='per_subject', evolution_file=None, csv_file=csv_file,
                             model_from_file=model_from_file)
-        naiveNAS.run_target_model(csv_file)
+        naiveNAS.run_target_model()
 
 
 def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
@@ -282,6 +289,52 @@ def set_params_by_dataset():
         globals.set('evaluation_metrics', globals.get('evaluation_metrics') + ['raw', 'target'])
 
 
+def connect_to_gdrive():
+    gauth = GoogleAuth()
+    # Try to load saved client credentials
+    gauth.LoadCredentialsFile("mycreds.txt")
+    if gauth.credentials is None:
+        # Authenticate if they're not there
+        gauth.CommandLineAuth()
+    elif gauth.access_token_expired:
+        # Refresh them if expired
+        gauth.Refresh()
+    else:
+        # Initialize the saved creds
+        gauth.Authorize()
+    # Save the current credentials to a file
+    gauth.SaveCredentialsFile("mycreds.txt")
+    drive = GoogleDrive(gauth)
+    return drive
+
+
+def upload_exp_to_gdrive(fold_names, first_dataset):
+    ind = fold_names[0].find('_')
+    end_ind = fold_names[0].rfind(first_dataset)
+    base_folder_name = list(fold_names[0])
+    base_folder_name[ind + 1] = 'x'
+    base_folder_name = base_folder_name[:end_ind-1]
+    base_folder_name = ''.join(base_folder_name)
+    drive = connect_to_gdrive()
+    base_folder = drive.CreateFile({'title': base_folder_name,
+                                   'parents': [{"id": '1z6y-g4HqmQm7i8R2h66sDd5e6AV1IhVM'}],
+                                    'mimeType': "application/vnd.google-apps.folder"})
+    base_folder.Upload()
+    for folder in fold_names:
+        full_folder = 'results/' + folder
+        spec_folder = drive.CreateFile({'title': folder,
+                                        'parents': [{"id": base_folder['id']}],
+                                        'mimeType': "application/vnd.google-apps.folder"})
+        spec_folder.Upload()
+        files = [f for f in listdir(full_folder) if isfile(join(full_folder, f))]
+        for filename in files:
+            if '.p' not in filename:
+                file_drive = drive.CreateFile({'title': filename,
+                                                   'parents': [{"id": spec_folder['id']}]})
+                file_drive.SetContentFile(str(join(full_folder, filename)))
+                file_drive.Upload()
+
+
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
@@ -305,6 +358,8 @@ if __name__ == '__main__':
 
     try:
         experiments = args.experiment.split(',')
+        folder_names = []
+        first_run = True
         for experiment in experiments:
             configurations = get_configurations(experiment)
             multiple_values = get_multiple_values(configurations)
@@ -312,6 +367,9 @@ if __name__ == '__main__':
                 try:
                     globals.set_config(configuration)
                     set_params_by_dataset()
+                    if first_run:
+                        first_dataset = globals.get('dataset')
+                        first_run = False
                     if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2')\
                             and not globals.get('force_gpu_off'):
                         globals.set('cuda', True)
@@ -328,9 +386,10 @@ if __name__ == '__main__':
                     else:
                         subjects = random.sample(range(1, globals.get('num_subjects')),
                                                  globals.get('subjects_to_check'))
-                    exp_name = f"{exp_id}_{index+1}_{experiment}"
-                    exp_folder = f"results/{exp_name}_{globals.get('dataset')}"
+                    exp_name = f"{exp_id}_{index+1}_{experiment}_{globals.get('dataset')}"
+                    exp_folder = f"results/{exp_name}"
                     createFolder(exp_folder)
+                    folder_names.append(exp_name)
                     write_dict(globals.config, f"{exp_folder}/config_{exp_name}.ini")
                     csv_file = f"{exp_folder}/{exp_name}.csv"
                     report_file = f"{exp_folder}/report_{exp_name}.csv"
@@ -360,6 +419,8 @@ if __name__ == '__main__':
                     new_exp_folder = exp_folder + '_fail'
                     os.rename(exp_folder, new_exp_folder)
                     write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
+        if args.drive == 't':
+            upload_exp_to_gdrive(folder_names, first_dataset)
     finally:
         if args.garbage == 't':
             garbage_time()

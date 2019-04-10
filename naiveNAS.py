@@ -139,7 +139,7 @@ class NaiveNAS:
         final_time, evaluations, model_state, num_epochs =\
             self.evaluate_model(model, final_evaluation=True)
         stats = {'train_time': str(final_time)}
-        NASUtils.add_evaluations_to_stats(stats, evaluations)
+        NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
         self.write_to_csv(stats, generation=1)
 
     def sample_subjects(self):
@@ -257,17 +257,38 @@ class NaiveNAS:
             NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
+    def validate_model_from_file(self, stats):
+        if globals.get('ensemble_iterations'):
+            weighted_population = pickle.load(open(self.weighted_population_file, 'rb'))
+        for subject in self.current_chosen_population_sample:
+            for iteration in range(globals.get('final_test_iterations')):
+                model = torch.load(self.model_filename)
+                _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
+                NASUtils.add_evaluations_to_stats(stats, evaluations,
+                                                  str_prefix=f"{subject}_iteration_{iteration}_from_file_")
+                if globals.get('ensemble_iterations'):
+                    ensemble = [finalize_model(weighted_population[i]['model']) for i in
+                                range(globals.get('ensemble_size'))]
+                    _, evaluations, _, num_epochs = self.ensemble_evaluate_model(ensemble, final_evaluation=True,
+                                                                                     subject=subject)
+                    NASUtils.add_evaluations_to_stats(stats, evaluations,
+                                                      str_prefix=f"{subject}_iteration_{iteration}_from_file_")
+
     def save_best_model(self, weighted_population):
         try:
             save_model = finalize_model(weighted_population[0]['model']).to("cpu")
             subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
-            model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
-            torch.save(save_model, model_filename)
-            pickle.dump(weighted_population, open(f'{self.exp_folder}/weighted_population_{subject_nums}.p', 'wb'))
+            self.model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
+            torch.save(save_model, self.model_filename)
         except Exception as e:
             print('failed to save model. Exception message: %s' % (str(e)))
             pdb.set_trace()
-        return model_filename
+        return self.model_filename
+
+    def save_final_population(self, weighted_population):
+        subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
+        self.weighted_population_file = f'{self.exp_folder}/weighted_population_{subject_nums}.p'
+        pickle.dump(weighted_population, open(self.weighted_population_file, 'wb'))
 
     def evaluate_and_sort(self, weighted_population, generation):
         self.evo_strategy(weighted_population, generation)
@@ -304,10 +325,12 @@ class NaiveNAS:
                     self.save_best_model(weighted_population)
             else:  # last generation
                 self.save_best_model(weighted_population)
+                self.save_final_population(weighted_population)
                 self.add_final_stats(stats, weighted_population)
+                self.validate_model_from_file(stats)
 
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
-            self.print_to_evolution_file(weighted_population[:3], generation)
+            self.print_to_evolution_file(weighted_population[:3], generation + 1)
 
     def selection(self, weighted_population):
         if globals.get('perm_ensembles'):
