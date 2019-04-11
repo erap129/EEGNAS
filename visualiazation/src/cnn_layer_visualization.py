@@ -17,7 +17,6 @@ from misc_functions import preprocess_image, recreate_image, save_image, create_
 import matplotlib.pyplot as plt
 from models_generation import target_model
 import globals
-import matplotlib.pyplot as plt
 import numpy as np
 from braindecode.models import deep4, shallow_fbcsp, eegnet
 from data_preprocessing import get_ner_train_val_test, get_bci_iv_2a_train_val_test
@@ -47,14 +46,14 @@ class CNNLayerVisualization():
         self.model[self.selected_layer].register_forward_hook(hook_function)
 
     @staticmethod
-    def create_spectrogram_2(data):
+    def create_spectrogram_2(data, fs):
         plt.subplot(211)
         plt.plot(np.arange(len(data)), data)
         plt.xlabel('Sample')
         plt.ylabel('Amplitude')
         plt.subplot(212)
-        frequencies, times, spectrogram = signal.spectrogram(data, fs=250, window='hamming', noverlap=150)
-        plt.pcolormesh(times, frequencies, spectrogram)
+        frequencies, times, spectrogram = signal.spectrogram(data, fs=fs, window='hamming', noverlap=150)
+        plt.pcolormesh(times, frequencies, 10*np.log10(spectrogram))
         plt.ylim((0,50))
         plt.ylabel('Frequency [Hz]')
         plt.xlabel('Time [sec]')
@@ -108,16 +107,16 @@ class CNNLayerVisualization():
             self.created_image = create_mne(processed_image)
 
             if i % 10 == 0:
-                # self.plotly_stacked()
-                CNNLayerVisualization.create_spectrogram_2(np.array(processed_image.detach().numpy().squeeze()[0]))
+                CNNLayerVisualization.create_spectrogram_2(np.array(processed_image.detach().numpy().squeeze()[0]), 250)
 
 
 def plot_real_EEG():
     globals.set('valid_set_fraction', 0.2)
     train, val, test = get_bci_iv_2a_train_val_test('../../data/BCI_IV', 4, 0)
+    # train, val, test = get_ner_train_val_test('../../data/')
     data = train.X[0].squeeze()
     for channel in data:
-        CNNLayerVisualization.create_spectrogram_2(channel)
+        CNNLayerVisualization.create_spectrogram_2(channel, fs=250)
 
 
 if __name__ == '__main__':
@@ -130,8 +129,7 @@ if __name__ == '__main__':
     filter_pos = {'evolution': 5, 'deep4': 150}
     pretrained_model = {'evolution': torch.load('../models/best_model_9_8_6_7_2_1_3_4_5.th'),
                         'deep4': target_model('deep')}
-
     # layer_vis = CNNLayerVisualization(pretrained_model[selection], cnn_layer[selection], filter_pos[selection])
     # layer_vis.visualise_layer_with_hooks()
-
+    #
     plot_real_EEG()

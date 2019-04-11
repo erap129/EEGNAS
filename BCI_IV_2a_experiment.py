@@ -146,8 +146,8 @@ def garbage_time():
 
 def get_configurations(experiment):
     configurations = []
-    default_config = globals.init_config._defaults
-    exp_config = globals.init_config._sections[experiment]
+    default_config = globals.configs._defaults
+    exp_config = globals.configs._sections[experiment]
     for key in default_config.keys():
         default_config[key] = json.loads(default_config[key])
     default_config['exp_name'] = [experiment]

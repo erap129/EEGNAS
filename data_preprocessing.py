@@ -1,9 +1,10 @@
 import os
 from braindecode.datasets.bbci import BBCIDataset
+from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import matplotlib
 matplotlib.use('Agg')
-from BCI_IV_2a_loader import BCI_IV_2a
 from collections import OrderedDict
 from braindecode.mne_ext.signalproc import mne_apply, resample_cnt
 from braindecode.datautil.splitters import split_into_two_sets
@@ -34,7 +35,7 @@ def get_ch_names():
     test_filepath = os.path.join('../data/BCI_IV/', test_filename)
     train_label_filepath = train_filepath.replace('.gdf', '.mat')
 
-    train_loader = BCI_IV_2a(train_filepath, train_label_filepath)
+    train_loader = BCICompetition4Set2A(train_filepath, labels_filename=train_label_filepath)
     train_cnt = train_loader.load()
     return train_cnt.ch_names
 
@@ -52,8 +53,8 @@ def get_bci_iv_2a_train_val_test(data_folder,subject_id, low_cut_hz):
     train_label_filepath = train_filepath.replace('.gdf', '.mat')
     test_label_filepath = test_filepath.replace('.gdf', '.mat')
 
-    train_loader = BCI_IV_2a(train_filepath, train_label_filepath)
-    test_loader = BCI_IV_2a(test_filepath, test_label_filepath)
+    train_loader = BCICompetition4Set2A(train_filepath, labels_filename=train_label_filepath)
+    test_loader = BCICompetition4Set2A(test_filepath, labels_filename=test_label_filepath)
     train_cnt = train_loader.load()
     test_cnt = test_loader.load()
 

@@ -2,9 +2,9 @@ import configparser
 
 
 def init_config(filepath):
-    global init_config
-    init_config = configparser.ConfigParser()
-    init_config.read(filepath)
+    global configs
+    configs = configparser.ConfigParser()
+    configs.read(filepath)
 
 
 def set_config(configuration):

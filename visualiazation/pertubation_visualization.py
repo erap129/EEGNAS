@@ -22,7 +22,6 @@ from models_generation import target_model
 from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.torch_ext.util import np_to_var
 import numpy as np
-from BCI_IV_2a_loader import BCI_IV_2a
 
 args = parse_args(['-e', 'tests', '-c', '../configurations/config.ini'])
 globals.init_config(args.config)
@@ -42,7 +41,7 @@ train_set, valid_set, test_set = get_train_val_test('../data/', 1, 0)
 
 # Set if you want to use GPU
 # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
-cuda = True
+cuda = False
 set_random_seeds(seed=20170629, cuda=cuda)
 
 # This will determine how many crops are processed in parallel
