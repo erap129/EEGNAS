@@ -1,4 +1,6 @@
 import pdb
+import sys
+
 import torch
 import numpy as np
 from Bio.pairwise2 import format_alignment
@@ -666,6 +668,21 @@ def mutate_layer(model, layer_index):
         model[layer_index] = old_layer
 
 
+def mutate_models(model, mutation_rate):
+    if random.random() < mutation_rate:
+        while True:
+            rand_layer = random.randint(0, len(model) - 1)
+            model[rand_layer] = random_layer()
+            if check_legal_model(model):
+                break
+
+
+def mutate_layers(model, mutation_rate):
+    for layer_index in range(len(second_model)):
+        if random.random() < mutation_rate:
+            mutate_layer(model, layer_index)
+
+
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
     save_weights = False
@@ -675,9 +692,8 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
         for i in range(cut_point):
             second_model[i] = first_model[i]
         save_weights = globals.get('inherit_weights_crossover') and globals.get('inherit_weights_normal')
-    for layer_index in range(len(second_model)):
-        if random.random() < mutation_rate:
-            mutate_layer(second_model, layer_index)
+    this_module = sys.modules[__name__]
+    getattr(this_module, globals.get('mutation_method'))(second_model, mutation_rate)
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)

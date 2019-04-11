@@ -320,7 +320,8 @@ class NaiveNAS:
                     if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
                         self.mutation_rate *= globals.get('mutation_rate_increase_rate')
                     else:
-                        self.mutation_rate /= globals.get('mutation_rate_decrease_rate')
+                        # self.mutation_rate /= globals.get('mutation_rate_decrease_rate')
+                        self.mutation_rate = globals.get('mutation_rate')
                 if globals.get('save_every_generation'):
                     self.save_best_model(weighted_population)
             else:  # last generation
