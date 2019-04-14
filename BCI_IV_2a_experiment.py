@@ -419,8 +419,8 @@ if __name__ == '__main__':
                     new_exp_folder = exp_folder + '_fail'
                     os.rename(exp_folder, new_exp_folder)
                     write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
+    finally:
         if args.drive == 't':
             upload_exp_to_gdrive(folder_names, first_dataset)
-    finally:
         if args.garbage == 't':
             garbage_time()
