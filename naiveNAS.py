@@ -290,11 +290,24 @@ class NaiveNAS:
         self.weighted_population_file = f'{self.exp_folder}/weighted_population_{subject_nums}.p'
         pickle.dump(weighted_population, open(self.weighted_population_file, 'wb'))
 
+    @staticmethod
+    def add_parent_child_relations(weighted_population, stats):
+        avg_ratio = 0
+        avg_count = 0
+        for pop in weighted_population:
+            if 'parents' in pop:
+                parent_fitness = (pop['parents'][0]['fitness'] + pop['parents'][1]['fitness']) / 2
+                avg_ratio += pop['fitness'] / parent_fitness
+                avg_count += 1
+        if avg_count != 0:
+            stats['parent_child_ratio'] = avg_ratio / avg_count
+
     def evaluate_and_sort(self, weighted_population, generation):
         self.evo_strategy(weighted_population, generation)
         getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
         weighted_population = NASUtils.sort_population(weighted_population)
         stats = self.calculate_stats(weighted_population)
+        self.add_parent_child_relations(weighted_population, stats)
         if globals.get('ranking_correlation_num_iterations'):
             NASUtils.ranking_correlations(weighted_population, stats)
         return stats, weighted_population
@@ -391,7 +404,8 @@ class NaiveNAS:
                                                                      second_ensemble_states=second_ensemble_states)
             if None not in new_ensemble:
                 for new_model, new_model_state in zip(new_ensemble, new_ensemble_states):
-                    children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
+                    children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
+                                     'parents': [first_ensemble[0], second_ensemble[0]]})
                     NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
 
@@ -409,7 +423,8 @@ class NaiveNAS:
                                                          first_model_state=first_model_state,
                                                          second_model_state=second_model_state)
             if new_model is not None:
-                children.append({'model': new_model, 'model_state': new_model_state, 'age': 0})
+                children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
+                                 'parents': [first_breeder, second_breeder]})
                 NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
 
