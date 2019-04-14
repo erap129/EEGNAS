@@ -76,8 +76,8 @@ def generate_report(filename, report_filename):
                     row_param = row_param[outro:]
                 params_to_average[row_param] += float(row['param_value'])
                 avg_count[row_param] += 1
-        for key, value in params_to_average.items():
-            params_to_average[key] = params_to_average[key] / avg_count[key]
+    for key, value in params_to_average.items():
+        params_to_average[key] = params_to_average[key] / avg_count[key]
     pd.DataFrame(params_to_average, index=[0]).to_csv(report_filename)
 
 
