@@ -322,17 +322,18 @@ def upload_exp_to_gdrive(fold_names, first_dataset):
     base_folder.Upload()
     for folder in fold_names:
         full_folder = 'results/' + folder
-        spec_folder = drive.CreateFile({'title': folder,
-                                        'parents': [{"id": base_folder['id']}],
-                                        'mimeType': "application/vnd.google-apps.folder"})
-        spec_folder.Upload()
-        files = [f for f in listdir(full_folder) if isfile(join(full_folder, f))]
-        for filename in files:
-            if '.p' not in filename:
-                file_drive = drive.CreateFile({'title': filename,
-                                                   'parents': [{"id": spec_folder['id']}]})
-                file_drive.SetContentFile(str(join(full_folder, filename)))
-                file_drive.Upload()
+        if os.path.isdir(full_folder):
+            spec_folder = drive.CreateFile({'title': folder,
+                                            'parents': [{"id": base_folder['id']}],
+                                            'mimeType': "application/vnd.google-apps.folder"})
+            spec_folder.Upload()
+            files = [f for f in listdir(full_folder) if isfile(join(full_folder, f))]
+            for filename in files:
+                if '.p' not in filename:
+                    file_drive = drive.CreateFile({'title': filename,
+                                                       'parents': [{"id": spec_folder['id']}]})
+                    file_drive.SetContentFile(str(join(full_folder, filename)))
+                    file_drive.Upload()
 
 
 if __name__ == '__main__':

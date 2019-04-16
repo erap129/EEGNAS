@@ -285,12 +285,22 @@ def ensemble_fitness(weighted_population):
         weighted_population[pop_fitness[0]]['fitness'] = np.average(pop_fitness[1])
 
 
-def one_ensemble_fitness(weighted_population, ensemble, str_prefix=''):
+def one_subject_one_ensemble_fitness(weighted_population, ensemble, str_prefix=''):
     ensemble_preds = np.mean([weighted_population[i][f'{str_prefix}val_raw'] for i in ensemble], axis=0)
     pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
     ensemble_targets = weighted_population[ensemble[0]][f'{str_prefix}val_target']
     ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
     return ensemble_fit
+
+
+def one_ensemble_fitness(weighted_population, ensemble):
+    if globals.get('cross_subject'):
+        ensemble_fit = 0
+        for subject in globals.get('subjects_to_check'):
+            ensemble_fit += one_subject_one_ensemble_fitness(weighted_population, ensemble, str_prefix=f'{subject}_')
+        return ensemble_fit / len(globals.get('subjects_to_check'))
+    else:
+        return one_subject_one_ensemble_fitness(weighted_population, ensemble)
 
 
 def calculate_ensemble_fitness(weighted_population, ensemble):
