@@ -14,7 +14,7 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromT
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
 from utils import createFolder, GenericMonitor, NoIncrease, CroppedTrialGenericMonitor,\
-    acc_func, kappa_func, auc_func, f1_func
+    acc_func, kappa_func, auc_func, f1_func, CroppedGenericMonitorPerTimeStep
 from argparse import ArgumentParser
 import logging
 import globals
@@ -120,7 +120,9 @@ def get_cropped_settings():
         monitors.append(CroppedTrialGenericMonitor('auc', auc_func,
                     input_time_length=globals.get('input_time_len')))
     if globals.get('dataset') in ['BCI_IV_2b']:
-        monitors.append(CroppedTrialGenericMonitor('kappa', kappa_func,
+        # monitors.append(CroppedTrialGenericMonitor('kappa', kappa_func,
+        #             input_time_length=globals.get('input_time_len')))
+        monitors.append(CroppedGenericMonitorPerTimeStep('kappa', kappa_func,
                     input_time_length=globals.get('input_time_len')))
     return stop_criterion, iterator, loss_function, monitors
 

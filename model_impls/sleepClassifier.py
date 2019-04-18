@@ -1,8 +1,11 @@
 import torch
 from braindecode.torch_ext.modules import Expression
+from braindecode.torch_ext.util import np_to_var
+
 import globals
 from torch import nn
 from torchsummary import summary
+import numpy as np
 C=30
 
 class MyModel:
@@ -52,6 +55,10 @@ def get_sleep_classifier():
     model.add_module('pool_2', nn.MaxPool2d(kernel_size=(1, 16), stride=(1, 16)))
     model.add_module('flatten', Flatten())
     model.add_module('dropout', nn.Dropout(p=0.5))
+
+    input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+    out = model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
+    
     model.add_module('dense', nn.Linear(in_features=176, out_features=4))
     model.add_module('softmax', nn.Softmax())
 

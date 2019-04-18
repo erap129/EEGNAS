@@ -393,6 +393,79 @@ class CroppedTrialGenericMonitor():
         return trial_labels, trial_pred_labels
 
 
+class CroppedGenericMonitorPerTimeStep():
+    """
+    Compute trialwise *** from predictions for crops.
+
+    Parameters
+    ----------
+    input_time_length: int
+        Temporal length of one input to the model.
+    """
+
+    def __init__(self, measure_name, measure_func, input_time_length=None):
+        self.input_time_length = input_time_length
+        self.measure_name = measure_name
+        self.measure_func = measure_func
+
+    def monitor_epoch(self, ):
+        return
+
+    def monitor_set(self, setname, all_preds, all_losses,
+                    all_batch_sizes, all_targets, dataset):
+        """Assuming one hot encoding for now"""
+        assert self.input_time_length is not None, "Need to know input time length..."
+        # First case that each trial only has a single label
+        if not hasattr(dataset.y[0], '__len__'):
+            preds_per_trial = compute_preds_per_trial_from_crops(
+                all_preds, self.input_time_length, dataset.X)
+            all_trial_labels = dataset.y
+        measures = []
+        for i in range(preds_per_trial[0].shape[1]):
+            curr_preds = np.argmax(np.array([pred[:, i] for pred in preds_per_trial]).squeeze(), axis=1)
+            assert curr_preds.shape == all_trial_labels.shape
+            measures.append(self.measure_func(curr_preds, all_trial_labels))
+        measure = np.max(np.array(measures))
+        column_name = "{:s}_{:s}".format(setname, self.measure_name)
+        return {column_name: float(measure)}
+
+    def _compute_pred_labels(self, dataset, all_preds, ):
+        preds_per_trial = compute_preds_per_trial_from_crops(
+            all_preds, self.input_time_length, dataset.X)
+        all_pred_labels = [np.argmax(np.mean(p, axis=1))
+                           for p in preds_per_trial]
+        all_pred_labels = np.array(all_pred_labels)
+        assert all_pred_labels.shape == dataset.y.shape
+        return all_pred_labels
+
+    def _compute_trial_pred_labels_from_cnt_y(self, dataset, all_preds, ):
+        # Todo: please test this
+        # we only want the preds that are for the same labels as the last label in y
+        # (there might be parts of other class-data at start, for trialwise misclass we assume
+        # they are contained in other trials at the end...)
+        preds_per_trial = compute_preds_per_trial_from_crops(
+            all_preds, self.input_time_length, dataset.X)
+        trial_labels = []
+        trial_pred_labels = []
+        for trial_pred, trial_y in zip(preds_per_trial, dataset.y):
+            # first cut to the part actually having predictions
+            trial_y = trial_y[-trial_pred.shape[1]:]
+            wanted_class = trial_y[-1]
+            trial_labels.append(wanted_class)
+            # extract the first marker different from the wanted class
+            # by starting from the back of the trial
+            i_last_sample = np.flatnonzero(trial_y[::-1] != wanted_class)
+            if len(i_last_sample) > 0:
+                i_last_sample = i_last_sample[0]
+                # remember last sample is now from back
+                trial_pred = trial_pred[:, -i_last_sample:]
+            trial_pred_label = np.argmax(np.mean(trial_pred, axis=1))
+            trial_pred_labels.append(trial_pred_label)
+        trial_labels = np.array(trial_labels)
+        trial_pred_labels = np.array(trial_pred_labels)
+        return trial_labels, trial_pred_labels
+
+
 class RememberBest(object):
     """
     Class to remember and restore
