@@ -1,4 +1,9 @@
-# This is an H1
+# Welcome to EEGNAS
+## an EEG Neural architecture search algorithm
+
+
+
+
 ## This is an H2
 ###### This is an H6
 
