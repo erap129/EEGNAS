@@ -371,12 +371,10 @@ if __name__ == '__main__':
                     if first_run:
                         first_dataset = globals.get('dataset')
                         first_run = False
-                    if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2')\
-                            and not globals.get('force_gpu_off'):
+                    if torch.cuda.is_available() and not globals.get('force_gpu_off'):
                         globals.set('cuda', True)
                         os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
                         os.environ["CUDA_LAUNCH_BLOCKING"] = '1'
-                        assert torch.cuda.is_available(), "Cuda not available"
                     if globals.get('cropping'):
                         globals.set('input_time_len', globals.get('input_time_cropping'))
                         stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
