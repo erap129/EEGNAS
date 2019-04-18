@@ -4,24 +4,17 @@ Created on Sat Nov 18 23:12:08 2017
 @author: Utku Ozbulak - github.com/utkuozbulak
 """
 import os
-
-import mne
-import numpy as np
-
 import torch
 from torch.optim import Adam
 from torch.autograd import Variable
-from torchvision import models
 from braindecode.torch_ext.util import np_to_var
-from misc_functions import preprocess_image, recreate_image, save_image, create_mne
+from visualiazation.src.misc_functions import preprocess_image, recreate_image, save_image, create_mne
 import matplotlib.pyplot as plt
 from models_generation import target_model
 import globals
 import numpy as np
-from braindecode.models import deep4, shallow_fbcsp, eegnet
 from data_preprocessing import get_ner_train_val_test, get_bci_iv_2a_train_val_test
 from scipy import signal
-from scipy.io import wavfile
 
 class CNNLayerVisualization():
     """
