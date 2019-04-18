@@ -19,3 +19,6 @@
     * High Gamma dataset - need to [download manually](https://web.gin.g-node.org/robintibor/high-gamma-dataset) and move to the folder 'data/HG'
     * Inria BCI dataset - need to [download from kaggle](https://www.kaggle.com/c/inria-bci-challenge/data) and move to the folder 'data/NER15'
     * Opportunity dataset - need to download manually and move to the folder 'data/Opportunity'. Use preproccesing code from [this repository](https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs/blob/master/data/download_datasets.py) to obtain the file 'oppChallenge_gestures.data', which needs to be put in the folder 'data/Opportunity'
+
+* EEGNAS is **work in progress**. In the future will be added an option to automatically analyze your own data and receive a neural architecture. Meanwhile, interested users can try to understand the NAS process themselves and add their own DB (the main task is to edit the file BCI_IV_2a_experiment.py and configurtions/config.ini)
+* The repository is **heavy** because of the BCI Competition IV 2a dataset. It may take a while to download.
