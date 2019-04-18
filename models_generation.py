@@ -16,6 +16,7 @@ import globals
 from Bio import pairwise2
 from collections import defaultdict
 import networkx as nx
+from model_impls.sleepClassifier import get_sleep_classifier
 from networkx.classes.function import create_empty_copy
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 WARNING = '\033[93m'
@@ -430,6 +431,14 @@ class MyModel:
         return x.permute(0, 3, 2, 1)
 
     @staticmethod
+    def _transpose_shift_and_swap(x):
+        return x.permute(0, 3, 1, 2)
+
+    @staticmethod
+    def _transpose_channels_with_length(x):
+        return x.permute(0, 2, 1, 3)
+
+    @staticmethod
     def _stack_input_by_time(x):
         if globals.config['DEFAULT']['channel_dim'] == 'one':
             return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
@@ -782,11 +791,15 @@ def target_model(model_name):
     eeg_chans = globals.get('eeg_chans')
     models = {'deep': deep4.Deep4Net(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
               'shallow': shallow_fbcsp.ShallowFBCSPNet(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
-              'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_time_len, final_conv_length='auto')}
-    final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2}
+              'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_time_len, final_conv_length='auto'),
+              'sleep_classifier': get_sleep_classifier()}
+    final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2, 'sleep_classifier': 2}
     globals.set('final_conv_size', final_conv_sizes[model_name])
-    model = models[model_name].create_network()
-    return model
+    if model_name == 'sleep_classifier':
+        return models[model_name]
+    else:
+        model = models[model_name].create_network()
+        return model
 
 
 def finalize_model(layer_collection):

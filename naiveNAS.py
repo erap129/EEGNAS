@@ -136,7 +136,7 @@ class NaiveNAS:
             model = target_model(globals.get('model_name'))
         if globals.get('cropping'):
             self.finalized_model_to_dilated(model)
-        final_time, evaluations, model_state, num_epochs =\
+        final_time, evaluations, model, model_state, num_epochs =\
             self.evaluate_model(model, final_evaluation=True)
         stats = {'train_time': str(final_time)}
         NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
@@ -157,11 +157,12 @@ class NaiveNAS:
                 weighted_population[i]['num_epochs'] = 0
                 continue
             finalized_model = finalize_model(pop['model'])
-            final_time, evaluations, model_state, num_epochs = \
+            final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'])
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['train_time'] = final_time
+            weighted_population[i]['finalized_model'] = model
             weighted_population[i]['num_epochs'] = num_epochs
             end_time = time.time()
             show_progress(end_time - start_time)
@@ -183,9 +184,10 @@ class NaiveNAS:
                 self.sample_subjects()
             for key in summed_parameters:
                 weighted_population[i][key] = 0
-            for subject in self.current_chosen_population_sample:
+            for subject in random.sample(self.current_chosen_population_sample,
+                                         len(self.current_chosen_population_sample)):
                 finalized_model = finalize_model(pop['model'])
-                final_time, evaluations, model_state, num_epochs = \
+                final_time, evaluations, model, model_state, num_epochs = \
                     self.evaluate_model(finalized_model, pop['model_state'], subject=subject)
                 NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
                                                                 str_prefix=f"{subject}_")
@@ -198,6 +200,7 @@ class NaiveNAS:
                 end_time = time.time()
                 show_progress(end_time - start_time)
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, generation))
+            weighted_population[i]['finalized_model'] = model
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
 
@@ -253,7 +256,7 @@ class NaiveNAS:
                 ensemble = [finalize_model(weighted_population[i]['model']) for i in range(globals.get('ensemble_size'))]
                 _, evaluations, _, num_epochs = self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
                 NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
-            _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
+            _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
             NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
@@ -263,7 +266,7 @@ class NaiveNAS:
         for subject in self.current_chosen_population_sample:
             for iteration in range(globals.get('final_test_iterations')):
                 model = torch.load(self.model_filename)
-                _, evaluations, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
+                _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
                 NASUtils.add_evaluations_to_stats(stats, evaluations,
                                                   str_prefix=f"{subject}_iteration_{iteration}_from_file_")
                 if globals.get('ensemble_iterations'):
@@ -276,7 +279,7 @@ class NaiveNAS:
 
     def save_best_model(self, weighted_population):
         try:
-            save_model = finalize_model(weighted_population[0]['model']).to("cpu")
+            save_model = weighted_population[0]['finalized_model'].to("cpu")
             subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
             self.model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
             torch.save(save_model, self.model_filename)
@@ -434,11 +437,11 @@ class NaiveNAS:
         avg_final_time = 0
         avg_num_epochs = 0
         avg_evaluations = {}
-        _, evaluations, _, _ = self.evaluate_model(models[0], states[0], subject, final_evaluation)
+        _, evaluations, _, _, _ = self.evaluate_model(models[0], states[0], subject, final_evaluation)
         for eval in evaluations.items():
             avg_evaluations[eval[0]] = defaultdict(list)
         for model, state in zip(models, states):
-            final_time, evaluations, state, num_epochs = self.evaluate_model(model, state, subject, final_evaluation)
+            final_time, evaluations, model, state, num_epochs = self.evaluate_model(model, state, subject, final_evaluation)
             for eval in evaluations.items():
                 for eval_spec in eval[1].items():
                     avg_evaluations[eval[0]][eval_spec[0]].append(eval_spec[1])
@@ -467,7 +470,7 @@ class NaiveNAS:
             new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
-    def evaluate_model(self, model, state=None, subject=None, final_evaluation=False, delete_model=True):
+    def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
         if self.cuda:
             torch.cuda.empty_cache()
         if final_evaluation:
@@ -529,11 +532,9 @@ class NaiveNAS:
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
-        if delete_model:
-            del model
         if self.cuda:
             torch.cuda.empty_cache()
-        return final_time, evaluations, self.rememberer.model_state_dict, num_epochs
+        return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
         self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
