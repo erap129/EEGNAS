@@ -1,5 +1,4 @@
-# Welcome to EEGNAS
-## an EEG-targeted Neural architecture search algorithm
+## EEGNAS: an EEG-targeted Neural architecture search algorithm
 
 ###Instructions to run example experiment on the BCI Competition IV 2a dataset:
 1. git clone the project to your machine
@@ -11,3 +10,12 @@
 * Note: On a high-end Nvidia GPU each configuration should take 1-2 days to complete.
 * For test purposes, it is possible to edit the 'config.ini' file, located in the 'configurations' folder.
     * For example, the property 'num_generations' can be changed from 75 to any other number, in order to get shorter run-times (and worse results).
+    
+    
+### Additional Notes
+* Datasets:
+    * The BCI Competition IV 2a dataset is included in the repository. No further action required.
+    * BCI Competition IV 2b dataset - taken from the [moabb](https://github.com/NeuroTechX/moabb) BCI toolbox.
+    * High Gamma dataset - need to [download manually](https://web.gin.g-node.org/robintibor/high-gamma-dataset) and move to the folder 'data/HG'
+    * Inria BCI dataset - need to [download from kaggle](https://www.kaggle.com/c/inria-bci-challenge/data) and move to the folder 'data/NER15'
+    * Opportunity dataset - need to download manually and move to the folder 'data/Opportunity'. Use preproccesing code from [this repository](https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs/blob/master/data/download_datasets.py) to obtain the file 'oppChallenge_gestures.data', which needs to be put in the folder 'data/Opportunity'
