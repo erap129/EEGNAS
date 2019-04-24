@@ -50,16 +50,18 @@ def get_sleep_classifier():
                                          kernel_size=(globals.get('eeg_chans'), 1)))
     model.add_module('permute_2', Expression(MyModel._transpose_channels_with_length))
     model.add_module('conv_2', nn.Conv2d(1, 8, kernel_size=(1, 64), stride=1))
-    model.add_module('pool_1', nn.MaxPool2d(kernel_size=(1, 16), stride=(1, 16)))
+    model.add_module('pool_1', nn.MaxPool2d(kernel_size=(1, 16), stride=(1, 1)))
     model.add_module('conv_3', nn.Conv2d(8, 8, kernel_size=(1, 64), stride=1))
-    model.add_module('pool_2', nn.MaxPool2d(kernel_size=(1, 16), stride=(1, 16)))
+    model.add_module('pool_2', nn.MaxPool2d(kernel_size=(1, 16), stride=(1, 1)))
     model.add_module('flatten', Flatten())
     model.add_module('dropout', nn.Dropout(p=0.5))
 
     input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
     out = model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
-    
-    model.add_module('dense', nn.Linear(in_features=176, out_features=4))
+    dim = 1
+    for muldim in out.shape[1:]:
+        dim *= muldim
+    model.add_module('dense', nn.Linear(in_features=dim, out_features=globals.get('n_classes')))
     model.add_module('softmax', nn.Softmax())
 
     return model

@@ -116,7 +116,7 @@ def get_cropped_settings():
     monitors = [LossMonitor(), GenericMonitor('accuracy', acc_func),
                 CroppedTrialGenericMonitor('accuracy', acc_func,
                     input_time_length=globals.get('input_time_len')), RuntimeMonitor()]
-    if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b', 'SonarSub']:
+    if globals.get('dataset') in ['NER15', 'Cho', 'SonarSub']:
         monitors.append(CroppedTrialGenericMonitor('auc', auc_func,
                     input_time_length=globals.get('input_time_len')))
     if globals.get('dataset') in ['BCI_IV_2b']:
@@ -373,7 +373,9 @@ if __name__ == '__main__':
                     if first_run:
                         first_dataset = globals.get('dataset')
                         first_run = False
-                    if torch.cuda.is_available() and not globals.get('force_gpu_off'):
+                    # if torch.cuda.is_available() and not globals.get('force_gpu_off'):
+                    if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2') \
+                                and not globals.get('force_gpu_off'):
                         globals.set('cuda', True)
                         os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
                         os.environ["CUDA_LAUNCH_BLOCKING"] = '1'

@@ -593,13 +593,16 @@ class NaiveNAS:
             all_losses = []
             all_batch_sizes = []
             all_targets = []
+            # batch_times = []
             for batch in self.iterator.get_batches(dataset, shuffle=False):
+                # start_batch = time.time()
                 preds, loss = self.eval_on_batch(batch[0], batch[1], model)
+                # batch_times.append(time.time() - start_batch)
                 all_preds.append(preds)
                 all_losses.append(loss)
                 all_batch_sizes.append(len(batch[0]))
                 all_targets.append(batch[1])
-
+            # print(f'average batch time {np.average(np.array(batch_times))} seconds')
             for m in self.monitors:
                 result_dict = m.monitor_set(setname, all_preds, all_losses,
                                             all_batch_sizes, all_targets,
