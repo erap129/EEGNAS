@@ -28,6 +28,7 @@ from os import listdir
 from os.path import isfile, join
 from pydrive.drive import GoogleDrive
 from pydrive.auth import GoogleAuth
+import numpy as np
 global data_folder, valid_set_fraction, config
 
 
@@ -83,10 +84,10 @@ def generate_report(filename, report_filename):
 
 def write_dict(dict, filename):
     with open(filename, 'w') as f:
-        all_keys = set()
-        for inner_dict in dict.values():
-            for K in inner_dict.keys():
-                all_keys.add(K)
+        all_keys = []
+        for _, inner_dict in sorted(dict.items()):
+            for K, _ in sorted(inner_dict.items()):
+                all_keys.append(K)
         for K in all_keys:
             f.write(f"{K}\t{globals.get(K)}\n")
 
@@ -338,6 +339,14 @@ def upload_exp_to_gdrive(fold_names, first_dataset):
                     file_drive.Upload()
 
 
+def set_seeds(random_seed):
+    random.seed(random_seed)
+    torch.manual_seed(random_seed)
+    if globals.get('cuda'):
+        torch.cuda.manual_seed_all(random_seed)
+    np.random.seed(random_seed)
+
+
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
@@ -378,7 +387,7 @@ if __name__ == '__main__':
                                 and not globals.get('force_gpu_off'):
                         globals.set('cuda', True)
                         os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
-                        os.environ["CUDA_LAUNCH_BLOCKING"] = '1'
+                    set_seeds(globals.get('random_seed'))
                     if globals.get('cropping'):
                         globals.set('input_time_len', globals.get('input_time_cropping'))
                         stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
@@ -390,13 +399,15 @@ if __name__ == '__main__':
                         subjects = random.sample(range(1, globals.get('num_subjects')),
                                                  globals.get('subjects_to_check'))
                     exp_name = f"{exp_id}_{index+1}_{experiment}_{globals.get('dataset')}"
+                    for mul_val in multiple_values:
+                        exp_name += f'_{mul_val}_{globals.get(mul_val)}'
                     exp_folder = f"results/{exp_name}"
                     createFolder(exp_folder)
                     folder_names.append(exp_name)
                     write_dict(globals.config, f"{exp_folder}/config_{exp_name}.ini")
                     csv_file = f"{exp_folder}/{exp_name}.csv"
                     report_file = f"{exp_folder}/report_{exp_name}.csv"
-                    fieldnames = ['exp_name', 'subject', 'generation', 'param_name', 'param_value']
+                    fieldnames = ['exp_name', 'machine', 'dataset', 'date', 'subject', 'generation', 'param_name', 'param_value']
                     if 'cross_subject' in multiple_values and not globals.get('cross_subject'):
                         globals.set('num_generations', globals.get('num_generations') *
                                     globals.get('cross_subject_compensation_rate'))
