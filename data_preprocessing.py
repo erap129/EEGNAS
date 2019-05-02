@@ -352,6 +352,28 @@ def get_sonarsub_train_val_test(data_folder):
     test_set = DummySignalTarget(X_test, y_test)
     return train_set, valid_set, test_set
 
+
+def get_pure_cross_subject(data_folder, low_cut_hz):
+    train_x = []
+    val_x = []
+    test_x = []
+    train_y = []
+    val_y = []
+    test_y = []
+    for subject_id in range(1, globals.get('num_subjects') + 1):
+        train_set, valid_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
+        train_x.append(train_set.X)
+        val_x.append(valid_set.X)
+        test_x.append(test_set.X)
+        train_y.append(train_set.y)
+        val_y.append(valid_set.y)
+        test_y.append(test_set.y)
+    train_set = DummySignalTarget(np.concatenate(train_x), np.concatenate(train_y))
+    valid_set = DummySignalTarget(np.concatenate(val_x), np.concatenate(val_y))
+    test_set = DummySignalTarget(np.concatenate(test_x), np.concatenate(test_y))
+    return train_set, valid_set, test_set
+
+
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
     if globals.get('dataset') == 'BCI_IV_2a':
         return get_bci_iv_2a_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)

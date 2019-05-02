@@ -1,7 +1,9 @@
 import itertools
 import pickle
+import platform
 
 import utils
+from data_preprocessing import get_train_val_test
 from models_generation import random_model, finalize_model, target_model,\
     breed_layers, breed_two_ensembles
 from braindecode.torch_ext.util import np_to_var
@@ -127,19 +129,25 @@ class NaiveNAS:
     def run_target_model(self):
         globals.set('max_epochs', globals.get('final_max_epochs'))
         globals.set('max_increase_epochs', globals.get('final_max_increase_epochs'))
+        stats = {}
         if self.model_from_file is not None:
             if torch.cuda.is_available():
                 model = torch.load(self.model_from_file)
             else:
                 model = torch.load(self.model_from_file, map_location='cpu')
-        else:
-            model = target_model(globals.get('model_name'))
-        if globals.get('cropping'):
-            self.finalized_model_to_dilated(model)
-        final_time, evaluations, model, model_state, num_epochs =\
-            self.evaluate_model(model, final_evaluation=True)
-        stats = {'train_time': str(final_time)}
-        NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
+        # else:
+        #     model = target_model(globals.get('model_name'))
+            if globals.get('cropping'):
+                self.finalized_model_to_dilated(model)
+            final_time, evaluations, model, model_state, num_epochs =\
+                self.evaluate_model(model, final_evaluation=True)
+            stats['train_time'] = str(final_time)
+            NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
+        self.weighted_population_file = globals.get('weighted_population_file')
+        if self.weighted_population_file:
+            self.weighted_population_file = f'weighted_populations/{self.weighted_population_file}'
+            _, evaluations, _, num_epochs = self.evaluate_ensemble_from_pickle(self.subject_id)
+            NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix='final_')
         self.write_to_csv(stats, generation=1)
 
     def sample_subjects(self):
@@ -158,7 +166,7 @@ class NaiveNAS:
                 continue
             finalized_model = finalize_model(pop['model'])
             final_time, evaluations, model, model_state, num_epochs = \
-                self.evaluate_model(finalized_model, pop['model_state'])
+                self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['train_time'] = final_time
@@ -215,8 +223,18 @@ class NaiveNAS:
                 self.current_chosen_population_sample = range(1, globals.get('num_subjects')+1)
             for subject in self.current_chosen_population_sample:
                 for param in params:
-                    stats['%d_%s' % (subject, param)] = np.mean(
-                        [sample['%d_%s' % (subject, param)] for sample in weighted_population if '%d_%s' % (subject, param) in sample.keys()])
+                    stats[f'{subject}_{param}'] = np.mean(
+                        [sample[f'{subject}_{param}'] for sample in weighted_population if f'{subject}_{param}' in sample.keys()])
+        for i, sample in enumerate(weighted_population):
+            for param in params:
+                stats[f'{param}_pop_{i}'] = sample[param]
+            if self.subject_id == 'all':
+                if globals.get('cross_subject_sampling_method') == 'model':
+                    self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
+                for subject in self.current_chosen_population_sample:
+                    for param in params:
+                        if f'{subject}_{param}' in sample.keys():
+                            stats[f'{subject}_{param}_pop_{i}'] = sample[f'{subject}_{param}']
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
         layer_stats = {'average_conv_width': (models_generation.ConvLayer, 'kernel_eeg_chan'),
@@ -270,12 +288,16 @@ class NaiveNAS:
                 NASUtils.add_evaluations_to_stats(stats, evaluations,
                                                   str_prefix=f"{subject}_iteration_{iteration}_from_file_")
                 if globals.get('ensemble_iterations'):
-                    ensemble = [finalize_model(weighted_population[i]['model']) for i in
-                                range(globals.get('ensemble_size'))]
-                    _, evaluations, _, num_epochs = self.ensemble_evaluate_model(ensemble, final_evaluation=True,
-                                                                                     subject=subject)
+                    _, evaluations, _, num_epochs = self.evaluate_ensemble_from_pickle(subject, weighted_population)
                     NASUtils.add_evaluations_to_stats(stats, evaluations,
                                                       str_prefix=f"{subject}_iteration_{iteration}_from_file_")
+
+    def evaluate_ensemble_from_pickle(self, subject, weighted_population=None):
+        if weighted_population is None:
+            weighted_population = pickle.load(open(self.weighted_population_file, 'rb'))
+        ensemble = [finalize_model(weighted_population[i]['model']) for i in
+                    range(globals.get('ensemble_size'))]
+        return self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
 
     def save_best_model(self, weighted_population):
         try:
@@ -336,8 +358,10 @@ class NaiveNAS:
                     if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
                         self.mutation_rate *= globals.get('mutation_rate_increase_rate')
                     else:
-                        # self.mutation_rate /= globals.get('mutation_rate_decrease_rate')
-                        self.mutation_rate = globals.get('mutation_rate')
+                        if globals.get('mutation_rate_gradual_decrease'):
+                            self.mutation_rate /= globals.get('mutation_rate_decrease_rate')
+                        else:
+                            self.mutation_rate = globals.get('mutation_rate')
                 if globals.get('save_every_generation'):
                     self.save_best_model(weighted_population)
             else:  # last generation
@@ -441,6 +465,12 @@ class NaiveNAS:
         for eval in evaluations.items():
             avg_evaluations[eval[0]] = defaultdict(list)
         for model, state in zip(models, states):
+            if globals.get('ensemble_pretrain'):
+                if globals.get('random_subject_pretrain'):
+                    pretrain_subject = random.randint(1, globals.get('num_subjects'))
+                else:
+                    pretrain_subject = subject
+                _, _, model, state, _ = self.evaluate_model(model, state, pretrain_subject)
             final_time, evaluations, model, state, num_epochs = self.evaluate_model(model, state, subject, final_evaluation)
             for eval in evaluations.items():
                 for eval_spec in eval[1].items():
@@ -471,19 +501,21 @@ class NaiveNAS:
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
+        if subject is None:
+            subject = self.subject_id
         if self.cuda:
             torch.cuda.empty_cache()
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
                                  NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
-        if subject is not None and globals.get('cross_subject'):
-            single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
-                                               ('valid', self.datasets['valid'][subject]),
-                                               ('test', self.datasets['test'][subject])))
-        else:
-            single_subj_dataset = deepcopy(self.datasets)
+        if subject not in self.datasets['train'].keys():
+            self.datasets['train'][subject], self.datasets['valid'][subject], self.datasets['test'][subject] = \
+                get_train_val_test(globals.get('data_folder'), subject, globals.get('low_cut_hz'))
+        single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
+                                            ('valid', self.datasets['valid'][subject]),
+                                            ('test', self.datasets['test'][subject])))
         self.epochs_df = pd.DataFrame()
-        if globals.get('do_early_stop'):
+        if globals.get('do_early_stop') or globals.get('remember_best'):
             self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
         self.optimizer = optim.Adam(model.parameters())
         if self.cuda:
@@ -701,8 +733,10 @@ class NaiveNAS:
                 else:
                     subject = str(self.subject_id)
                 for key, value in stats.items():
-                    writer.writerow({'exp_name': self.exp_name, 'subject': subject,
-                                     'generation': str(generation), 'param_name': key, 'param_value': value})
+                    writer.writerow({'exp_name': self.exp_name, 'machine': platform.node(),
+                                    'dataset': globals.get('dataset'), 'date': time.strftime("%d/%m/%Y"),
+                                    'subject': subject, 'generation': str(generation),
+                                    'param_name': key, 'param_value': value})
 
     def garbage_time(self):
         model = target_model('deep')

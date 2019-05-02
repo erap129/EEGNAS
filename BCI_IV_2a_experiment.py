@@ -7,7 +7,7 @@ from collections import OrderedDict, defaultdict
 from itertools import product, chain
 import torch.nn.functional as F
 import torch
-from data_preprocessing import get_train_val_test
+from data_preprocessing import get_train_val_test, get_pure_cross_subject
 from naiveNAS import NaiveNAS
 from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
@@ -183,7 +183,10 @@ def get_multiple_values(configurations):
                 value_count[key].append(combined_config[key])
             if len(value_count[key]) > 1:
                 multiple_values.append(key)
-    return list(set(multiple_values))
+    res = list(set(multiple_values))
+    if 'dataset' in res:
+        res.remove('dataset')
+    return res
 
 
 def not_exclusively_in(subj, model_from_file):
@@ -196,14 +199,20 @@ def not_exclusively_in(subj, model_from_file):
 
 
 def target_exp(stop_criterion, iterator, loss_function, model_from_file=None):
+    if not globals.get('model_file_name'):
+        model_from_file = None
     with open(csv_file, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
     for subject_id in subjects:
+        train_set = {}
+        val_set = {}
+        test_set = {}
         if model_from_file is not None and globals.get('per_subject_exclusive') and \
                 not_exclusively_in(subject_id, model_from_file):
             continue
-        train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
+        train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
+            get_train_val_test(data_folder, subject_id, low_cut_hz)
         naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
@@ -218,7 +227,15 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
     for subject_id in subjects:
-        train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
+        train_set = {}
+        val_set = {}
+        test_set = {}
+        if globals.get('pure_cross_subject'):
+            train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
+                get_pure_cross_subject(data_folder, low_cut_hz)
+        else:
+            train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
+                get_train_val_test(data_folder, subject_id, low_cut_hz)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
@@ -339,7 +356,11 @@ def upload_exp_to_gdrive(fold_names, first_dataset):
                     file_drive.Upload()
 
 
-def set_seeds(random_seed):
+def set_seeds():
+    random_seed = globals.get('random_seed')
+    if not random_seed:
+        random_seed = random.randint(0, 2**32 - 1)
+        globals.set('random_seed', random_seed)
     random.seed(random_seed)
     torch.manual_seed(random_seed)
     if globals.get('cuda'):
@@ -387,7 +408,7 @@ if __name__ == '__main__':
                                 and not globals.get('force_gpu_off'):
                         globals.set('cuda', True)
                         os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
-                    set_seeds(globals.get('random_seed'))
+                    set_seeds()
                     if globals.get('cropping'):
                         globals.set('input_time_len', globals.get('input_time_cropping'))
                         stop_criterion, iterator, loss_function, monitors = get_cropped_settings()

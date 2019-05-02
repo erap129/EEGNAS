@@ -307,7 +307,7 @@ def calculate_ensemble_fitness(weighted_population, ensemble):
     if globals.get('cross_subject'):
         ensemble_fit = 0
         for subject in range(1, globals.get('num_subjects') + 1):
-            ensemble_fit += one_ensemble_fitness(weighted_population, ensemble, str_prefix=f'{subject}_')
+            ensemble_fit += one_ensemble_fitness(weighted_population, ensemble)
         return ensemble_fit / globals.get('num_subjects')
     else:
         return one_ensemble_fitness(weighted_population, ensemble)

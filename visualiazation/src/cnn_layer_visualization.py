@@ -6,16 +6,12 @@ Created on Sat Nov 18 23:12:08 2017
 import os
 import torch
 from torch.optim import Adam
-from torch.autograd import Variable
 from braindecode.torch_ext.util import np_to_var
-from visualiazation.src.misc_functions import preprocess_image, recreate_image, save_image, create_mne
-import matplotlib.pyplot as plt
 from models_generation import target_model
 from naiveNAS import NaiveNAS
 import globals
 import numpy as np
-from data_preprocessing import get_ner_train_val_test, get_bci_iv_2a_train_val_test, get_bci_iv_2b_train_val_test
-from scipy import signal
+from data_preprocessing import get_train_val_test
 from scipy.io import savemat
 from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
 
@@ -53,7 +49,8 @@ class CNNLayerVisualization():
         # processed_image = torch.Tensor.new_tensor(data=torch.Tensor(random_image), requires_grad=True, device='cuda')
         # Define optimizer for the image
         optimizer = Adam([processed_image], lr=0.1, weight_decay=1e-6)
-        for i in range(1, 1001):
+        steps = 5000
+        for i in range(steps):
             optimizer.zero_grad()
             # Assign create image to a variable to move forward in the model
             x = processed_image
@@ -74,20 +71,17 @@ class CNNLayerVisualization():
             loss.backward()
             # Update image
             optimizer.step()
-            # Recreate image
-            # self.created_image = create_mne(processed_image)
 
-            if i % 100 == 0:
-                savemat(f'X_step_{int(i/10)}.mat', {'X': processed_image.detach().cpu().numpy().squeeze()[None, :, :]})
+        savemat(f'dataset_{globals.get("dataset")}_model_{model_selection}_layer_'
+                f'{self.selected_layer}_filter_{self.selected_filter}_steps_{steps}.mat',
+                {'X': processed_image.detach().cpu().numpy().squeeze()[None, :, :]})
 
 
-def plot_real_EEG():
-    # train, val, test = get_bci_iv_2a_train_val_test('../../data/BCI_IV', 4, 0)
-    # train, val, test = get_ner_train_val_test('../../data/')
-    train, val, test = get_bci_iv_2b_train_val_test(1)
-    data = train.X[0].squeeze()
-    for channel in data:
-        CNNLayerVisualization.create_spectrogram_2(channel, fs=250)
+def dataset_to_mat(dataset_name, data_sets_X, data_sets_y, class_ids):
+    data_X = np.concatenate(data_sets_X)
+    data_y = np.concatenate(data_sets_y)
+    data_X = data_X[[y in class_ids for y in data_y]]
+    savemat(f'{dataset_name}_classes_{class_ids}.mat', {'X': data_X})
 
 
 if __name__ == '__main__':
@@ -105,19 +99,32 @@ if __name__ == '__main__':
     globals.set('final_max_epochs', 800)
     globals.set('final_max_increase_epochs', 80)
     globals.set('cuda', True)
+    globals.set('data_folder', '../../data/')
+    globals.set('low_cut_hz', 0)
+    globals.set('dataset', 'BCI_IV_2b')
     set_params_by_dataset()
-    selection = 'deep4'
-    cnn_layer = {'evolution': 6, 'deep4': 20}
-    filter_pos = {'evolution': 5, 'deep4': 150}
-    model = {'evolution': torch.load('../models/best_model_9_8_6_7_2_1_3_4_5.th'),
+    model_selection = 'deep4'
+    cnn_layer = {'evolution': 10, 'deep4': 25}
+    filter_pos = {'evolution': 0, 'deep4': 0}
+    model_dir = '91_x_BCI_IV_2b'
+    model_name = 'best_model_5_1_8_7_9_2_3_4_6.th'
+    model = {'evolution': torch.load(f'../../models/{model_dir}/{model_name}'),
                         'deep4': target_model('deep')}
-    train, val, test = get_bci_iv_2b_train_val_test(subject_id=1)
+    subject_id = 1
+    train_set = {}
+    val_set = {}
+    test_set = {}
+    train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
+        get_train_val_test(globals.get('data_folder'), subject_id, globals.get('low_cut_hz'))
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
-                        train_set=train, val_set=val, test_set=test,
+                        train_set=train_set, val_set=val_set, test_set=test_set,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id='all', fieldnames=None, strategy='cross_subject',
+                        config=globals.config, subject_id=subject_id, fieldnames=None, strategy='cross_subject',
                         evolution_file=None, csv_file=None)
-    _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[selection], final_evaluation=True)
-    layer_vis = CNNLayerVisualization(pretrained_model, cnn_layer[selection], filter_pos[selection])
+    _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
+    layer_vis = CNNLayerVisualization(pretrained_model, cnn_layer[model_selection], filter_pos[model_selection])
     layer_vis.visualise_layer_with_hooks()
+
+    # dataset_to_mat('BCI_IV_2b', [train_set[subject_id].X, val_set[subject_id].X, test_set[subject_id].X],
+    #                [train_set[subject_id].y, val_set[subject_id].y, test_set[subject_id].y], [1])
