@@ -429,6 +429,24 @@ class CroppedGenericMonitorPerTimeStep():
         column_name = "{:s}_{:s}".format(setname, self.measure_name)
         return {column_name: float(measure)}
 
+    def monitor_set(self, setname, all_preds, all_losses,
+                    all_batch_sizes, all_targets, dataset):
+        """Assuming one hot encoding for now"""
+        assert self.input_time_length is not None, "Need to know input time length..."
+        # First case that each trial only has a single label
+        if not hasattr(dataset.y[0], '__len__'):
+            all_pred_labels = compute_trial_labels_from_crop_preds(
+                all_preds, self.input_time_length, dataset.X)
+            assert all_pred_labels.shape == dataset.y.shape
+            all_trial_labels = dataset.y
+        else:
+            all_trial_labels, all_pred_labels = (
+                self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds))
+        assert all_pred_labels.shape == all_trial_labels.shape
+        measure = self.measure_func(all_pred_labels, all_trial_labels)
+        column_name = "{:s}_{:s}".format(setname, self.measure_name)
+        return {column_name: float(measure)}
+
     def _compute_pred_labels(self, dataset, all_preds, ):
         preds_per_trial = compute_preds_per_trial_from_crops(
             all_preds, self.input_time_length, dataset.X)

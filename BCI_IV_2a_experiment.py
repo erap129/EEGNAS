@@ -109,7 +109,7 @@ def get_normal_settings():
 
 def get_cropped_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                         NoIncrease('valid_accuracy', globals.get('max_increase_epochs'))])
+                         NoIncrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
     iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
                                        input_time_length=globals.get('input_time_len'),
                                        n_preds_per_input=globals.get('n_preds_per_input'))
@@ -123,8 +123,10 @@ def get_cropped_settings():
     if globals.get('dataset') in ['BCI_IV_2b']:
         # monitors.append(CroppedTrialGenericMonitor('kappa', kappa_func,
         #             input_time_length=globals.get('input_time_len')))
+        monitors = [LossMonitor(), RuntimeMonitor()]
         monitors.append(CroppedGenericMonitorPerTimeStep('kappa', kappa_func,
                     input_time_length=globals.get('input_time_len')))
+
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -143,7 +145,8 @@ def garbage_time():
     garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set, val_set=val_set, test_set=test_set,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id=1, fieldnames=None)
+                        config=globals.config, subject_id=1, fieldnames=None, strategy='per_subject',
+                          csv_file=None, evolution_file=None)
     garbageNAS.garbage_time()
 
 
@@ -284,7 +287,7 @@ def set_params_by_dataset():
                             11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,38,39,40,
                             41,42,43,44,45,47,48,50,51,52]], 'Bloomberg': [1], 'NYSE': [1],
                             'HumanActivity': list(range(1,19+1)), 'Opportunity': [1], 'SonarSub': [1]}
-    evaluation_metrics = {'HG': ['accuracy'], 'BCI_IV_2a': ['accuracy'], 'BCI_IV_2b': ["accuracy", "auc", "kappa"],
+    evaluation_metrics = {'HG': ['accuracy'], 'BCI_IV_2a': ['accuracy'], 'BCI_IV_2b': ["kappa"],
                           'NER15': ["accuracy", "auc"], 'Cho': ['accuracy'], 'Bloomberg': ["accuracy", "auc"],
                           'NYSE': ['accuracy'], 'HumanActivity': ['accuracy'], 'Opportunity': ["accuracy", "f1"],
                           'SonarSub': ["accuracy"]}
@@ -428,7 +431,7 @@ if __name__ == '__main__':
                     write_dict(globals.config, f"{exp_folder}/config_{exp_name}.ini")
                     csv_file = f"{exp_folder}/{exp_name}.csv"
                     report_file = f"{exp_folder}/report_{exp_name}.csv"
-                    fieldnames = ['exp_name', 'machine', 'dataset', 'date', 'subject', 'generation', 'param_name', 'param_value']
+                    fieldnames = ['exp_name', 'machine', 'dataset', 'date', 'subject', 'generation', 'model', 'param_name', 'param_value']
                     if 'cross_subject' in multiple_values and not globals.get('cross_subject'):
                         globals.set('num_generations', globals.get('num_generations') *
                                     globals.get('cross_subject_compensation_rate'))

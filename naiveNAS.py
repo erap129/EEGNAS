@@ -212,7 +212,7 @@ class NaiveNAS:
             for key in summed_parameters:
                 weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
 
-    def calculate_stats(self, weighted_population):
+    def calculate_stats(self, weighted_population, generation):
         stats = {}
         params = ['train_time', 'num_epochs', 'fitness']
         params.extend(NASUtils.get_metric_strs())
@@ -225,16 +225,21 @@ class NaiveNAS:
                 for param in params:
                     stats[f'{subject}_{param}'] = np.mean(
                         [sample[f'{subject}_{param}'] for sample in weighted_population if f'{subject}_{param}' in sample.keys()])
-        for i, sample in enumerate(weighted_population):
+        for i, pop in enumerate(weighted_population):
+            model_stats = {}
             for param in params:
-                stats[f'{param}_pop_{i}'] = sample[param]
+                model_stats[param] = pop[param]
             if self.subject_id == 'all':
                 if globals.get('cross_subject_sampling_method') == 'model':
                     self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
                 for subject in self.current_chosen_population_sample:
                     for param in params:
-                        if f'{subject}_{param}' in sample.keys():
-                            stats[f'{subject}_{param}_pop_{i}'] = sample[f'{subject}_{param}']
+                        if f'{subject}_{param}' in pop.keys():
+                            model_stats[f'{subject}_{param}'] = pop[f'{subject}_{param}']
+            if 'parents' in pop.keys():
+                parent_fitness = (pop['parents'][0]['fitness'] + pop['parents'][1]['fitness']) / 2
+                model_stats['parent_child_ratio'] = pop['fitness'] / parent_fitness
+            self.write_to_csv(model_stats, generation+1, model=i+1)
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
         layer_stats = {'average_conv_width': (models_generation.ConvLayer, 'kernel_eeg_chan'),
@@ -331,7 +336,7 @@ class NaiveNAS:
         self.evo_strategy(weighted_population, generation)
         getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
         weighted_population = NASUtils.sort_population(weighted_population)
-        stats = self.calculate_stats(weighted_population)
+        stats = self.calculate_stats(weighted_population, generation)
         self.add_parent_child_relations(weighted_population, stats)
         if globals.get('ranking_correlation_num_iterations'):
             NASUtils.ranking_correlations(weighted_population, stats)
@@ -553,6 +558,8 @@ class NaiveNAS:
         num_epochs = self.run_until_stop(model, single_subj_dataset)
         self.setup_after_stop_training(model, final_evaluation)
         if final_evaluation:
+            # single_subj_dataset['train'] = concatenate_sets(
+            #     [single_subj_dataset['train'], single_subj_dataset['valid']])
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             num_epochs += self.run_until_stop(model, single_subj_dataset)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
@@ -724,7 +731,7 @@ class NaiveNAS:
             val_loss /= len(data.X)
         return correct / len(data.X)
 
-    def write_to_csv(self, stats, generation):
+    def write_to_csv(self, stats, generation, model='avg'):
         if self.csv_file is not None:
             with open(self.csv_file, 'a', newline='') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=self.fieldnames)
@@ -735,7 +742,7 @@ class NaiveNAS:
                 for key, value in stats.items():
                     writer.writerow({'exp_name': self.exp_name, 'machine': platform.node(),
                                     'dataset': globals.get('dataset'), 'date': time.strftime("%d/%m/%Y"),
-                                    'subject': subject, 'generation': str(generation),
+                                    'subject': subject, 'generation': str(generation), 'model': str(model),
                                     'param_name': key, 'param_value': value})
 
     def garbage_time(self):
