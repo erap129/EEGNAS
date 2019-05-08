@@ -531,16 +531,8 @@ class RememberBest(object):
             log.info("New best {:s}: {:5f}".format(self.column_name,
                                                    current_val))
             log.info("")
-            # keys = model.state_dict().keys()
-            # for key in keys:
-            #     if f'(1' in key or f'(2' in key or f'(3' in key or f'(4' in key or f'(5' in key or\
-            #         f'(6' in key or f'(7' in key or f'(8' in key or f'(9' in key:
-            #         if list(model.state_dict().keys()) == list(self.model_state_dict.keys()):
-            #             print('found special. state dicts equal')
-            #         else:
-            #             print('failed: found special. state dicts not equal')
 
-    def reset_to_best_model(self, epochs_df, model, optimizer):
+    def reset_to_best_model(self, epochs_df, model, optimizer, num_epochs_before_second_run=None):
         """
         Reset parameters to parameters at best epoch and remove rows
         after best epoch from epochs dataframe.
@@ -553,6 +545,13 @@ class RememberBest(object):
         model: `torch.nn.Module`
         optimizer: `torch.optim.Optimizer`
         """
+        if num_epochs_before_second_run is not None and self.best_epoch < num_epochs_before_second_run:
+            # need to reset the best epoch here to contain the right amount of samples (raws, targets)
+            self.best_epoch = max([i for i, _ in enumerate(epochs_df[self.column_name].values
+                                                    [num_epochs_before_second_run-1:])]) + num_epochs_before_second_run
+        if not num_epochs_before_second_run is None:
+            if len(epochs_df.iloc[-1]['train_raw']) != 240:
+                print('wtf')
         # Remove epochs past the best one from epochs dataframe
         epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
         model.load_state_dict(self.model_state_dict)

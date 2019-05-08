@@ -141,7 +141,11 @@ def garbage_time():
     globals.set('num_subjects', 9)
     globals.set('eeg_chans', 22)
     globals.set('n_classes', 4)
-    train_set, val_set, test_set = get_train_val_test(data_folder, 1, 0)
+    train_set = {}
+    val_set = {}
+    test_set = {}
+    train_set[1], val_set[1], test_set[1] = \
+        get_train_val_test(data_folder, 1, 0)
     garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                         train_set=train_set, val_set=val_set, test_set=test_set,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,

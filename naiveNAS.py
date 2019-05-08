@@ -237,8 +237,10 @@ class NaiveNAS:
                         if f'{subject}_{param}' in pop.keys():
                             model_stats[f'{subject}_{param}'] = pop[f'{subject}_{param}']
             if 'parents' in pop.keys():
-                parent_fitness = (pop['parents'][0]['fitness'] + pop['parents'][1]['fitness']) / 2
-                model_stats['parent_child_ratio'] = pop['fitness'] / parent_fitness
+                model_stats['parent_child_ratio_left'] = pop['fitness'] / pop['parents'][0]['fitness']
+                model_stats['parent_child_ratio_right'] = pop['fitness'] / pop['parents'][1]['fitness']
+                model_stats['cut_point'] = pop['cut_point']
+            NASUtils.add_model_to_stats(pop['model'], model_stats)
             self.write_to_csv(model_stats, generation+1, model=i+1)
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
@@ -429,7 +431,7 @@ class NaiveNAS:
             second_ensemble = [weighted_population[i] for i in breeders[1]]
             first_ensemble_states = [NASUtils.get_model_state(pop) for pop in first_ensemble]
             second_ensemble_states = [NASUtils.get_model_state(pop) for pop in second_ensemble]
-            new_ensemble, new_ensemble_states = breed_two_ensembles(breeding_method, mutation_rate=self.mutation_rate,
+            new_ensemble, new_ensemble_states, cut_point = breed_two_ensembles(breeding_method, mutation_rate=self.mutation_rate,
                                                                      first_ensemble=first_ensemble,
                                                                      second_ensemble=second_ensemble,
                                                                      first_ensemble_states=first_ensemble_states,
@@ -437,7 +439,7 @@ class NaiveNAS:
             if None not in new_ensemble:
                 for new_model, new_model_state in zip(new_ensemble, new_ensemble_states):
                     children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
-                                     'parents': [first_ensemble[0], second_ensemble[0]]})
+                                     'parents': [first_ensemble[0], second_ensemble[0]], 'cut_point': cut_point})
                     NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
 
@@ -449,14 +451,14 @@ class NaiveNAS:
             second_breeder = weighted_population[breeders[1]]
             first_model_state = NASUtils.get_model_state(first_breeder)
             second_model_state = NASUtils.get_model_state(second_breeder)
-            new_model, new_model_state = breeding_method(mutation_rate=self.mutation_rate,
+            new_model, new_model_state, cut_point = breeding_method(mutation_rate=self.mutation_rate,
                                                          first_model=first_breeder['model'],
                                                          second_model=second_breeder['model'],
                                                          first_model_state=first_model_state,
                                                          second_model_state=second_model_state)
             if new_model is not None:
                 children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
-                                 'parents': [first_breeder, second_breeder]})
+                                 'parents': [first_breeder, second_breeder], 'cut_point': cut_point})
                 NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
 
@@ -466,9 +468,9 @@ class NaiveNAS:
         avg_final_time = 0
         avg_num_epochs = 0
         avg_evaluations = {}
-        _, evaluations, _, _, _ = self.evaluate_model(models[0], states[0], subject, final_evaluation)
-        for eval in evaluations.items():
-            avg_evaluations[eval[0]] = defaultdict(list)
+        _, evaluations, _, _, _ = self.evaluate_model(models[0], states[0], subject)
+        for eval in evaluations.keys():
+            avg_evaluations[eval] = defaultdict(list)
         for model, state in zip(models, states):
             if globals.get('ensemble_pretrain'):
                 if globals.get('random_subject_pretrain'):
@@ -476,10 +478,13 @@ class NaiveNAS:
                 else:
                     pretrain_subject = subject
                 _, _, model, state, _ = self.evaluate_model(model, state, pretrain_subject)
-            final_time, evaluations, model, state, num_epochs = self.evaluate_model(model, state, subject, final_evaluation)
-            for eval in evaluations.items():
-                for eval_spec in eval[1].items():
-                    avg_evaluations[eval[0]][eval_spec[0]].append(eval_spec[1])
+            final_time, evaluations, model, state, num_epochs = self.evaluate_model(model, state, subject,
+                                                                                    final_evaluation, ensemble=True)
+            if len(evaluations['raw']['train']) != 240:
+                print
+            for key, eval in evaluations.items():
+                for inner_key, eval_spec in eval.items():
+                    avg_evaluations[key][inner_key].append(eval_spec)
             avg_final_time += final_time
             avg_num_epochs += num_epochs
             states.append(state)
@@ -505,7 +510,7 @@ class NaiveNAS:
             new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
-    def evaluate_model(self, model, state=None, subject=None, final_evaluation=False):
+    def evaluate_model(self, model, state=None, subject=None, final_evaluation=False, ensemble=False):
         if subject is None:
             subject = self.subject_id
         if self.cuda:
@@ -546,8 +551,6 @@ class NaiveNAS:
                   f'current model state: {model.state_dict().keys()}')
             print('load state dict failed. Exception message: %s' % (str(e)))
             pdb.set_trace()
-        if final_evaluation:
-            single_subj_dataset['train'] = concatenate_sets([single_subj_dataset['train'], single_subj_dataset['valid']])
         self.monitor_epoch(single_subj_dataset, model)
         if globals.get('log_epochs'):
             self.log_epoch()
@@ -555,15 +558,19 @@ class NaiveNAS:
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
         self.iterator.reset_rng()
         start = time.time()
-        num_epochs = self.run_until_stop(model, single_subj_dataset)
+        num_epochs = 1 + self.run_until_stop(model, single_subj_dataset)
+        num_epochs_before_second_run = num_epochs if ensemble else None
         self.setup_after_stop_training(model, final_evaluation)
         if final_evaluation:
-            # single_subj_dataset['train'] = concatenate_sets(
-            #     [single_subj_dataset['train'], single_subj_dataset['valid']])
+            single_subj_dataset['train'] = concatenate_sets(
+                [single_subj_dataset['train'], single_subj_dataset['valid']])
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
+            if ensemble:
+                self.run_one_epoch(single_subj_dataset, model)
+                num_epochs += 1
             num_epochs += self.run_until_stop(model, single_subj_dataset)
-            if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
-                self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
+            if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach or ensemble:
+                self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer, num_epochs_before_second_run)
         end = time.time()
         evaluations = {}
         for evaluation_metric in globals.get('evaluation_metrics'):

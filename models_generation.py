@@ -31,12 +31,6 @@ def print_structure(structure):
     print('-----------------------------------------------')
 
 
-class Lattice:
-    def __init__(self, layers, connections):
-        self.layers = layers
-        self.connections = connections
-
-
 class IdentityModule(nn.Module):
     def forward(self, inputs):
         return inputs
@@ -44,7 +38,6 @@ class IdentityModule(nn.Module):
 
 class Layer():
     def __init__(self, name=None):
-        self.connections = []
         self.name = name
 
     def __eq__(self, other):
@@ -52,9 +45,6 @@ class Layer():
 
     def __ne__(self, other):
         return self.__dict__ != other.__dict__
-
-    def make_connection(self, other):
-        self.connections.append(other)
 
 
 class InputLayer(Layer):
@@ -719,7 +709,7 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
                 add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
     else:
         finalized_new_model_state = None
-    return new_model, finalized_new_model_state
+    return new_model, finalized_new_model_state, cut_point
 
 
 def breed_grid(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
@@ -762,10 +752,10 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
         chosen_mutation = mutations[random.choice(available_mutations)]
         chosen_mutation(child_model)
     if check_legal_grid_model(child_model):
-        return child_model, child_model_state
+        return child_model, child_model_state, cut_point
     else:
         globals.set('failed_breedings', globals.get('failed_breedings') + 1)
-        return None, None
+        return None, None, None
 
 
 def breed_two_ensembles(breeding_method, mutation_rate, first_ensemble, second_ensemble, first_ensemble_states=None,
@@ -779,10 +769,10 @@ def breed_two_ensembles(breeding_method, mutation_rate, first_ensemble, second_e
     states = []
     for m1, m2, s1, s2 in zip(first_ensemble, second_ensemble, first_ensemble_states, second_ensemble_states):
         assert(m1['perm_ensemble_id'] == m2['perm_ensemble_id'])
-        combined, combined_state = breeding_method(mutation_rate, m1['model'], m2['model'], s1, s2, cut_point)
+        combined, combined_state, _ = breeding_method(mutation_rate, m1['model'], m2['model'], s1, s2, cut_point)
         models.append(combined)
         states.append(combined_state)
-    return models, states
+    return models, states, cut_point
 
 
 def target_model(model_name):
