@@ -102,11 +102,8 @@ class NaiveNAS:
         self.mutation_rate = globals.get('mutation_rate')
 
     def get_dummy_input(self):
-        if globals.get('cross_subject'):
-            random_subj = list(self.datasets['train'].keys())[0]
-            return np_to_var(self.datasets['train'][random_subj].X[:1, :, :, None])
-        else:
-            return np_to_var(self.datasets['train'].X[:1, :, :, None])
+        random_subj = list(self.datasets['train'].keys())[0]
+        return np_to_var(self.datasets['train'][random_subj].X[:1, :, :, None])
 
     def finalized_model_to_dilated(self, model):
         to_dense_prediction_model(model)
@@ -165,6 +162,8 @@ class NaiveNAS:
                 weighted_population[i]['num_epochs'] = 0
                 continue
             finalized_model = finalize_model(pop['model'])
+            if globals.get('cropping'):
+                self.finalized_model_to_dilated(finalized_model)
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
@@ -240,7 +239,7 @@ class NaiveNAS:
                 model_stats['parent_child_ratio_left'] = pop['fitness'] / pop['parents'][0]['fitness']
                 model_stats['parent_child_ratio_right'] = pop['fitness'] / pop['parents'][1]['fitness']
                 model_stats['cut_point'] = pop['cut_point']
-            NASUtils.add_model_to_stats(pop['model'], model_stats)
+            NASUtils.add_model_to_stats(pop['model'], i, model_stats)
             self.write_to_csv(model_stats, generation+1, model=i+1)
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
@@ -308,7 +307,10 @@ class NaiveNAS:
 
     def save_best_model(self, weighted_population):
         try:
-            save_model = weighted_population[0]['finalized_model'].to("cpu")
+            if globals.get('delete_finalized_models'):
+                save_model = finalize_model(weighted_population[0]['model'])
+            else:
+                save_model = weighted_population[0]['finalized_model'].to("cpu")
             subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
             self.model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
             torch.save(save_model, self.model_filename)
@@ -480,8 +482,6 @@ class NaiveNAS:
                 _, _, model, state, _ = self.evaluate_model(model, state, pretrain_subject)
             final_time, evaluations, model, state, num_epochs = self.evaluate_model(model, state, subject,
                                                                                     final_evaluation, ensemble=True)
-            if len(evaluations['raw']['train']) != 240:
-                print
             for key, eval in evaluations.items():
                 for inner_key, eval_spec in eval.items():
                     avg_evaluations[key][inner_key].append(eval_spec)
@@ -558,19 +558,20 @@ class NaiveNAS:
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
         self.iterator.reset_rng()
         start = time.time()
-        num_epochs = 1 + self.run_until_stop(model, single_subj_dataset)
-        num_epochs_before_second_run = num_epochs if ensemble else None
+        num_epochs = self.run_until_stop(model, single_subj_dataset)
         self.setup_after_stop_training(model, final_evaluation)
+        # num_epochs_before_second_run = len(self.epochs_df.values) if ensemble else None
         if final_evaluation:
             single_subj_dataset['train'] = concatenate_sets(
                 [single_subj_dataset['train'], single_subj_dataset['valid']])
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             if ensemble:
                 self.run_one_epoch(single_subj_dataset, model)
+                self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer, force=ensemble)
                 num_epochs += 1
             num_epochs += self.run_until_stop(model, single_subj_dataset)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach or ensemble:
-                self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer, num_epochs_before_second_run)
+                self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
         evaluations = {}
         for evaluation_metric in globals.get('evaluation_metrics'):
@@ -580,6 +581,9 @@ class NaiveNAS:
         final_time = end-start
         if self.cuda:
             torch.cuda.empty_cache()
+        if globals.get('delete_finalized_models'):
+            del model
+            model = None
         return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):

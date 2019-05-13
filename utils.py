@@ -429,23 +429,23 @@ class CroppedGenericMonitorPerTimeStep():
         column_name = "{:s}_{:s}".format(setname, self.measure_name)
         return {column_name: float(measure)}
 
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
-        """Assuming one hot encoding for now"""
-        assert self.input_time_length is not None, "Need to know input time length..."
-        # First case that each trial only has a single label
-        if not hasattr(dataset.y[0], '__len__'):
-            all_pred_labels = compute_trial_labels_from_crop_preds(
-                all_preds, self.input_time_length, dataset.X)
-            assert all_pred_labels.shape == dataset.y.shape
-            all_trial_labels = dataset.y
-        else:
-            all_trial_labels, all_pred_labels = (
-                self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds))
-        assert all_pred_labels.shape == all_trial_labels.shape
-        measure = self.measure_func(all_pred_labels, all_trial_labels)
-        column_name = "{:s}_{:s}".format(setname, self.measure_name)
-        return {column_name: float(measure)}
+    # def monitor_set(self, setname, all_preds, all_losses,
+    #                 all_batch_sizes, all_targets, dataset):
+    #     """Assuming one hot encoding for now"""
+    #     assert self.input_time_length is not None, "Need to know input time length..."
+    #     # First case that each trial only has a single label
+    #     if not hasattr(dataset.y[0], '__len__'):
+    #         all_pred_labels = compute_trial_labels_from_crop_preds(
+    #             all_preds, self.input_time_length, dataset.X)
+    #         assert all_pred_labels.shape == dataset.y.shape
+    #         all_trial_labels = dataset.y
+    #     else:
+    #         all_trial_labels, all_pred_labels = (
+    #             self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds))
+    #     assert all_pred_labels.shape == all_trial_labels.shape
+    #     measure = self.measure_func(all_pred_labels, all_trial_labels)
+    #     column_name = "{:s}_{:s}".format(setname, self.measure_name)
+    #     return {column_name: float(measure)}
 
     def _compute_pred_labels(self, dataset, all_preds, ):
         preds_per_trial = compute_preds_per_trial_from_crops(
@@ -508,7 +508,7 @@ class RememberBest(object):
         self.model_state_dict = None
         self.optimizer_state_dict = None
 
-    def remember_epoch(self, epochs_df, model, optimizer):
+    def remember_epoch(self, epochs_df, model, optimizer, force=False):
         """
         Remember this epoch: Remember parameter values in case this epoch
         has the best performance so far.
@@ -520,10 +520,11 @@ class RememberBest(object):
             is evaluated.
         model: `torch.nn.Module`
         optimizer: `torch.optim.Optimizer`
+        force: `remember this epoch no matter what`
         """
         i_epoch = len(epochs_df) - 1
         current_val = float(epochs_df[self.column_name].iloc[-1])
-        if current_val >= self.highest_val:
+        if current_val >= self.highest_val or force:
             self.best_epoch = i_epoch
             self.highest_val = current_val
             self.model_state_dict = deepcopy(model.state_dict())
@@ -545,13 +546,10 @@ class RememberBest(object):
         model: `torch.nn.Module`
         optimizer: `torch.optim.Optimizer`
         """
-        if num_epochs_before_second_run is not None and self.best_epoch < num_epochs_before_second_run:
-            # need to reset the best epoch here to contain the right amount of samples (raws, targets)
-            self.best_epoch = max([i for i, _ in enumerate(epochs_df[self.column_name].values
-                                                    [num_epochs_before_second_run-1:])]) + num_epochs_before_second_run
-        if not num_epochs_before_second_run is None:
-            if len(epochs_df.iloc[-1]['train_raw']) != 240:
-                print('wtf')
+        # if num_epochs_before_second_run is not None and self.best_epoch < num_epochs_before_second_run:
+        #     # need to reset the best epoch here to contain the right amount of samples (raws, targets)
+        #     self.best_epoch = epochs_df[self.column_name][num_epochs_before_second_run-1:].idxmax()
+
         # Remove epochs past the best one from epochs dataframe
         epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
         model.load_state_dict(self.model_state_dict)
