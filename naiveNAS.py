@@ -239,7 +239,7 @@ class NaiveNAS:
                 model_stats['parent_child_ratio_left'] = pop['fitness'] / pop['parents'][0]['fitness']
                 model_stats['parent_child_ratio_right'] = pop['fitness'] / pop['parents'][1]['fitness']
                 model_stats['cut_point'] = pop['cut_point']
-            NASUtils.add_model_to_stats(pop['model'], i, model_stats)
+            NASUtils.add_model_to_stats(pop, i, model_stats)
             self.write_to_csv(model_stats, generation+1, model=i+1)
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)

@@ -1,6 +1,9 @@
 import os
 from braindecode.datasets.bbci import BBCIDataset
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
+from braindecode.datautil.signal_target import SignalAndTarget
+
+from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidTestSplitter
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import matplotlib
@@ -351,6 +354,45 @@ def get_sonarsub_train_val_test(data_folder):
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
     return train_set, valid_set, test_set
+
+
+def get_tuh_train_val_test(data_folder):
+    preproc_functions = create_preproc_functions(
+        sec_to_cut_at_start=globals.get('sec_to_cut_at_start'),
+        sec_to_cut_at_end=globals.get('sec_to_cut_at_end'),
+        duration_recording_mins=globals.get('duration_recording_mins'),
+        max_abs_val=globals.get('max_abs_val'),
+        clip_before_resample=globals.get('clip_before_resample'),
+        sampling_freq=globals.get('sampling_freq'),
+        divisor=globals.get('divisor'))
+
+    test_preproc_functions = create_preproc_functions(
+        sec_to_cut_at_start=globals.get('sec_to_cut_at_start'),
+        sec_to_cut_at_end=globals.get('sec_to_cut_at_end'),
+        duration_recording_mins=globals.get('test_recording_mins'),
+        max_abs_val=globals.get('max_abs_val'),
+        clip_before_resample=globals.get('clip_before_resample'),
+        sampling_freq=globals.get('sampling_freq'),
+        divisor=globals.get('divisor'))
+
+    training_set = DiagnosisSet(n_recordings=globals.get('n_recordings'),
+                           max_recording_mins=globals.get('max_recording_mins'),
+                           preproc_functions=preproc_functions,
+                           train_or_eval='train',
+                            sensor_types=globals.get('sensor_types'))
+
+    test_set = DiagnosisSet(n_recordings=globals.get('n_recordings'),
+                                max_recording_mins=None,
+                                preproc_functions=test_preproc_functions,
+                                train_or_eval='eval',
+                                sensor_types=globals.get('sensor_types'))
+    X, y = training_set.load()
+    splitter = TrainValidTestSplitter(n_folds, i_valid_fold=i_test_fold, shuffle=globals.get('shuffle'))
+    train_set, valid_set = splitter.split(X, y)
+    test_X, test_y = test_set.load()
+    test_set = SignalAndTarget(test_X, test_y)
+    return train_set, valid_set, test_set
+
 
 
 def get_pure_cross_subject(data_folder, low_cut_hz):

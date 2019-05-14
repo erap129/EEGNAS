@@ -361,16 +361,18 @@ def sort_population(weighted_population):
         return sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
 
 
-def add_model_to_stats(model, model_index, model_stats):
+def add_model_to_stats(pop, model_index, model_stats):
     if globals.get('grid'):
         pass
     else:
-        for i, layer in enumerate(model):
+        for i, layer in enumerate(pop['model']):
             model_stats[f'layer_{i}'] = type(layer).__name__
             for key, value in vars(layer).items():
                 model_stats[f'layer_{i}_{key}'] = value
     if globals.get('perm_ensembles'):
         model_stats['ensemble_role'] = (model_index % globals.get('ensemble_size')) + 1
+    if 'perm_ensemble_id' in pop:
+        assert pop['perm_ensemble_id'] == model_stats['ensemble_role']
 
 
 

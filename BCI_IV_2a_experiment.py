@@ -123,7 +123,7 @@ def get_cropped_settings():
     if globals.get('dataset') in ['BCI_IV_2b']:
         # monitors.append(CroppedTrialGenericMonitor('kappa', kappa_func,
         #             input_time_length=globals.get('input_time_len')))
-        monitors = [LossMonitor(), RuntimeMonitor()]
+        # monitors = [LossMonitor(), RuntimeMonitor()]
         monitors.append(CroppedGenericMonitorPerTimeStep('kappa', kappa_func,
                     input_time_length=globals.get('input_time_len')))
 
