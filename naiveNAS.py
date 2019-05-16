@@ -112,13 +112,19 @@ class NaiveNAS:
                                           (globals.get('final_conv_size'),
                                            conv_classifier.kernel_size[1]), stride=conv_classifier.stride,
                                           dilation=conv_classifier.dilation)
+
+    def get_n_preds_per_input(self, model):
         dummy_input = self.get_dummy_input()
         if globals.get('cuda'):
             model.cuda()
             dummy_input = dummy_input.cuda()
         out = model(dummy_input)
         n_preds_per_input = out.cpu().data.numpy().shape[2]
-        globals.set('n_preds_per_input', n_preds_per_input)
+        return n_preds_per_input
+
+    def set_cropping_for_model(self, model):
+        models_generation.finalized_model_to_dilated(model)
+        globals.set('n_preds_per_input', models_generation.get_n_preds_per_input(model))
         self.iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
                                                 input_time_length=globals.get('input_time_len'),
                                                 n_preds_per_input=globals.get('n_preds_per_input'))
@@ -135,7 +141,7 @@ class NaiveNAS:
         # else:
         #     model = target_model(globals.get('model_name'))
             if globals.get('cropping'):
-                self.finalized_model_to_dilated(model)
+                self.set_cropping_for_model(model)
             final_time, evaluations, model, model_state, num_epochs =\
                 self.evaluate_model(model, final_evaluation=True)
             stats['train_time'] = str(final_time)
@@ -163,7 +169,7 @@ class NaiveNAS:
                 continue
             finalized_model = finalize_model(pop['model'])
             if globals.get('cropping'):
-                self.finalized_model_to_dilated(finalized_model)
+                self.set_cropping_for_model(finalized_model)
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
@@ -272,7 +278,7 @@ class NaiveNAS:
     def add_final_stats(self, stats, weighted_population):
         model = finalize_model(weighted_population[0]['model'])
         if globals.get('cropping'):
-            self.finalized_model_to_dilated(model)
+            self.set_cropping_for_model(model)
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:

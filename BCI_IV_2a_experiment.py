@@ -417,6 +417,7 @@ if __name__ == '__main__':
                         os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
                     set_seeds()
                     if globals.get('cropping'):
+                        globals.set('original_input_time_len', globals.get('input_time_len'))
                         globals.set('input_time_len', globals.get('input_time_cropping'))
                         stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
                     else:

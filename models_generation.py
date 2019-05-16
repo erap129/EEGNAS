@@ -1,9 +1,11 @@
+import math
 import pdb
 import sys
 
 import torch
 import numpy as np
 from Bio.pairwise2 import format_alignment
+from braindecode.models.util import to_dense_prediction_model
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 from braindecode.models import deep4, shallow_fbcsp, eegnet
@@ -436,6 +438,16 @@ class MyModel:
             return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
 
 
+def check_legal_cropping_model(layer_collection):
+    finalized_model = finalize_model(layer_collection)
+    finalized_model_to_dilated(finalized_model)
+    n_preds_per_input = get_n_preds_per_input(finalized_model)
+    n_receptive_field = globals.get('input_time_len') - n_preds_per_input + 1
+    n_preds_per_trial = globals.get('original_input_time_len') - n_receptive_field + 1
+    return n_preds_per_trial <= n_preds_per_input * \
+           (math.ceil(globals.get('original_input_time_len') / globals.get('input_time_len')))
+
+
 def check_legal_model(layer_collection):
     if globals.get('channel_dim') == 'channels':
         input_chans = 1
@@ -452,6 +464,8 @@ def check_legal_model(layer_collection):
         if input_time < 1 or input_chans < 1:
             print(f"illegal model, input_time={input_time}, input_chans={input_chans}")
             return False
+    if globals.get('cropping'):
+        return check_legal_cropping_model(layer_collection)
     return True
 
 
@@ -677,7 +691,7 @@ def mutate_models(model, mutation_rate):
 
 
 def mutate_layers(model, mutation_rate):
-    for layer_index in range(len(second_model)):
+    for layer_index in range(len(model)):
         if random.random() < mutation_rate:
             mutate_layer(model, layer_index)
 
@@ -709,7 +723,11 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
                 add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
     else:
         finalized_new_model_state = None
-    return new_model, finalized_new_model_state, cut_point
+    if check_legal_model(new_model):
+        return new_model, finalized_new_model_state, cut_point
+    else:
+        globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+        return None, None, None
 
 
 def breed_grid(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
@@ -735,9 +753,9 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                     child_model.remove_edge(edge[0], edge[1])
                 for edge in add_edges:
                     child_model.add_edge(edge[0], edge[1])
-        if not check_legal_grid_model(child_model):
-            globals.set('failed_breedings', globals.get('failed_breedings') + 1)
-            return None, None, None
+        # if not check_legal_grid_model(child_model):
+        #     globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+        #     return None, None, None
         if globals.get('inherit_weights_crossover') and first_model_state is not None and second_model_state is not None:
             child_model_state = ModelFromGrid(child_model).state_dict()
             inherit_grid_states(first_model.graph['width'], cut_point, child_model_state,
@@ -810,3 +828,25 @@ def finalize_model(layer_collection):
     return new_model_from_structure_pytorch(layer_collection)
 
 
+def finalized_model_to_dilated(model):
+    to_dense_prediction_model(model)
+    conv_classifier = model.conv_classifier
+    model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
+                                      (globals.get('final_conv_size'),
+                                       conv_classifier.kernel_size[1]), stride=conv_classifier.stride,
+                                      dilation=conv_classifier.dilation)
+
+
+def get_n_preds_per_input(model):
+    dummy_input = get_dummy_input()
+    if globals.get('cuda'):
+        model.cuda()
+        dummy_input = dummy_input.cuda()
+    out = model(dummy_input)
+    n_preds_per_input = out.cpu().data.numpy().shape[2]
+    return n_preds_per_input
+
+
+def get_dummy_input():
+    input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+    return np_to_var(np.ones(input_shape, dtype=np.float32))

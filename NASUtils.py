@@ -271,7 +271,7 @@ def calc_ensembles_fitness(ensembles, pop_fitnesses, weighted_population):
         ensemble_fit = one_ensemble_fitness(weighted_population, ensemble)
         for pop in ensemble:
             pop_fitnesses[pop].append(ensemble_fit)
-        return ensemble_fit
+    return ensemble_fit
 
 
 def ensemble_fitness(weighted_population):
@@ -370,7 +370,7 @@ def add_model_to_stats(pop, model_index, model_stats):
             for key, value in vars(layer).items():
                 model_stats[f'layer_{i}_{key}'] = value
     if globals.get('perm_ensembles'):
-        model_stats['ensemble_role'] = (model_index % globals.get('ensemble_size')) + 1
+        model_stats['ensemble_role'] = (model_index % globals.get('ensemble_size'))
     if 'perm_ensemble_id' in pop:
         assert pop['perm_ensemble_id'] == model_stats['ensemble_role']
 
