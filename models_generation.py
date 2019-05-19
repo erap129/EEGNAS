@@ -18,6 +18,8 @@ import globals
 from Bio import pairwise2
 from collections import defaultdict
 import networkx as nx
+
+from model_impls.oh_parkinson import OhParkinson
 from model_impls.sleepClassifier import get_sleep_classifier
 from networkx.classes.function import create_empty_copy
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
@@ -800,8 +802,10 @@ def target_model(model_name):
     models = {'deep': deep4.Deep4Net(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
               'shallow': shallow_fbcsp.ShallowFBCSPNet(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
               'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_time_len, final_conv_length='auto'),
-              'sleep_classifier': get_sleep_classifier()}
-    final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2, 'sleep_classifier': 2}
+              'sleep_classifier': get_sleep_classifier(),
+              'oh_parkinson': OhParkinson}
+    final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2}
+    final_conv_sizes = defaultdict(int, final_conv_sizes)
     globals.set('final_conv_size', final_conv_sizes[model_name])
     if model_name == 'sleep_classifier':
         return models[model_name]

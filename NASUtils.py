@@ -1,5 +1,6 @@
 import pickle
 from collections import defaultdict
+from functools import reduce
 
 import networkx as nx
 import random
@@ -373,6 +374,28 @@ def add_model_to_stats(pop, model_index, model_stats):
         model_stats['ensemble_role'] = (model_index % globals.get('ensemble_size'))
     if 'perm_ensemble_id' in pop:
         assert pop['perm_ensemble_id'] == model_stats['ensemble_role']
+    if globals.get('delete_finalized_model'):
+        finalized_model = models_generation.finalize_model(pop['model'])
+    else:
+        finalized_model = pop['finalized_model']
+    model_stats['trainable_params'] = pytorch_count_params(finalized_model)
+
+
+def train_time_penalty(weighted_population):
+    train_time_indices = [i[0] for i in sorted(enumerate
+                                               (weighted_population), key=lambda x: x[1]['train_time'])]
+    for rank, idx in enumerate(train_time_indices):
+        weighted_population[idx]['fitness'] -= (rank / globals.get('pop_size')) *\
+                                                weighted_population[idx]['fitness'] * globals.get('penalty_factor')
+
+
+def pytorch_count_params(model):
+    total_params = sum(reduce(lambda a, b: a*b, x.size()) for x in model.parameters())
+    return total_params
+
+
+
+
 
 
 

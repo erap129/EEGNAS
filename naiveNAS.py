@@ -28,6 +28,7 @@ from torch import nn
 from utils import summary, NoIncrease, dump_tensors
 import NASUtils
 import pdb
+from tensorboardX import SummaryWriter
 from copy import deepcopy
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
@@ -103,7 +104,10 @@ class NaiveNAS:
 
     def get_dummy_input(self):
         random_subj = list(self.datasets['train'].keys())[0]
-        return np_to_var(self.datasets['train'][random_subj].X[:1, :, :, None])
+        result = np_to_var(self.datasets['train'][random_subj].X[:1, :, :, None])
+        if self.cuda:
+            result = result.cuda()
+        return result
 
     def finalized_model_to_dilated(self, model):
         to_dense_prediction_model(model)
@@ -138,14 +142,14 @@ class NaiveNAS:
                 model = torch.load(self.model_from_file)
             else:
                 model = torch.load(self.model_from_file, map_location='cpu')
-        # else:
-        #     model = target_model(globals.get('model_name'))
-            if globals.get('cropping'):
-                self.set_cropping_for_model(model)
-            final_time, evaluations, model, model_state, num_epochs =\
-                self.evaluate_model(model, final_evaluation=True)
-            stats['train_time'] = str(final_time)
-            NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
+        else:
+            model = target_model(globals.get('model_name'))
+        if globals.get('cropping'):
+            self.set_cropping_for_model(model)
+        final_time, evaluations, model, model_state, num_epochs =\
+                    self.evaluate_model(model, final_evaluation=True)
+        stats['train_time'] = str(final_time)
+        NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
         self.weighted_population_file = globals.get('weighted_population_file')
         if self.weighted_population_file:
             self.weighted_population_file = f'weighted_populations/{self.weighted_population_file}'
@@ -170,6 +174,8 @@ class NaiveNAS:
             finalized_model = finalize_model(pop['model'])
             if globals.get('cropping'):
                 self.set_cropping_for_model(finalized_model)
+            self.current_model_index = i
+            self.current_generation = generation
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
@@ -345,6 +351,8 @@ class NaiveNAS:
     def evaluate_and_sort(self, weighted_population, generation):
         self.evo_strategy(weighted_population, generation)
         getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
+        if globals.get('fitness_penalty_function'):
+            getattr(NASUtils, globals.get('fitness_penalty_function'))(weighted_population)
         weighted_population = NASUtils.sort_population(weighted_population)
         stats = self.calculate_stats(weighted_population, generation)
         self.add_parent_child_relations(weighted_population, stats)
@@ -587,6 +595,8 @@ class NaiveNAS:
         final_time = end-start
         if self.cuda:
             torch.cuda.empty_cache()
+        with SummaryWriter(log_dir=f'{self.exp_folder}/tensorboard/gen_{self.current_generation}_model{self.current_model_index}') as w:
+            w.add_graph(model, self.get_dummy_input())
         if globals.get('delete_finalized_models'):
             del model
             model = None
