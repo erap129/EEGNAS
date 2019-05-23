@@ -335,13 +335,18 @@ def connect_to_gdrive():
     return drive
 
 
-def upload_exp_to_gdrive(fold_names, first_dataset):
+def get_base_folder_name(fold_names, first_dataset):
     ind = fold_names[0].find('_')
     end_ind = fold_names[0].rfind(first_dataset)
     base_folder_name = list(fold_names[0])
     base_folder_name[ind + 1] = 'x'
-    base_folder_name = base_folder_name[:end_ind-1]
+    base_folder_name = base_folder_name[:end_ind - 1]
     base_folder_name = ''.join(base_folder_name)
+    return base_folder_name
+
+
+def upload_exp_to_gdrive(fold_names, first_dataset):
+    base_folder_name = get_base_folder_name(fold_names, first_dataset)
     drive = connect_to_gdrive()
     base_folder = drive.CreateFile({'title': base_folder_name,
                                    'parents': [{"id": '1z6y-g4HqmQm7i8R2h66sDd5e6AV1IhVM'}],
@@ -361,6 +366,21 @@ def upload_exp_to_gdrive(fold_names, first_dataset):
                                                        'parents': [{"id": spec_folder['id']}]})
                     file_drive.SetContentFile(str(join(full_folder, filename)))
                     file_drive.Upload()
+
+
+def concat_and_pivot_results(fold_names, first_dataseet):
+    to_concat = []
+    for folder in fold_names:
+        full_folder = 'results/' + folder
+        files = [f for f in os.listdir(full_folder) if os.path.isfile(os.path.join(full_folder, f))]
+        for file in files:
+            if file[0].isdigit():
+                to_concat.append(os.path.join(full_folder, file))
+    combined_csv = pd.concat([pd.read_csv(f) for f in to_concat])
+    pivot_df = combined_csv.pivot_table(values='param_value',
+                              index=['exp_name', 'machine', 'dataset', 'date', 'generation', 'subject', 'model'],
+                              columns='param_name', aggfunc='first')
+    pivot_df.to_csv(f'{get_base_folder_name(fold_names, first_dataset)}_pivoted.csv')
 
 
 def set_seeds():
@@ -465,5 +485,6 @@ if __name__ == '__main__':
     finally:
         if args.drive == 't':
             upload_exp_to_gdrive(folder_names, first_dataset)
+        concat_and_pivot_results(folder_names, first_dataset)
         if args.garbage == 't':
             garbage_time()

@@ -788,7 +788,7 @@ def breed_two_ensembles(breeding_method, mutation_rate, first_ensemble, second_e
     models = []
     states = []
     for m1, m2, s1, s2 in zip(first_ensemble, second_ensemble, first_ensemble_states, second_ensemble_states):
-        assert(m1['perm_ensemble_id'] == m2['perm_ensemble_id'])
+        assert(m1['perm_ensemble_role'] == m2['perm_ensemble_role'])
         combined, combined_state, _ = breeding_method(mutation_rate, m1['model'], m2['model'], s1, s2, cut_point)
         models.append(combined)
         states.append(combined_state)

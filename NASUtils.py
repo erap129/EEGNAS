@@ -372,8 +372,8 @@ def add_model_to_stats(pop, model_index, model_stats):
                 model_stats[f'layer_{i}_{key}'] = value
     if globals.get('perm_ensembles'):
         model_stats['ensemble_role'] = (model_index % globals.get('ensemble_size'))
-    if 'perm_ensemble_id' in pop:
-        assert pop['perm_ensemble_id'] == model_stats['ensemble_role']
+        assert pop['perm_ensemble_role'] == model_stats['ensemble_role']
+        model_stats['perm_ensemble_id'] = pop['perm_ensemble_id']
     if globals.get('delete_finalized_model'):
         finalized_model = models_generation.finalize_model(pop['model'])
     else:
