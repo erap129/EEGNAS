@@ -10,7 +10,10 @@
 * Note: On a high-end Nvidia GPU each configuration should take 1-2 days to complete.
 * For test purposes, it is possible to edit the 'config.ini' file, located in the 'configurations' folder.
     * For example, the property 'num_generations' can be changed from 75 to any other number, in order to get shorter run-times (and worse results).
-    
+
+###Instructions to run mixed data experiment on the BCI Competition IV 2a dataset:
+* steps equivalent to the previous experiment, except stage 2:
+2. from the main folder 'BCI_Benchmarks' run: `python BCI_IV_2a_experiment.py -e cross_per_subject`
     
 ### Additional Notes
 * Datasets:
@@ -20,5 +23,6 @@
     * Inria BCI dataset - need to [download from kaggle](https://www.kaggle.com/c/inria-bci-challenge/data) and move to the folder 'data/NER15'
     * Opportunity dataset - need to download manually and move to the folder 'data/Opportunity'. Use preproccesing code from [this repository](https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs/blob/master/data/download_datasets.py) to obtain the file 'oppChallenge_gestures.data', which needs to be put in the folder 'data/Opportunity'
 
+* The Moabb package is required to run EEGNAS, it isn't available on pip, but can be downloaded manually from git here: https://github.com/NeuroTechX/moabb
 * EEGNAS is **work in progress**. In the future will be added an option to automatically analyze your own data and receive a neural architecture. Meanwhile, interested users can try to understand the NAS process themselves and add their own DB (the main task is to edit the file BCI_IV_2a_experiment.py and configurtions/config.ini)
 * The repository is **heavy** because of the BCI Competition IV 2a dataset. It may take a while to download.

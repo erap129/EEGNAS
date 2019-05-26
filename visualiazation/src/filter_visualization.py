@@ -20,7 +20,10 @@ plt.interactive(False)
 img_name_counter = 1
 
 
-def get_max_examples(data, select_layer, model):
+# def plot_time_frequency(data)
+
+
+def get_max_examples_per_channel(data, select_layer, model):
     act_maps = {}
     x = np_to_var(data[:, :, :, None]).cuda()
     modules = list(model.modules())[0]
@@ -29,14 +32,11 @@ def get_max_examples(data, select_layer, model):
         for l in modules[:select_layer + 1]:
             example_x = l(example_x)
         act_maps[idx] = example_x
-    height = act_maps[0].shape[1]
-    width = act_maps[1].shape[2]
-    selected_examples = np.zeros((height, width))
-    for h in range(height):
-        for w in range(width):
-            selected_examples[h, w]\
-                = unravel_index(np.array([act_map.squeeze()[h, w] for act_map in act_maps.values()])
-                                .reshape(height, width).argmax(), act_maps.shape)
+    channels = act_maps[0].shape[1]
+    selected_examples = np.zeros(channels)
+    for c in range(channels):
+        selected_examples[c]\
+            = np.array([act_map.squeeze()[c].sum() for act_map in act_maps.values()]).argmax()
     print(selected_examples)
 
 
@@ -56,6 +56,7 @@ def get_intermediate_act_map(data, select_layer, model):
 
 def plot_tensors(tensor, title, num_cols=8):
     global img_name_counter
+    tensor = np.swapaxes(tensor, 1, 2)
     if not tensor.ndim==4:
         raise Exception("assumes a 4D tensor")
     # if not tensor.shape[-1]==3:
@@ -65,7 +66,7 @@ def plot_tensors(tensor, title, num_cols=8):
     fig = plt.figure(figsize=(num_cols, num_rows))
     for i in range(tensor.shape[0]):
         ax1 = fig.add_subplot(num_rows, num_cols, i+1)
-        im = ax1.imshow(tensor[i].squeeze(axis=2).swapaxes(0, 1), cmap='gray')
+        im = ax1.imshow(tensor[i].squeeze(axis=2), cmap='gray')
         ax1.axis('off')
         ax1.set_xticklabels([])
         ax1.set_yticklabels([])
@@ -126,10 +127,16 @@ def plot_avg_activation_maps(pretrained_model, train_set):
         os.remove(im)
 
 
+def get_tf_plot(X):
+    pass
+
+
 def find_optimal_samples_per_filter(pretrained_model, train_set):
     for index, layer in enumerate(list(pretrained_model.children())):
         if isinstance(layer, nn.Conv2d):
-            max_examples = get_max_examples(train_set[subject_id].X, index, pretrained_model)
+            max_examples = get_max_examples_per_channel(train_set[subject_id].X, index, pretrained_model)
+            for example_idx in max_examples:
+                tf_plot = get_tf_plot(train_set[subject_id].X[example_idx])
 
 
 if __name__ == '__main__':
