@@ -352,6 +352,12 @@ def upload_exp_to_gdrive(fold_names, first_dataset):
                                    'parents': [{"id": '1z6y-g4HqmQm7i8R2h66sDd5e6AV1IhVM'}],
                                     'mimeType': "application/vnd.google-apps.folder"})
     base_folder.Upload()
+    concat_filename = concat_and_pivot_results(fold_names, first_dataset)
+    file_drive = drive.CreateFile({'title': concat_filename,
+                                   'parents': [{"id": base_folder['id']}]})
+    file_drive.SetContentFile(concat_filename)
+    file_drive.Upload()
+    os.remove(concat_filename)
     for folder in fold_names:
         full_folder = 'results/' + folder
         if os.path.isdir(full_folder):
@@ -368,7 +374,7 @@ def upload_exp_to_gdrive(fold_names, first_dataset):
                     file_drive.Upload()
 
 
-def concat_and_pivot_results(fold_names, first_dataseet):
+def concat_and_pivot_results(fold_names, first_dataset):
     to_concat = []
     for folder in fold_names:
         full_folder = 'results/' + folder
@@ -380,7 +386,9 @@ def concat_and_pivot_results(fold_names, first_dataseet):
     pivot_df = combined_csv.pivot_table(values='param_value',
                               index=['exp_name', 'machine', 'dataset', 'date', 'generation', 'subject', 'model'],
                               columns='param_name', aggfunc='first')
-    pivot_df.to_csv(f'{get_base_folder_name(fold_names, first_dataset)}_pivoted.csv')
+    filename = f'{get_base_folder_name(fold_names, first_dataset)}_pivoted.csv'
+    pivot_df.to_csv(filename)
+    return filename
 
 
 def set_seeds():
@@ -431,10 +439,15 @@ if __name__ == '__main__':
                         first_dataset = globals.get('dataset')
                         first_run = False
                     # if torch.cuda.is_available() and not globals.get('force_gpu_off'):
-                    if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2') \
-                                and not globals.get('force_gpu_off'):
-                        globals.set('cuda', True)
-                        os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+                    try:
+                        torch.cuda.current_device()
+                        # if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2') \
+                        #     and not globals.get('force_gpu_off'):
+                        if not globals.get('force_gpu_off'):
+                            globals.set('cuda', True)
+                            os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+                    except AssertionError as e:
+                        print('no cuda available, using CPU')
                     set_seeds()
                     if globals.get('cropping'):
                         globals.set('original_input_time_len', globals.get('input_time_len'))
@@ -485,6 +498,5 @@ if __name__ == '__main__':
     finally:
         if args.drive == 't':
             upload_exp_to_gdrive(folder_names, first_dataset)
-        concat_and_pivot_results(folder_names, first_dataset)
         if args.garbage == 't':
             garbage_time()
