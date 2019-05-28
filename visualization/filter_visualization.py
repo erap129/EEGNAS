@@ -1,3 +1,4 @@
+import math
 import os
 
 import torch
@@ -12,8 +13,10 @@ import matplotlib.pyplot as plt
 import matplotlib
 from visualization.pdf_utils import create_pdf
 import numpy as np
+from numpy import unravel_index
+from visualization.tf_plot import tf_plot
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from oct2py import octave
+
 matplotlib.use("TkAgg")
 plt.interactive(False)
 img_name_counter = 1
@@ -127,7 +130,7 @@ def plot_avg_activation_maps(pretrained_model, train_set):
 
 
 def get_tf_plot(X):
-    octave.feval('simple_plot.m')
+    pass
 
 
 def find_optimal_samples_per_filter(pretrained_model, train_set):
@@ -162,7 +165,7 @@ if __name__ == '__main__':
     filter_pos = {'evolution': 0, 'deep4': 0}
     model_dir = '91_x_BCI_IV_2b'
     model_name = 'best_model_5_1_8_7_9_2_3_4_6.th'
-    model = {'evolution': torch.load(f'../../models/{model_dir}/{model_name}'),
+    model = {'evolution': torch.load(f'../models/{model_dir}/{model_name}'),
                         'deep4': target_model('deep')}
     subject_id = 1
     train_set = {}
@@ -170,6 +173,7 @@ if __name__ == '__main__':
     test_set = {}
     train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
         get_train_val_test(globals.get('data_folder'), subject_id, globals.get('low_cut_hz'))
+
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
                         train_set=train_set, val_set=val_set, test_set=test_set,
