@@ -10,11 +10,10 @@ from data_preprocessing import get_train_val_test
 from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
 import matplotlib
-from visualiazation.src.pdf_utils import create_pdf
+from visualization.pdf_utils import create_pdf
 import numpy as np
-from numpy import unravel_index
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
+from oct2py import octave
 matplotlib.use("TkAgg")
 plt.interactive(False)
 img_name_counter = 1
@@ -128,7 +127,7 @@ def plot_avg_activation_maps(pretrained_model, train_set):
 
 
 def get_tf_plot(X):
-    pass
+    octave.feval('simple_plot.m')
 
 
 def find_optimal_samples_per_filter(pretrained_model, train_set):

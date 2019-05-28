@@ -464,6 +464,7 @@ class NaiveNAS:
                     children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
                                      'first_parent_index': first_ensemble[0]['perm_ensemble_id'],
                                      'second_parent_index': second_ensemble[0]['perm_ensemble_id'],
+                                     'parents': [first_ensemble[0], second_ensemble[0]],
                                      'cut_point': cut_point})
                     NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
