@@ -37,20 +37,19 @@ class CNNLayerVisualization():
         # Hook the selected layer
         self.model[self.selected_layer].register_forward_hook(hook_function)
 
-    def visualise_layer_with_hooks(self):
+    def visualise_layer_with_hooks(self, steps='max'):
         # Hook the selected layer
         self.hook_layer()
         # Generate a random image
         random_image = np.float32(np.random.uniform(-1, 1, (1, globals.get('eeg_chans'),
                                                             globals.get('input_time_len'), 1)))
         # Process image and return variable
-        # processed_image = preprocess_image(random_image, False)
         processed_image = torch.tensor(np_to_var(random_image), requires_grad=True, device='cuda')
-        # processed_image = torch.Tensor.new_tensor(data=torch.Tensor(random_image), requires_grad=True, device='cuda')
         # Define optimizer for the image
         optimizer = Adam([processed_image], lr=0.1, weight_decay=1e-6)
-        steps = 5000
-        for i in range(steps):
+        curr_step = 0
+        prev_loss = float("-inf")
+        while True:
             optimizer.zero_grad()
             # Assign create image to a variable to move forward in the model
             x = processed_image
@@ -71,10 +70,18 @@ class CNNLayerVisualization():
             loss.backward()
             # Update image
             optimizer.step()
+            curr_step += 1
+            if curr_step == steps:
+                break
+            elif curr_step == 'max':
+                if loss > prev_loss:
+                    break
+                prev_loss = loss
 
-        savemat(f'dataset_{globals.get("dataset")}_model_{model_selection}_layer_'
-                f'{self.selected_layer}_filter_{self.selected_filter}_steps_{steps}.mat',
-                {'X': processed_image.detach().cpu().numpy().squeeze()[None, :, :]})
+        return processed_image.detach().cpu().numpy().squeeze()[None, :, :]
+        # savemat(f'dataset_{globals.get("dataset")}_model_{model_selection}_layer_'
+        #         f'{self.selected_layer}_filter_{self.selected_filter}_steps_{steps}.mat',
+        #         {'X': processed_image.detach().cpu().numpy().squeeze()[None, :, :]})
 
 
 def dataset_to_mat(dataset_name, data_sets_X, data_sets_y, class_ids):

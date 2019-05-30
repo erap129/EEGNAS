@@ -1,10 +1,11 @@
+import os
 import numpy as np
 import math
-import matplotlib
 import matplotlib.pyplot as plt
 plt.interactive(False)
 
-def tf_plot(data):
+
+def tf_plot(data, title):
     min_freq = 2
     max_freq = 30
     num_frex = 40
@@ -12,7 +13,7 @@ def tf_plot(data):
     range_cycles = [4, 10]
     srate = 250
     time_points = 1126
-    num_trials = 192
+    num_trials = len(data)
     channel2use = 0
 
     s = np.logspace(math.log10(range_cycles[0]), math.log10(range_cycles[1]), num_frex) / (2 * math.pi * frex)
@@ -38,8 +39,19 @@ def tf_plot(data):
 
     tf_trial_avg = np.mean(tf, axis=2)
     fig, ax = plt.subplots()
-    cf = ax.contourf(tf_trial_avg, 40)
+    ax.set_xlabel('time points')
+    ax.set_ylabel('frequency (Hz)')
+    cf = ax.contourf(tf_trial_avg, 40, vmin=0, vmax=10)
     cbar = fig.colorbar(cf)
-    plt.show()
-    
-    fig.savefig('test.png')
+    fig.suptitle(title)
+
+    im_files = list(os.walk('temp'))[0][2]
+    if len(im_files) == 0:
+        im_num = 1
+    else:
+        im_nums = [int(x[:-4]) for x in im_files]
+        im_nums.sort()
+        im_num = im_nums[-1] + 1
+    im_name = f'temp/{im_num}.png'
+    fig.savefig(im_name)
+    return im_name

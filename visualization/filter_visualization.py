@@ -1,6 +1,4 @@
-import math
 import os
-
 import torch
 from braindecode.torch_ext.util import np_to_var
 from models_generation import target_model
@@ -11,18 +9,21 @@ from data_preprocessing import get_train_val_test
 from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
 import matplotlib
-from visualization.pdf_utils import create_pdf
+from visualization.cnn_layer_visualization import CNNLayerVisualization
+from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from numpy import unravel_index
 from visualization.tf_plot import tf_plot
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
+import hiddenlayer as hl
+import models_generation
+from reportlab.platypus import Paragraph, Image
+from visualization.pdf_utils import get_image
+from reportlab.lib.styles import getSampleStyleSheet
+styles = getSampleStyleSheet()
+from collections import OrderedDict
 matplotlib.use("TkAgg")
 plt.interactive(False)
 img_name_counter = 1
-
-
-# def plot_time_frequency(data)
 
 
 def get_max_examples_per_channel(data, select_layer, model):
@@ -38,8 +39,21 @@ def get_max_examples_per_channel(data, select_layer, model):
     selected_examples = np.zeros(channels)
     for c in range(channels):
         selected_examples[c]\
-            = np.array([act_map.squeeze()[c].sum() for act_map in act_maps.values()]).argmax()
-    print(selected_examples)
+            = int(np.array([act_map.squeeze()[c].sum() for act_map in act_maps.values()]).argmax())
+    return [int(x) for x in selected_examples]
+
+
+def create_max_examples_per_channel(select_layer, model):
+    dummy_X = models_generation.get_dummy_input().cuda()
+    modules = list(model.modules())[0]
+    for l in modules[:select_layer + 1]:
+        dummy_X = l(dummy_X)
+    channels = dummy_X.shape[1]
+    act_maps = []
+    for c in range(channels):
+        layer_vis = CNNLayerVisualization(model, select_layer, c)
+        act_maps.append(layer_vis.visualise_layer_with_hooks())
+    return act_maps
 
 
 def get_intermediate_act_map(data, select_layer, model):
@@ -129,16 +143,41 @@ def plot_avg_activation_maps(pretrained_model, train_set):
         os.remove(im)
 
 
-def get_tf_plot(X):
-    pass
-
-
 def find_optimal_samples_per_filter(pretrained_model, train_set):
-    for index, layer in enumerate(list(pretrained_model.children())):
-        if isinstance(layer, nn.Conv2d):
-            max_examples = get_max_examples_per_channel(train_set[subject_id].X, index, pretrained_model)
-            for example_idx in max_examples:
-                tf_plot = get_tf_plot(train_set[subject_id].X[example_idx])
+    plot_dict = OrderedDict()
+    for layer_idx, layer in enumerate(list(pretrained_model.children())):
+        # if isinstance(layer, nn.Conv2d):
+        max_examples = get_max_examples_per_channel(train_set[subject_id].X, layer_idx, pretrained_model)
+        for chan_idx, example_idx in enumerate(max_examples):
+            plot_dict[(layer_idx, chan_idx)] = tf_plot(train_set[subject_id].X[example_idx][None, :, :],
+                                                      f'TF plot of example {example_idx} for layer {layer_idx}, channel {chan_idx}')
+    img_paths = list(plot_dict.values())
+    story = []
+    story.append(Paragraph('<br />\n'.join([f'{x}:{y}' for x,y in pretrained_model._modules.items()]), style=styles["Normal"]))
+    for im in img_paths:
+        story.append(get_image(im))
+    create_pdf_from_story('tf_plots_real.pdf', story)
+    for im in img_paths:
+        os.remove(im)
+
+
+def create_optimal_samples_per_filter(pretrained_model):
+    plot_dict = OrderedDict()
+    for layer_idx, layer in enumerate(list(pretrained_model.children())):
+        # if isinstance(layer, nn.Conv2d):
+        max_examples = create_max_examples_per_channel(layer_idx, pretrained_model)
+        for chan_idx, example in enumerate(max_examples):
+            plot_dict[(layer_idx, chan_idx)] = tf_plot(example, f'TF plot of optimal example'
+                                                                f' for layer {layer_idx}, channel {chan_idx}')
+    img_paths = list(plot_dict.values())
+    story = []
+    story.append(
+        Paragraph('<br />\n'.join([f'{x}:{y}' for x, y in pretrained_model._modules.items()]), style=styles["Normal"]))
+    for im in img_paths:
+        story.append(get_image(im))
+    create_pdf_from_story('tf_plots_optimal.pdf', story)
+    for im in img_paths:
+        os.remove(im)
 
 
 if __name__ == '__main__':
@@ -151,9 +190,9 @@ if __name__ == '__main__':
     globals.set('batch_size', 60)
     globals.set('do_early_stop', True)
     globals.set('remember_best', True)
-    globals.set('max_epochs', 1)
+    globals.set('max_epochs', 50)
     globals.set('max_increase_epochs', 3)
-    globals.set('final_max_epochs', 1)
+    globals.set('final_max_epochs', 800)
     globals.set('final_max_increase_epochs', 80)
     globals.set('cuda', True)
     globals.set('data_folder', '../../data/')
@@ -181,6 +220,10 @@ if __name__ == '__main__':
                         config=globals.config, subject_id=subject_id, fieldnames=None, strategy='cross_subject',
                         evolution_file=None, csv_file=None)
     _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
+    im = hl.build_graph(pretrained_model, models_generation.get_dummy_input().cuda())
+    im.save(path='test_plot.png', format="png")
     # plot_all_kernels_to_pdf(pretrained_model)
     # plot_avg_activation_maps(pretrained_model, train_set)
-    find_optimal_samples_per_filter(pretrained_model, train_set)
+    # find_optimal_samples_per_filter(pretrained_model, train_set)
+    create_optimal_samples_per_filter(pretrained_model)
+
