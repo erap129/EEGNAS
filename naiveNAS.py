@@ -134,6 +134,15 @@ class NaiveNAS:
                                                 input_time_length=globals.get('input_time_len'),
                                                 n_preds_per_input=globals.get('n_preds_per_input'))
 
+    def run_target_ensemble(self):
+        globals.set('max_epochs', globals.get('final_max_epochs'))
+        globals.set('max_increase_epochs', globals.get('final_max_increase_epochs'))
+        stats = {}
+        self.weighted_population_file = f'weighted_populations/{globals.get("weighted_population_file")}'
+        _, evaluations, _, num_epochs = self.evaluate_ensemble_from_pickle(self.subject_id)
+        NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix='final_')
+        self.write_to_csv(stats, generation=1)
+
     def run_target_model(self):
         globals.set('max_epochs', globals.get('final_max_epochs'))
         globals.set('max_increase_epochs', globals.get('final_max_increase_epochs'))
@@ -145,17 +154,12 @@ class NaiveNAS:
                 model = torch.load(self.model_from_file, map_location='cpu')
         else:
             model = target_model(globals.get('model_name'))
-        if globals.get('cropping'):
-            self.set_cropping_for_model(model)
+        # if globals.get('cropping'):
+        #     self.set_cropping_for_model(model)
         final_time, evaluations, model, model_state, num_epochs =\
                     self.evaluate_model(model, final_evaluation=True)
         stats['train_time'] = str(final_time)
         NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
-        self.weighted_population_file = globals.get('weighted_population_file')
-        if self.weighted_population_file:
-            self.weighted_population_file = f'weighted_populations/{self.weighted_population_file}'
-            _, evaluations, _, num_epochs = self.evaluate_ensemble_from_pickle(self.subject_id)
-            NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix='final_')
         self.write_to_csv(stats, generation=1)
 
     def sample_subjects(self):
@@ -173,8 +177,8 @@ class NaiveNAS:
                 weighted_population[i]['num_epochs'] = 0
                 continue
             finalized_model = finalize_model(pop['model'])
-            if globals.get('cropping'):
-                self.set_cropping_for_model(finalized_model)
+            # if globals.get('cropping'):
+            #     self.set_cropping_for_model(finalized_model)
             self.current_model_index = i
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
@@ -286,8 +290,8 @@ class NaiveNAS:
 
     def add_final_stats(self, stats, weighted_population):
         model = finalize_model(weighted_population[0]['model'])
-        if globals.get('cropping'):
-            self.set_cropping_for_model(model)
+        # if globals.get('cropping'):
+        #     self.set_cropping_for_model(model)
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
@@ -543,6 +547,8 @@ class NaiveNAS:
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
                                  NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
+        if globals.get('cropping'):
+            self.set_cropping_for_model(model)
         if subject not in self.datasets['train'].keys():
             self.datasets['train'][subject], self.datasets['valid'][subject], self.datasets['test'][subject] = \
                 get_train_val_test(globals.get('data_folder'), subject, globals.get('low_cut_hz'))

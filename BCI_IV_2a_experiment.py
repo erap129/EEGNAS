@@ -1,4 +1,5 @@
 import os
+import pdb
 import platform
 import re
 
@@ -226,7 +227,10 @@ def target_exp(stop_criterion, iterator, loss_function, model_from_file=None):
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
                             strategy='per_subject', evolution_file=None, csv_file=csv_file,
                             model_from_file=model_from_file)
-        naiveNAS.run_target_model()
+        if globals.get('weighted_population_file'):
+            naiveNAS.run_target_ensemble()
+        else:
+            naiveNAS.run_target_model()
 
 
 def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
@@ -438,14 +442,17 @@ if __name__ == '__main__':
                     if first_run:
                         first_dataset = globals.get('dataset')
                         first_run = False
-                    # if torch.cuda.is_available() and not globals.get('force_gpu_off'):
+                    os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+                    # if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2') \
+                    #                 and not globals.get('force_gpu_off'):
+                    #     globals.set('cuda', True)
+                    #     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+                    # pdb.set_trace()
                     try:
                         torch.cuda.current_device()
-                        # if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2') \
-                        #     and not globals.get('force_gpu_off'):
                         if not globals.get('force_gpu_off'):
                             globals.set('cuda', True)
-                            os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+                            print(f'set active GPU to {globals.get("gpu_select")}')
                     except AssertionError as e:
                         print('no cuda available, using CPU')
                     set_seeds()

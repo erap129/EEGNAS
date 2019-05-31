@@ -121,9 +121,8 @@ def plot_one_tensor(tensor, title):
 def plot_all_kernels_to_pdf(pretrained_model):
     img_paths = []
     for index, layer in enumerate(list(pretrained_model.children())):
-        if isinstance(layer, nn.Conv2d):
-            im = plot_tensors(layer.weight.detach().cpu().numpy(), f'Layer {index}')
-            img_paths.append(im)
+        im = plot_tensors(layer.weight.detach().cpu().numpy(), f'Layer {index}')
+        img_paths.append(im)
     create_pdf('step1_all_kernels.pdf', img_paths)
     for im in img_paths:
         os.remove(im)
@@ -134,10 +133,9 @@ def plot_avg_activation_maps(pretrained_model, train_set):
     left_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 0)]
     right_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 1)]
     for index, layer in enumerate(list(pretrained_model.children())):
-        if isinstance(layer, nn.Conv2d):
-            left_act_map = plot_one_tensor(get_intermediate_act_map(left_X, index, pretrained_model), f'Layer {index} Left')
-            right_act_map = plot_one_tensor(get_intermediate_act_map(right_X, index, pretrained_model), f'Layer {index} Right')
-            img_paths.extend([left_act_map, right_act_map])
+        left_act_map = plot_one_tensor(get_intermediate_act_map(left_X, index, pretrained_model), f'Layer {index} Left')
+        right_act_map = plot_one_tensor(get_intermediate_act_map(right_X, index, pretrained_model), f'Layer {index} Right')
+        img_paths.extend([left_act_map, right_act_map])
     create_pdf('step2_avg_activation_maps.pdf', img_paths)
     for im in img_paths:
         os.remove(im)
@@ -146,7 +144,7 @@ def plot_avg_activation_maps(pretrained_model, train_set):
 def find_optimal_samples_per_filter(pretrained_model, train_set):
     plot_dict = OrderedDict()
     for layer_idx, layer in enumerate(list(pretrained_model.children())):
-        # if isinstance(layer, nn.Conv2d):
+
         max_examples = get_max_examples_per_channel(train_set[subject_id].X, layer_idx, pretrained_model)
         for chan_idx, example_idx in enumerate(max_examples):
             plot_dict[(layer_idx, chan_idx)] = tf_plot(train_set[subject_id].X[example_idx][None, :, :],
@@ -222,8 +220,8 @@ if __name__ == '__main__':
     _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
     im = hl.build_graph(pretrained_model, models_generation.get_dummy_input().cuda())
     im.save(path='test_plot.png', format="png")
-    # plot_all_kernels_to_pdf(pretrained_model)
-    # plot_avg_activation_maps(pretrained_model, train_set)
-    # find_optimal_samples_per_filter(pretrained_model, train_set)
+    plot_all_kernels_to_pdf(pretrained_model)
+    plot_avg_activation_maps(pretrained_model, train_set)
+    find_optimal_samples_per_filter(pretrained_model, train_set)
     create_optimal_samples_per_filter(pretrained_model)
 
