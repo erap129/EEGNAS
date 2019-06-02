@@ -318,6 +318,8 @@ def set_params_by_dataset():
         globals.set('exclude_subjects', [32, 46, 49])
     if globals.get('ensemble_iterations'):
         globals.set('evaluation_metrics', globals.get('evaluation_metrics') + ['raw', 'target'])
+        if not globals.get('ensemble_size'):
+            globals.set('ensemble_size', int(globals.get('pop_size') / 100))
 
 
 def connect_to_gdrive():
@@ -443,11 +445,6 @@ if __name__ == '__main__':
                         first_dataset = globals.get('dataset')
                         first_run = False
                     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
-                    # if (platform.node() == 'nvidia' or platform.node() == 'GPU' or platform.node() == 'rbc-gpu' or platform.node() == 'csgpusrv2') \
-                    #                 and not globals.get('force_gpu_off'):
-                    #     globals.set('cuda', True)
-                    #     os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
-                    # pdb.set_trace()
                     try:
                         torch.cuda.current_device()
                         if not globals.get('force_gpu_off'):

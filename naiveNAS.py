@@ -284,7 +284,7 @@ class NaiveNAS:
                 stats['top20_%s_count' % layer_type.__name__] = \
                     NASUtils.count_layer_type_in_pop([pop['model'] for pop in
                                                       weighted_population[:int(len(weighted_population)/5)]], layer_type)
-        if globals.get('grid'):
+        if globals.get('grid') and not globals.get('grid_as_ensemble'):
             stats['num_of_models_with_skip'] = NASUtils.num_of_models_with_skip_connection(weighted_population)
         return stats
 
