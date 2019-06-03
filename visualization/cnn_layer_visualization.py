@@ -48,7 +48,7 @@ class CNNLayerVisualization():
         # Define optimizer for the image
         optimizer = Adam([processed_image], lr=0.1, weight_decay=1e-6)
         curr_step = 0
-        prev_loss = float("-inf")
+        prev_loss = float("inf")
         while True:
             optimizer.zero_grad()
             # Assign create image to a variable to move forward in the model
@@ -65,7 +65,7 @@ class CNNLayerVisualization():
             # Loss function is the mean of the output of the selected layer/filter
             # We try to minimize the mean of the output of that specific filter
             loss = -torch.mean(self.conv_output)
-            print('Iteration:', str(i), 'Loss:', "{0:.2f}".format(loss.data.cpu().numpy()))
+            print('Iteration:', str(curr_step), 'Loss:', "{0:.2f}".format(loss.data.cpu().numpy()))
             # Backward
             loss.backward()
             # Update image
@@ -73,8 +73,8 @@ class CNNLayerVisualization():
             curr_step += 1
             if curr_step == steps:
                 break
-            elif curr_step == 'max':
-                if loss > prev_loss:
+            elif steps == 'max':
+                if loss >= prev_loss:
                     break
                 prev_loss = loss
 

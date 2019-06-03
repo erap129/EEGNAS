@@ -7,8 +7,6 @@ from reportlab.platypus.flowables import BalancedColumns
 from reportlab.platypus.frames import ShowBoundaryValue
 
 
-
-
 def get_image(path, width=10*cm):
     img = utils.ImageReader(path)
     iw, ih = img.getSize()

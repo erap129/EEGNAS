@@ -12,7 +12,7 @@ import matplotlib
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from visualization.tf_plot import tf_plot
+from visualization.tf_plot import tf_plot, get_tf_data
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import hiddenlayer as hl
 import models_generation
@@ -123,7 +123,7 @@ def plot_all_kernels_to_pdf(pretrained_model):
     for index, layer in enumerate(list(pretrained_model.children())):
         im = plot_tensors(layer.weight.detach().cpu().numpy(), f'Layer {index}')
         img_paths.append(im)
-    create_pdf('step1_all_kernels.pdf', img_paths)
+    create_pdf('results/step1_all_kernels.pdf', img_paths)
     for im in img_paths:
         os.remove(im)
 
@@ -136,7 +136,7 @@ def plot_avg_activation_maps(pretrained_model, train_set):
         left_act_map = plot_one_tensor(get_intermediate_act_map(left_X, index, pretrained_model), f'Layer {index} Left')
         right_act_map = plot_one_tensor(get_intermediate_act_map(right_X, index, pretrained_model), f'Layer {index} Right')
         img_paths.extend([left_act_map, right_act_map])
-    create_pdf('step2_avg_activation_maps.pdf', img_paths)
+    create_pdf('results/step2_avg_activation_maps.pdf', img_paths)
     for im in img_paths:
         os.remove(im)
 
@@ -154,26 +154,30 @@ def find_optimal_samples_per_filter(pretrained_model, train_set):
     story.append(Paragraph('<br />\n'.join([f'{x}:{y}' for x,y in pretrained_model._modules.items()]), style=styles["Normal"]))
     for im in img_paths:
         story.append(get_image(im))
-    create_pdf_from_story('tf_plots_real.pdf', story)
+    create_pdf_from_story('results/step3_tf_plots_real.pdf', story)
     for im in img_paths:
         os.remove(im)
 
 
 def create_optimal_samples_per_filter(pretrained_model):
     plot_dict = OrderedDict()
+    plot_imgs = OrderedDict()
     for layer_idx, layer in enumerate(list(pretrained_model.children())):
-        # if isinstance(layer, nn.Conv2d):
         max_examples = create_max_examples_per_channel(layer_idx, pretrained_model)
+        max_value = 0
         for chan_idx, example in enumerate(max_examples):
-            plot_dict[(layer_idx, chan_idx)] = tf_plot(example, f'TF plot of optimal example'
-                                                                f' for layer {layer_idx}, channel {chan_idx}')
-    img_paths = list(plot_dict.values())
+            plot_dict[(layer_idx, chan_idx)] = get_tf_data(example)
+            max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx)]))
+        for chan_idx, example in enumerate(max_examples):
+            plot_imgs[(layer_idx, chan_idx)] = tf_plot(plot_dict[(layer_idx, chan_idx)], f'TF plot of optimal example'
+                                                       f' for layer {layer_idx}, channel {chan_idx}', max_value)
     story = []
+    img_paths = list(plot_imgs.values())
     story.append(
         Paragraph('<br />\n'.join([f'{x}:{y}' for x, y in pretrained_model._modules.items()]), style=styles["Normal"]))
     for im in img_paths:
         story.append(get_image(im))
-    create_pdf_from_story('tf_plots_optimal.pdf', story)
+    create_pdf_from_story('results/step4_tf_plots_optimal.pdf', story)
     for im in img_paths:
         os.remove(im)
 
@@ -220,8 +224,8 @@ if __name__ == '__main__':
     _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
     im = hl.build_graph(pretrained_model, models_generation.get_dummy_input().cuda())
     im.save(path='test_plot.png', format="png")
-    plot_all_kernels_to_pdf(pretrained_model)
-    plot_avg_activation_maps(pretrained_model, train_set)
-    find_optimal_samples_per_filter(pretrained_model, train_set)
+    # plot_all_kernels_to_pdf(pretrained_model)
+    # plot_avg_activation_maps(pretrained_model, train_set)
+    # find_optimal_samples_per_filter(pretrained_model, train_set)
     create_optimal_samples_per_filter(pretrained_model)
 

@@ -348,6 +348,7 @@ def get_base_folder_name(fold_names, first_dataset):
     base_folder_name[ind + 1] = 'x'
     base_folder_name = base_folder_name[:end_ind - 1]
     base_folder_name = ''.join(base_folder_name)
+    base_folder_name = add_params_to_name(base_folder_name, globals.get('include_params_folder_name'))
     return base_folder_name
 
 
@@ -409,16 +410,28 @@ def set_seeds():
     np.random.seed(random_seed)
 
 
-if __name__ == '__main__':
-    args = parse_args(sys.argv[1:])
-    init_config(args.config)
-    logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                            level=logging.DEBUG, stream=sys.stdout)
-    data_folder = 'data/'
-    low_cut_hz = 0
-    valid_set_fraction = 0.2
-    listen()
+def set_gpu():
+    os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
+    try:
+        torch.cuda.current_device()
+        if not globals.get('force_gpu_off'):
+            globals.set('cuda', True)
+            print(f'set active GPU to {globals.get("gpu_select")}')
+    except AssertionError as e:
+        print('no cuda available, using CPU')
 
+
+def get_settings():
+    if globals.get('cropping'):
+        globals.set('original_input_time_len', globals.get('input_time_len'))
+        globals.set('input_time_len', globals.get('input_time_cropping'))
+        stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
+    else:
+        stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+    return stop_criterion, iterator, loss_function, monitors
+
+
+def get_exp_id():
     subdirs = [x for x in os.walk('results')]
     if len(subdirs) == 1:
         exp_id = 1
@@ -429,7 +442,26 @@ if __name__ == '__main__':
             subdir_names = [int(x[0].split('\\')[1].split('_')[0][0:]) for x in subdirs[1:]]
         subdir_names.sort()
         exp_id = subdir_names[-1] + 1
+    return exp_id
 
+
+def add_params_to_name(exp_name, multiple_values):
+    if multiple_values:
+        for mul_val in multiple_values:
+            exp_name += f'_{mul_val}_{globals.get(mul_val)}'
+    return exp_name
+
+
+if __name__ == '__main__':
+    args = parse_args(sys.argv[1:])
+    init_config(args.config)
+    logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
+                            level=logging.DEBUG, stream=sys.stdout)
+    data_folder = 'data/'
+    low_cut_hz = 0
+    valid_set_fraction = 0.2
+    listen()
+    exp_id = get_exp_id()
     try:
         experiments = args.experiment.split(',')
         folder_names = []
@@ -443,30 +475,18 @@ if __name__ == '__main__':
                     set_params_by_dataset()
                     if first_run:
                         first_dataset = globals.get('dataset')
+                        multiple_values.extend(globals.get('include_params_folder_name'))
                         first_run = False
-                    os.environ["CUDA_VISIBLE_DEVICES"] = globals.get('gpu_select')
-                    try:
-                        torch.cuda.current_device()
-                        if not globals.get('force_gpu_off'):
-                            globals.set('cuda', True)
-                            print(f'set active GPU to {globals.get("gpu_select")}')
-                    except AssertionError as e:
-                        print('no cuda available, using CPU')
+                    set_gpu()
                     set_seeds()
-                    if globals.get('cropping'):
-                        globals.set('original_input_time_len', globals.get('input_time_len'))
-                        globals.set('input_time_len', globals.get('input_time_cropping'))
-                        stop_criterion, iterator, loss_function, monitors = get_cropped_settings()
-                    else:
-                        stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+                    stop_criterion, iterator, loss_function, monitors = get_settings()
                     if type(globals.get('subjects_to_check')) == list:
                         subjects = globals.get('subjects_to_check')
                     else:
                         subjects = random.sample(range(1, globals.get('num_subjects')),
                                                  globals.get('subjects_to_check'))
                     exp_name = f"{exp_id}_{index+1}_{experiment}_{globals.get('dataset')}"
-                    for mul_val in multiple_values:
-                        exp_name += f'_{mul_val}_{globals.get(mul_val)}'
+                    exp_name = add_params_to_name(exp_name, multiple_values)
                     exp_folder = f"results/{exp_name}"
                     createFolder(exp_folder)
                     folder_names.append(exp_name)
@@ -499,6 +519,7 @@ if __name__ == '__main__':
                     new_exp_folder = exp_folder + '_fail'
                     os.rename(exp_folder, new_exp_folder)
                     write_dict(globals.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
+                    folder_names.remove(exp_name)
     finally:
         if args.drive == 't':
             upload_exp_to_gdrive(folder_names, first_dataset)

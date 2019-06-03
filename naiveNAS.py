@@ -57,13 +57,13 @@ def time_f(t_secs):
     return res
 
 
-def show_progress(train_time):
+def show_progress(train_time, exp_name):
     global model_train_times
     total_trainings = globals.get('num_generations') * globals.get('pop_size') * len(globals.get('subjects_to_check'))
     model_train_times.append(train_time)
     avg_model_train_time = sum(model_train_times) / len(model_train_times)
     time_left = (total_trainings - len(model_train_times)) * avg_model_train_time
-    print(f"time left: {time_f(time_left)}")
+    print(f"Experiment: {exp_name}, time left: {time_f(time_left)}")
 
 
 class NaiveNAS:
@@ -189,7 +189,7 @@ class NaiveNAS:
             weighted_population[i]['finalized_model'] = model
             weighted_population[i]['num_epochs'] = num_epochs
             end_time = time.time()
-            show_progress(end_time - start_time)
+            show_progress(end_time - start_time, self.exp_name)
             print('trained model %d in generation %d' % (i + 1, self.current_generation))
 
     def all_strategy(self, weighted_population):
@@ -222,7 +222,7 @@ class NaiveNAS:
                 weighted_population[i]['%d_num_epochs' % subject] = num_epochs
                 weighted_population[i]['num_epochs'] += num_epochs
                 end_time = time.time()
-                show_progress(end_time - start_time)
+                show_progress(end_time - start_time, self.exp_name)
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, self.current_generation))
             weighted_population[i]['finalized_model'] = model
             for key in summed_parameters:
