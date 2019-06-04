@@ -5,20 +5,18 @@ import matplotlib.pyplot as plt
 plt.interactive(False)
 
 
-def get_tf_data(data):
+def get_tf_data(data, channel, srate):
     min_freq = 2
     max_freq = 30
     num_frex = 40
     frex = np.linspace(min_freq, max_freq, num_frex)
     range_cycles = [4, 10]
-    srate = 250
-    time_points = 1126
+    time_points = data.shape[2]
     num_trials = len(data)
-    channel2use = 0
 
     s = np.logspace(math.log10(range_cycles[0]), math.log10(range_cycles[1]), num_frex) / (2 * math.pi * frex)
-    wavtime = np.arange(-2, 2, 1 / srate)
-    half_wave = (len(wavtime) - 1) / 2
+    wavtime = np.arange(-2, 2 + (1/srate), 1 / srate)
+    half_wave = int((len(wavtime) - 1) / 2)
 
     n_wave = len(wavtime)
     n_data = time_points
@@ -32,58 +30,69 @@ def get_tf_data(data):
         wavelet_x = wavelet_x / np.max(wavelet_x)
 
         for triali in range(num_trials):
-            data_x = np.fft.fft(data[triali, channel2use, :].squeeze(), n_conv)
+            data_x = np.fft.fft(data[triali, channel, :].squeeze(), n_conv)
             ass = np.fft.ifft(wavelet_x * data_x)
-            ass = ass[500:1626]
+            ass = ass[half_wave + 1:-half_wave+1]
             tf[fi, :, triali] = abs(ass) ** 2
 
     tf_trial_avg = np.mean(tf, axis=2)
     return tf_trial_avg
 
 
-def get_tf_data_efficient(data):
+def get_tf_data_efficient(data, channel, srate):
+    """
+    :param data: data is a [num_trials X num_channels X trial_length] array
+    :param channel: the channel to perform TF analysis on
+    :return: the time frequency decomposition averaged over
+    """
     min_freq = 2
     max_freq = 30
     num_frex = 40
     frex = np.linspace(min_freq, max_freq, num_frex)
     range_cycles = [4, 10]
-    srate = 250
-    time_points = 1126
+    time_points = data.shape[2]
     num_trials = len(data)
-    channel2use = 0
+    n_channels = data.shape[1]
 
     s = np.logspace(math.log10(range_cycles[0]), math.log10(range_cycles[1]), num_frex) / (2 * math.pi * frex)
-    wavtime = np.arange(-2, 2, 1 / srate)
-    half_wave = (len(wavtime) - 1) / 2
+    wavtime = np.arange(-2, 2+(1/srate), 1 / srate)
+    half_wave = int((len(wavtime) - 1) / 2)
 
     n_wave = len(wavtime)
-    n_data = time_points
+    n_data = time_points * num_trials
     n_conv = n_wave + n_data - 1
 
     tf = np.zeros((len(frex), time_points))
+    all_data = data.reshape(n_channels, -1)
+    data_x = np.fft.fft(all_data[channel], n_conv)
 
     for fi in range(len(frex)):
         wavelet = np.exp(2 * 1j * math.pi * frex[fi] * wavtime) * np.exp(-wavtime ** 2 / (2 * s[fi] ** 2))
         wavelet_x = np.fft.fft(wavelet, n_conv)
         wavelet_x = wavelet_x / np.max(wavelet_x)
 
-        for triali in range(num_trials):
-            data_x = np.fft.fft(data[triali, channel2use, :].squeeze(), n_conv)
-            ass = np.fft.ifft(wavelet_x * data_x)
-            ass = ass[500:1626]
-            tf[fi, :, triali] = abs(ass) ** 2
+        ass = np.fft.ifft(wavelet_x * data_x)
+        ass = ass[half_wave + 1:-half_wave+1]
+        ass = ass.reshape(num_trials, time_points)
+        tf[fi, :] = np.mean(abs(ass) ** 2, axis=0)
 
-    tf_trial_avg = np.mean(tf, axis=2)
-    return tf_trial_avg
+    return tf
 
 
-def tf_plot(tf_trial_avg, title, vmax=None):
+def tf_plot(tf_trial_avgs, title, vmax=None):
     fig, ax = plt.subplots()
-    ax.set_xlabel('time points')
-    ax.set_ylabel('frequency (Hz)')
-    cf = ax.contourf(tf_trial_avg, 40, vmin=0, vmax=vmax)
-    cbar = fig.colorbar(cf)
-    fig.suptitle(title)
+    for index, tf in enumerate(tf_trial_avgs):
+        ax = plt.subplot(1, len(tf_trial_avgs), index)
+        ax.set_xlabel('time points')
+        ax.set_ylabel('frequency (Hz)')
+        cf = ax.contourf(tf, 40, vmin=0, vmax=vmax)
+        cbar = ax.colorbar(cf)
+        ax.title(f'EEG channel {index + 1}')
+    # ax.set_xlabel('time points')
+    # ax.set_ylabel('frequency (Hz)')
+    # cf = ax.contourf(tf_trial_avg, 40, vmin=0, vmax=vmax)
+    # cbar = fig.colorbar(cf)
+    plt.suptitle(title)
     im_files = list(os.walk('temp'))[0][2]
     if len(im_files) == 0:
         im_num = 1

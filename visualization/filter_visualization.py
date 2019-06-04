@@ -1,4 +1,6 @@
 import os
+
+import scipy
 import torch
 from braindecode.torch_ext.util import np_to_var
 from models_generation import target_model
@@ -12,7 +14,7 @@ import matplotlib
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from visualization.tf_plot import tf_plot, get_tf_data
+from visualization.tf_plot import tf_plot, get_tf_data, get_tf_data_efficient
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import hiddenlayer as hl
 import models_generation
@@ -52,7 +54,7 @@ def create_max_examples_per_channel(select_layer, model):
     act_maps = []
     for c in range(channels):
         layer_vis = CNNLayerVisualization(model, select_layer, c)
-        act_maps.append(layer_vis.visualise_layer_with_hooks())
+        act_maps.append(layer_vis.visualise_layer_with_hooks(steps=1))
     return act_maps
 
 
@@ -159,18 +161,22 @@ def find_optimal_samples_per_filter(pretrained_model, train_set):
         os.remove(im)
 
 
-def create_optimal_samples_per_filter(pretrained_model):
+def create_optimal_samples_per_filter(pretrained_model, eeg_chans=None):
+    if eeg_chans is None:
+        eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     plot_dict = OrderedDict()
     plot_imgs = OrderedDict()
     for layer_idx, layer in enumerate(list(pretrained_model.children())):
         max_examples = create_max_examples_per_channel(layer_idx, pretrained_model)
-        max_value = 0
+        max_values = np.zeros(len(eeg_chans))
         for chan_idx, example in enumerate(max_examples):
-            plot_dict[(layer_idx, chan_idx)] = get_tf_data(example)
-            max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx)]))
+            for eeg_chan in eeg_chans:
+                plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example)
+                max_values[eeg_chan] = max(max_values[eeg_chan], np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
         for chan_idx, example in enumerate(max_examples):
-            plot_imgs[(layer_idx, chan_idx)] = tf_plot(plot_dict[(layer_idx, chan_idx)], f'TF plot of optimal example'
-                                                       f' for layer {layer_idx}, channel {chan_idx}', max_value)
+            plot_imgs[(layer_idx, chan_idx)] = tf_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
+                                                       f'TF plot of optimal example'
+                                                       f' for layer {layer_idx}, channel {chan_idx}', max_values)
     story = []
     img_paths = list(plot_imgs.values())
     story.append(
@@ -193,8 +199,8 @@ if __name__ == '__main__':
     globals.set('do_early_stop', True)
     globals.set('remember_best', True)
     globals.set('max_epochs', 50)
-    globals.set('max_increase_epochs', 3)
-    globals.set('final_max_epochs', 800)
+    globals.set('max_increase_epochs', 1)
+    globals.set('final_max_epochs', 1)
     globals.set('final_max_increase_epochs', 80)
     globals.set('cuda', True)
     globals.set('data_folder', '../../data/')
@@ -215,6 +221,13 @@ if __name__ == '__main__':
     train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
         get_train_val_test(globals.get('data_folder'), subject_id, globals.get('low_cut_hz'))
 
+
+    # sample_data = train_set[subject_id].X
+    # tf_data = get_tf_data_efficient(sample_data, 0, 250)
+    # tf_data2 = get_tf_data(sample_data, 0, 250)
+    # tf_plot(tf_data, "test - efficient")
+    # tf_plot(tf_data2, "test - not efficient")
+
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
                         train_set=train_set, val_set=val_set, test_set=test_set,
@@ -222,8 +235,7 @@ if __name__ == '__main__':
                         config=globals.config, subject_id=subject_id, fieldnames=None, strategy='cross_subject',
                         evolution_file=None, csv_file=None)
     _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
-    im = hl.build_graph(pretrained_model, models_generation.get_dummy_input().cuda())
-    im.save(path='test_plot.png', format="png")
+
     # plot_all_kernels_to_pdf(pretrained_model)
     # plot_avg_activation_maps(pretrained_model, train_set)
     # find_optimal_samples_per_filter(pretrained_model, train_set)
