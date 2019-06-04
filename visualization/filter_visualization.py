@@ -1,5 +1,6 @@
 import os
-
+import sys
+sys.path.append("..")
 import scipy
 import torch
 from braindecode.torch_ext.util import np_to_var
@@ -11,18 +12,21 @@ from data_preprocessing import get_train_val_test
 from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
 import matplotlib
+from utils import createFolder
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
 from visualization.tf_plot import tf_plot, get_tf_data, get_tf_data_efficient
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import hiddenlayer as hl
+from datetime import datetime
 import models_generation
 from reportlab.platypus import Paragraph, Image
 from visualization.pdf_utils import get_image
 from reportlab.lib.styles import getSampleStyleSheet
 styles = getSampleStyleSheet()
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+
 matplotlib.use("TkAgg")
 plt.interactive(False)
 img_name_counter = 1
@@ -45,7 +49,7 @@ def get_max_examples_per_channel(data, select_layer, model):
     return [int(x) for x in selected_examples]
 
 
-def create_max_examples_per_channel(select_layer, model):
+def create_max_examples_per_channel(select_layer, model, steps=500):
     dummy_X = models_generation.get_dummy_input().cuda()
     modules = list(model.modules())[0]
     for l in modules[:select_layer + 1]:
@@ -54,17 +58,13 @@ def create_max_examples_per_channel(select_layer, model):
     act_maps = []
     for c in range(channels):
         layer_vis = CNNLayerVisualization(model, select_layer, c)
-        act_maps.append(layer_vis.visualise_layer_with_hooks(steps=1))
+        act_maps.append(layer_vis.visualise_layer_with_hooks(steps))
     return act_maps
 
 
 def get_intermediate_act_map(data, select_layer, model):
     x = np_to_var(data[:, :, :, None]).cuda()
-    # x = np_to_var(data)
-    # x = data
     modules = list(model.modules())[0]
-    # untrained_modules = list(untrained_model.modules())[0]
-    # print(f'start shape: {x.shape}')
     for l in modules[:select_layer + 1]:
       x = l(x)
     act_map = x.cpu().detach().numpy()
@@ -77,8 +77,6 @@ def plot_tensors(tensor, title, num_cols=8):
     tensor = np.swapaxes(tensor, 1, 2)
     if not tensor.ndim==4:
         raise Exception("assumes a 4D tensor")
-    # if not tensor.shape[-1]==3:
-    #     raise Exception("last dim needs to be 3 to plot")
     num_kernels = tensor.shape[0]
     num_rows = 1 + num_kernels // num_cols
     fig = plt.figure(figsize=(num_cols, num_rows))
@@ -93,10 +91,9 @@ def plot_tensors(tensor, title, num_cols=8):
     cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
     fig.colorbar(im, cax=cbar_ax)
     plt.subplots_adjust(wspace=0.1, hspace=0.1)
-    img_name = f'{img_name_counter}.png'
-    plt.savefig(img_name)
+    img_name = f'temp/{img_name_counter}.png'
+    plt.savefig(f'{img_name}')
     img_name_counter += 1
-    # im = fig2img(fig)
     return img_name
 
 
@@ -114,78 +111,97 @@ def plot_one_tensor(tensor, title):
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(im, cax=cax)
     ax.set_title(f'{title}, Tensor shape: {tensor.shape}')
-    img_name = f'{img_name_counter}.png'
+    img_name = f'temp/{img_name_counter}.png'
     plt.savefig(img_name, bbox_inches='tight')
     img_name_counter += 1
     return img_name
 
 
-def plot_all_kernels_to_pdf(pretrained_model):
+def plot_all_kernels_to_pdf(pretrained_model, date_time):
     img_paths = []
     for index, layer in enumerate(list(pretrained_model.children())):
-        im = plot_tensors(layer.weight.detach().cpu().numpy(), f'Layer {index}')
-        img_paths.append(im)
-    create_pdf('results/step1_all_kernels.pdf', img_paths)
+        if type(layer) == nn.Conv2d:
+            im = plot_tensors(layer.weight.detach().cpu().numpy(), f'Layer {index}')
+            img_paths.append(im)
+    create_pdf(f'results/{date_time}/step1_all_kernels.pdf', img_paths)
     for im in img_paths:
         os.remove(im)
 
 
-def plot_avg_activation_maps(pretrained_model, train_set):
+def plot_avg_activation_maps(pretrained_model, train_set, date_time):
     img_paths = []
     left_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 0)]
     right_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 1)]
-    for index, layer in enumerate(list(pretrained_model.children())):
+    for index, layer in enumerate(list(pretrained_model.children())[:-1]):
         left_act_map = plot_one_tensor(get_intermediate_act_map(left_X, index, pretrained_model), f'Layer {index} Left')
         right_act_map = plot_one_tensor(get_intermediate_act_map(right_X, index, pretrained_model), f'Layer {index} Right')
         img_paths.extend([left_act_map, right_act_map])
-    create_pdf('results/step2_avg_activation_maps.pdf', img_paths)
+    create_pdf(f'results/{date_time}/step2_avg_activation_maps.pdf', img_paths)
     for im in img_paths:
         os.remove(im)
 
 
-def find_optimal_samples_per_filter(pretrained_model, train_set):
+def find_optimal_samples_per_filter(pretrained_model, train_set, date_time, eeg_chans=None):
+    if eeg_chans is None:
+        eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     plot_dict = OrderedDict()
     for layer_idx, layer in enumerate(list(pretrained_model.children())):
-
         max_examples = get_max_examples_per_channel(train_set[subject_id].X, layer_idx, pretrained_model)
         for chan_idx, example_idx in enumerate(max_examples):
-            plot_dict[(layer_idx, chan_idx)] = tf_plot(train_set[subject_id].X[example_idx][None, :, :],
-                                                      f'TF plot of example {example_idx} for layer {layer_idx}, channel {chan_idx}')
+            tf_data = []
+            for eeg_chan in eeg_chans:
+                tf_data.append(get_tf_data_efficient(train_set[subject_id].X[example_idx][None, :, :], eeg_chan, 250))
+            max_value = np.max(np.array(tf_data))
+            plot_dict[(layer_idx, chan_idx)] = tf_plot(tf_data,
+                                                      f'TF plot of example {example_idx} for layer {layer_idx}, channel {chan_idx}',
+                                                       max_value)
     img_paths = list(plot_dict.values())
     story = []
     story.append(Paragraph('<br />\n'.join([f'{x}:{y}' for x,y in pretrained_model._modules.items()]), style=styles["Normal"]))
     for im in img_paths:
         story.append(get_image(im))
-    create_pdf_from_story('results/step3_tf_plots_real.pdf', story)
+    create_pdf_from_story(f'results/{date_time}/step3_tf_plots_real.pdf', story)
     for im in img_paths:
         os.remove(im)
 
 
-def create_optimal_samples_per_filter(pretrained_model, eeg_chans=None):
+def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=None, steps=500):
     if eeg_chans is None:
         eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     plot_dict = OrderedDict()
     plot_imgs = OrderedDict()
     for layer_idx, layer in enumerate(list(pretrained_model.children())):
-        max_examples = create_max_examples_per_channel(layer_idx, pretrained_model)
-        max_values = np.zeros(len(eeg_chans))
+        max_examples = create_max_examples_per_channel(layer_idx, pretrained_model, steps=500)
+        max_value = 0
         for chan_idx, example in enumerate(max_examples):
             for eeg_chan in eeg_chans:
-                plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example)
-                max_values[eeg_chan] = max(max_values[eeg_chan], np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
+                plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example, eeg_chan, 250)
+                max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
         for chan_idx, example in enumerate(max_examples):
             plot_imgs[(layer_idx, chan_idx)] = tf_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
                                                        f'TF plot of optimal example'
-                                                       f' for layer {layer_idx}, channel {chan_idx}', max_values)
+                                                       f' for layer {layer_idx}, channel {chan_idx}', max_value)
     story = []
     img_paths = list(plot_imgs.values())
     story.append(
         Paragraph('<br />\n'.join([f'{x}:{y}' for x, y in pretrained_model._modules.items()]), style=styles["Normal"]))
     for im in img_paths:
         story.append(get_image(im))
-    create_pdf_from_story('results/step4_tf_plots_optimal.pdf', story)
+    create_pdf_from_story(f'results/{date_time}/step4_tf_plots_optimal_test.pdf', story)
     for im in img_paths:
         os.remove(im)
+
+
+def compare_avg_class_tf_with_optimal_tf(pretrained_model, train_set, date_time, eeg_chans=None):
+    if eeg_chans is None:
+        eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
+    left_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 0)]
+    right_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 1)]
+
+    for left_example in left_X:
+        chan_data = defaultdict(list)
+        for eeg_chan in eeg_chans:
+            chan_data[eeg_chan] = get_tf_data_efficient(left_example[None, :, :], eeg_chan, 250)
 
 
 if __name__ == '__main__':
@@ -236,8 +252,12 @@ if __name__ == '__main__':
                         evolution_file=None, csv_file=None)
     _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
 
-    # plot_all_kernels_to_pdf(pretrained_model)
-    # plot_avg_activation_maps(pretrained_model, train_set)
-    # find_optimal_samples_per_filter(pretrained_model, train_set)
-    create_optimal_samples_per_filter(pretrained_model)
+    now = datetime.now()
+    date_time = now.strftime("%m.%d.%Y-%H:%M:%S")
+    createFolder(f'results/{date_time}')
+    # plot_all_kernels_to_pdf(pretrained_model, date_time)
+    # plot_avg_activation_maps(pretrained_model, train_set, date_time)
+    find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
+    # create_optimal_samples_per_filter(pretrained_model, date_time, steps=1)
+    compare_avg_class_tf_with_optimal_tf(pretrained_model, train_set, date_time)
 

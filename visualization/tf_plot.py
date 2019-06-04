@@ -2,6 +2,9 @@ import os
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.pyplot import figure
+
 plt.interactive(False)
 
 
@@ -80,18 +83,17 @@ def get_tf_data_efficient(data, channel, srate):
 
 
 def tf_plot(tf_trial_avgs, title, vmax=None):
-    fig, ax = plt.subplots()
+    figure(num=None, figsize=(14, 6), dpi=80, facecolor='w', edgecolor='k')
     for index, tf in enumerate(tf_trial_avgs):
-        ax = plt.subplot(1, len(tf_trial_avgs), index)
+        ax = plt.subplot(1, len(tf_trial_avgs), index+1)
         ax.set_xlabel('time points')
-        ax.set_ylabel('frequency (Hz)')
+        if index == 0:
+            ax.set_ylabel('frequency (Hz)')
         cf = ax.contourf(tf, 40, vmin=0, vmax=vmax)
-        cbar = ax.colorbar(cf)
-        ax.title(f'EEG channel {index + 1}')
-    # ax.set_xlabel('time points')
-    # ax.set_ylabel('frequency (Hz)')
-    # cf = ax.contourf(tf_trial_avg, 40, vmin=0, vmax=vmax)
-    # cbar = fig.colorbar(cf)
+        ax.set_title(f'EEG channel {index + 1}')
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes('right', size='5%', pad=0.05)
+    plt.colorbar(cf, cax=cax, orientation='vertical')
     plt.suptitle(title)
     im_files = list(os.walk('temp'))[0][2]
     if len(im_files) == 0:
@@ -101,5 +103,6 @@ def tf_plot(tf_trial_avgs, title, vmax=None):
         im_nums.sort()
         im_num = im_nums[-1] + 1
     im_name = f'temp/{im_num}.png'
-    fig.savefig(im_name)
+    plt.savefig(im_name, bbox_inches='tight')
+    plt.close('all')
     return im_name

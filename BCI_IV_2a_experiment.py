@@ -475,7 +475,8 @@ if __name__ == '__main__':
                     set_params_by_dataset()
                     if first_run:
                         first_dataset = globals.get('dataset')
-                        multiple_values.extend(globals.get('include_params_folder_name'))
+                        if globals.get('include_params_folder_name'):
+                            multiple_values.extend(globals.get('include_params_folder_name'))
                         first_run = False
                     set_gpu()
                     set_seeds()
