@@ -83,7 +83,7 @@ def get_tf_data_efficient(data, channel, srate):
 
 
 def tf_plot(tf_trial_avgs, title, vmax=None):
-    figure(num=None, figsize=(14, 6), dpi=80, facecolor='w', edgecolor='k')
+    figure(num=None, figsize=(6 * len(tf_trial_avgs), 6), dpi=80, facecolor='w', edgecolor='k')
     for index, tf in enumerate(tf_trial_avgs):
         ax = plt.subplot(1, len(tf_trial_avgs), index+1)
         ax.set_xlabel('time points')

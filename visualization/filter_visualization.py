@@ -93,6 +93,7 @@ def plot_tensors(tensor, title, num_cols=8):
     plt.subplots_adjust(wspace=0.1, hspace=0.1)
     img_name = f'temp/{img_name_counter}.png'
     plt.savefig(f'{img_name}')
+    plt.close('all')
     img_name_counter += 1
     return img_name
 
@@ -113,6 +114,7 @@ def plot_one_tensor(tensor, title):
     ax.set_title(f'{title}, Tensor shape: {tensor.shape}')
     img_name = f'temp/{img_name_counter}.png'
     plt.savefig(img_name, bbox_inches='tight')
+    plt.close('all')
     img_name_counter += 1
     return img_name
 
@@ -171,7 +173,7 @@ def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=Non
     plot_dict = OrderedDict()
     plot_imgs = OrderedDict()
     for layer_idx, layer in enumerate(list(pretrained_model.children())):
-        max_examples = create_max_examples_per_channel(layer_idx, pretrained_model, steps=500)
+        max_examples = create_max_examples_per_channel(layer_idx, pretrained_model, steps=steps)
         max_value = 0
         for chan_idx, example in enumerate(max_examples):
             for eeg_chan in eeg_chans:
@@ -192,16 +194,35 @@ def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=Non
         os.remove(im)
 
 
-def compare_avg_class_tf_with_optimal_tf(pretrained_model, train_set, date_time, eeg_chans=None):
+def get_avg_class_tf(train_set, date_time, eeg_chans=None):
     if eeg_chans is None:
         eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     left_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 0)]
     right_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 1)]
 
+    left_chan_data = defaultdict(list)
+    right_chan_data = defaultdict(list)
+
     for left_example in left_X:
-        chan_data = defaultdict(list)
         for eeg_chan in eeg_chans:
-            chan_data[eeg_chan] = get_tf_data_efficient(left_example[None, :, :], eeg_chan, 250)
+            left_chan_data[eeg_chan].append(get_tf_data_efficient(left_example[None, :, :], eeg_chan, 250))
+
+    for right_example in right_X:
+        for eeg_chan in eeg_chans:
+            right_chan_data[eeg_chan].append(get_tf_data_efficient(right_example[None, :, :], eeg_chan, 250))
+
+    left_chan_avg_tf = []
+    right_chan_avg_tf = []
+    for eeg_chan in eeg_chans:
+        left_chan_avg_tf.append(np.average(np.array(left_chan_data[eeg_chan]), axis=0))
+        right_chan_avg_tf.append(np.average(np.array(right_chan_data[eeg_chan]), axis=0))
+    max_value = max(np.max(np.array(left_chan_avg_tf)), np.max(np.array(right_chan_avg_tf)))
+    left_img = tf_plot(left_chan_avg_tf, 'average TF for left hand', max_value)
+    right_img = tf_plot(right_chan_avg_tf, 'average TF for right hand', max_value)
+    story = [get_image(left_img), get_image(right_img)]
+    create_pdf_from_story(f'results/{date_time}/step5_tf_plots_avg_per_class.pdf', story)
+    os.remove(left_img)
+    os.remove(right_img)
 
 
 if __name__ == '__main__':
@@ -237,13 +258,6 @@ if __name__ == '__main__':
     train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
         get_train_val_test(globals.get('data_folder'), subject_id, globals.get('low_cut_hz'))
 
-
-    # sample_data = train_set[subject_id].X
-    # tf_data = get_tf_data_efficient(sample_data, 0, 250)
-    # tf_data2 = get_tf_data(sample_data, 0, 250)
-    # tf_plot(tf_data, "test - efficient")
-    # tf_plot(tf_data2, "test - not efficient")
-
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
                         train_set=train_set, val_set=val_set, test_set=test_set,
@@ -255,9 +269,9 @@ if __name__ == '__main__':
     now = datetime.now()
     date_time = now.strftime("%m.%d.%Y-%H:%M:%S")
     createFolder(f'results/{date_time}')
-    # plot_all_kernels_to_pdf(pretrained_model, date_time)
-    # plot_avg_activation_maps(pretrained_model, train_set, date_time)
+    plot_all_kernels_to_pdf(pretrained_model, date_time)
+    plot_avg_activation_maps(pretrained_model, train_set, date_time)
     find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
-    # create_optimal_samples_per_filter(pretrained_model, date_time, steps=1)
-    compare_avg_class_tf_with_optimal_tf(pretrained_model, train_set, date_time)
+    create_optimal_samples_per_filter(pretrained_model, date_time, steps='max')
+    get_avg_class_tf(train_set, date_time)
 

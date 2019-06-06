@@ -336,6 +336,19 @@ def generate_flatten_layer(layer, in_chans, prev_time):
     return Expression(MyModel._squeeze_final_output)
 
 
+class LinearWeightedAvg(torch.nn.Module):
+    def __init__(self, n_neurons):
+        self.neurons = []
+        self.outputs = []
+        for neur_idx in range(len(n_neurons)):
+            self.neurons.append(torch.nn.Linear(2, 1))
+
+    def forward(self, *input):
+        for neur_idx, neuron in enumerate(self.neurons):
+            self.outputs.append(neuron.forward(torch.stack([i[neur_idx] for i in input])))
+        return torch.stack(self.outputs)
+
+
 class ModelFromGrid(torch.nn.Module):
     def __init__(self, layer_grid):
         super(ModelFromGrid, self).__init__()
