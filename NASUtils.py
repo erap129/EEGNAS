@@ -364,7 +364,9 @@ def sort_population(weighted_population):
 
 def add_model_to_stats(pop, model_index, model_stats):
     if globals.get('grid'):
-        pass
+        if globals.get('grid_as_ensemble'):
+            for key, value in pop['weighted_avg_params'].items():
+                model_stats[key] = value
     else:
         for i, layer in enumerate(pop['model']):
             model_stats[f'layer_{i}'] = type(layer).__name__
@@ -374,7 +376,7 @@ def add_model_to_stats(pop, model_index, model_stats):
         model_stats['ensemble_role'] = (model_index % globals.get('ensemble_size'))
         assert pop['perm_ensemble_role'] == model_stats['ensemble_role']
         model_stats['perm_ensemble_id'] = pop['perm_ensemble_id']
-    if globals.get('delete_finalized_model'):
+    if globals.get('delete_finalized_models'):
         finalized_model = models_generation.finalize_model(pop['model'])
     else:
         finalized_model = pop['finalized_model']

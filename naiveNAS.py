@@ -182,6 +182,8 @@ class NaiveNAS:
             self.current_model_index = i
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
+            if globals.get('grid_as_ensemble') and globals.get('delete_finalized_models'):
+                pop['weighted_avg_params'] = model
             self.current_model_index = -1
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
@@ -591,7 +593,6 @@ class NaiveNAS:
         start = time.time()
         num_epochs = self.run_until_stop(model, single_subj_dataset)
         self.setup_after_stop_training(model, final_evaluation)
-        # num_epochs_before_second_run = len(self.epochs_df.values) if ensemble else None
         if final_evaluation:
             single_subj_dataset['train'] = concatenate_sets(
                 [single_subj_dataset['train'], single_subj_dataset['valid']])
@@ -617,8 +618,16 @@ class NaiveNAS:
                 with SummaryWriter(log_dir=f'{self.exp_folder}/tensorboard/gen_{self.current_generation}_model{self.current_model_index}') as w:
                     w.add_graph(model, self.get_dummy_input())
         if globals.get('delete_finalized_models'):
-            del model
-            model = None
+            if globals.get('grid_as_ensemble'):
+                model_stats = {}
+                for param_idx, param in enumerate(list(model.pytorch_layers['averaging_layer'].parameters())):
+                    for inner_idx, inner_param in enumerate(param[0]):
+                        model_stats[f'avg_weights {(param_idx, inner_idx)}'] = float(inner_param)
+                del model
+                model = model_stats
+            else:
+                del model
+                model = None
         return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):

@@ -319,7 +319,7 @@ def get_human_activity_train_val_test(data_folder, subject_id):
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
-    return train_set, valid_set, test_set
+    return train_set, valid_set, test_se
 
 
 def opp_sliding_window(data_x, data_y, ws, ss):
@@ -392,7 +392,6 @@ def get_tuh_train_val_test(data_folder):
     test_X, test_y = test_set.load()
     test_set = SignalAndTarget(test_X, test_y)
     return train_set, valid_set, test_set
-
 
 
 def get_pure_cross_subject(data_folder, low_cut_hz):

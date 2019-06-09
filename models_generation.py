@@ -332,21 +332,24 @@ def generate_averaging_layer(layer, in_chans, prev_time):
     return AveragingModule()
 
 
+def generate_linear_weighted_avg(layer, in_chans, prev_time):
+    return LinearWeightedAvg(globals.get('n_classes'))
+
+
 def generate_flatten_layer(layer, in_chans, prev_time):
     return Expression(MyModel._squeeze_final_output)
 
 
 class LinearWeightedAvg(torch.nn.Module):
     def __init__(self, n_neurons):
-        self.neurons = []
-        self.outputs = []
-        for neur_idx in range(len(n_neurons)):
-            self.neurons.append(torch.nn.Linear(2, 1))
+        super(LinearWeightedAvg, self).__init__()
+        self.weight_inp1 = torch.nn.Parameter(torch.randn(1, n_neurons))
+        self.weight_inp2 = torch.nn.Parameter(torch.randn(1, n_neurons))
+        init.xavier_uniform_(self.weight_inp1, gain=1)
+        init.xavier_uniform_(self.weight_inp2, gain=1)
 
-    def forward(self, *input):
-        for neur_idx, neuron in enumerate(self.neurons):
-            self.outputs.append(neuron.forward(torch.stack([i[neur_idx] for i in input])))
-        return torch.stack(self.outputs)
+    def forward(self, input1, input2):
+        return input1 * self.weight_inp1 + input2 * self.weight_inp2
 
 
 class ModelFromGrid(torch.nn.Module):
@@ -360,40 +363,23 @@ class ModelFromGrid(torch.nn.Module):
             DropoutLayer: generate_dropout_layer,
             IdentityLayer: generate_identity_layer,
             FlattenLayer: generate_flatten_layer,
-            AveragingLayer: generate_averaging_layer
+            AveragingLayer: generate_averaging_layer,
+            LinearWeightedAvg: generate_linear_weighted_avg
         }
         layers = layer_grid.copy()
         self.pytorch_layers = nn.ModuleDict({})
         if globals.get('grid_as_ensemble'):
-            for row in range(globals.get('num_layers')[0]):
-                layers.add_node(f'output_softmax_{row}')
-                layers.add_node(f'output_flatten_{row}')
-                layers.nodes[f'output_conv_{row}']['layer'] = ConvLayer(kernel_time='down_to_one')
-                layers.nodes[f'output_softmax_{row}']['layer'] = ActivationLayer('softmax')
-                layers.nodes[f'output_softmax_{row}']['layer'] = ActivationLayer('softmax')
-                layers.nodes[f'output_flatten_{row}']['layer'] = FlattenLayer()
-                layers.add_edge(f'output_conv_{row}', f'output_softmax_{row}')
-                layers.add_edge(f'output_softmax_{row}', f'output_flatten_{row}')
-            layers.add_node('averaging_layer')
-            layers.nodes['averaging_layer']['layer'] = AveragingLayer()
-            for row in range(globals.get('num_layers')[0]):
-                layers.add_edge(f'output_flatten_{row}', 'averaging_layer')
+            self.finalize_grid_network_weighted_avg(layers)
         else:
-            layers.add_node('output_softmax')
-            layers.add_node('output_flatten')
-            layers.nodes['output_conv']['layer'] = ConvLayer(kernel_time='down_to_one')
-            layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
-            layers.nodes['output_flatten']['layer'] = FlattenLayer()
-            layers.add_edge('output_conv', 'output_softmax')
-            layers.add_edge('output_softmax', 'output_flatten')
+            self.finalize_grid_network_concatenation(layers)
         input_chans = globals.get('eeg_chans')
         input_time = globals.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
         if globals.get('grid_as_ensemble'):
-            descendants = list(set([item for sublist in nx.all_simple_paths(layers, 'input', 'averaging_layer')
-                                    for item in sublist]))
+            self.final_layer_name = 'output_softmax'
         else:
-            descendants = list(set([item for sublist in nx.all_simple_paths(layers, 'input', 'output_flatten')
+            self.final_layer_name = 'output_flatten'
+        descendants = list(set([item for sublist in nx.all_simple_paths(layers, 'input', self.final_layer_name)
                                     for item in sublist]))
         to_remove = []
         for node in list(layers.nodes):
@@ -424,6 +410,29 @@ class ModelFromGrid(torch.nn.Module):
         else:
             init.xavier_uniform_(self.pytorch_layers['output_conv'].weight, gain=1)
             init.constant_(self.pytorch_layers['output_conv'].bias, 0)
+
+    def finalize_grid_network_weighted_avg(self, layers):
+        for row in range(globals.get('num_layers')[0]):
+            layers.add_node(f'output_flatten_{row}')
+            layers.nodes[f'output_conv_{row}']['layer'] = ConvLayer(kernel_time='down_to_one')
+            layers.nodes[f'output_flatten_{row}']['layer'] = FlattenLayer()
+            layers.add_edge(f'output_conv_{row}', f'output_flatten_{row}')
+        layers.add_node('averaging_layer')
+        layers.add_node('output_softmax')
+        layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
+        layers.nodes['averaging_layer']['layer'] = LinearWeightedAvg(globals.get('n_classes'))
+        for row in range(globals.get('num_layers')[0]):
+            layers.add_edge(f'output_flatten_{row}', 'averaging_layer')
+        layers.add_edge('averaging_layer', 'output_softmax')
+
+    def finalize_grid_network_concatenation(self, layers):
+        layers.add_node('output_softmax')
+        layers.add_node('output_flatten')
+        layers.nodes['output_conv']['layer'] = ConvLayer(kernel_time='down_to_one')
+        layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
+        layers.nodes['output_flatten']['layer'] = FlattenLayer()
+        layers.add_edge('output_conv', 'output_softmax')
+        layers.add_edge('output_softmax', 'output_flatten')
 
     def calc_shape_multi(self, predecessors, node, layers):
         pred_shapes = [layers.nodes[pred]['shape']['time'] for pred in predecessors]
@@ -456,20 +465,13 @@ class ModelFromGrid(torch.nn.Module):
                         to_concat.append(self.fixed_tensors[(pred, node)])
                     else:
                         to_concat.append(self.tensors[pred])
-                # if globals.get('grid_as_ensemble'):
-                #     self.tensors[node] = self.pytorch_layers[str(node)](torch.mean(torch.tensor(to_concat), dim=0))
-                #     if node == 'output_average':
-                #         return self.tensors[node]
-                # else:
                 if node != 'averaging_layer':
                     self.tensors[node] = self.pytorch_layers[str(node)](torch.cat(tuple(to_concat), dim=1))
                 if globals.get('grid_as_ensemble'):
                     if node == 'averaging_layer':
-                        self.tensors[node] = self.pytorch_layers[str(node)](torch.stack(to_concat))
-                        return self.tensors[node]
-                else:
-                    if node == 'output_flatten':
-                        return self.tensors[node]
+                        self.tensors[node] = self.pytorch_layers[str(node)](*to_concat)
+            if node == self.final_layer_name:
+                return self.tensors[node]
 
 
 class MyModel:
