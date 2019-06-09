@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 from moabb.datasets import Cho2017, BNCI2014004
 from moabb.paradigms import (LeftRightImagery, MotorImagery,
                              FilterBankMotorImagery)
+import scipy.io
 from data.Bloomberg.bloomberg_preproc import get_bloomberg
 from data.HumanActivity.human_activity_preproc import get_human_activity
 from data.Opportunity.sliding_window import sliding_window
@@ -319,7 +320,31 @@ def get_human_activity_train_val_test(data_folder, subject_id):
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
-    return train_set, valid_set, test_se
+    return train_set, valid_set, test_set
+
+
+def get_mental_imagery_long_words(data_folder, subject_id):
+    long_word_files = [f for f in os.listdir(f'{data_folder}/MentalImagery/LongWords') if os.path.isfile(f)]
+    selected_file = ''
+    for subj_file in long_word_files:
+        if f'sub_{subject_id}' in subj_file:
+            selected_file = subj_file
+    data = scipy.io.loadmat(selected_file)['eeg_data_wrt_task_rop_no_eog_256Hz_last_beep']
+    X = []
+    y = []
+    cls_idx = 0
+    for cls_examples in data:
+        for example in cls_examples:
+            X.append(example)
+            y.append(cls_idx)
+        cls_idx += 1
+    X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.1)
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=
+                                                      globals.get('valid_set_fraction'))
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
 
 
 def opp_sliding_window(data_x, data_y, ws, ss):
