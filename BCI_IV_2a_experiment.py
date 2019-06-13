@@ -25,6 +25,7 @@ import csv
 import time
 import json
 import code, traceback, signal
+import configparser
 from os import listdir
 from os.path import isfile, join
 from pydrive.drive import GoogleDrive
@@ -155,6 +156,18 @@ def garbage_time():
     garbageNAS.garbage_time()
 
 
+def config_to_dict(path):
+    conf = configparser.ConfigParser()
+    conf.optionxform = str
+    conf.read(path)
+    dictionary = {}
+    for section in conf.sections():
+        dictionary[section] = {}
+        for option in conf.options(section):
+            dictionary[section][option] = eval(conf.get(section, option))
+    return dictionary
+
+
 def get_configurations(experiment):
     configurations = []
     default_config = globals.configs._defaults
@@ -254,6 +267,8 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
         naiveNAS.evolution()
+        if globals.get('pure_cross_subject'):
+            break
 
 
 def cross_subject_exp(stop_criterion, iterator, loss_function):
@@ -280,40 +295,17 @@ def cross_subject_exp(stop_criterion, iterator, loss_function):
         naiveNAS.run_target_model(csv_file)
 
 
-def set_params_by_dataset():
-    num_subjects = {'HG': 14, 'BCI_IV_2a': 9, 'BCI_IV_2b': 9, 'NER15': 1, 'Cho': 52, 'Bloomberg': 1, 'NYSE': 1,
-                    'HumanActivity': 19, 'Opportunity': 1, 'SonarSub': 1}
-    cross_subject_sampling_rate = num_subjects
-    eeg_chans = {'HG': 44, 'BCI_IV_2a': 22, 'BCI_IV_2b': 3, 'NER15': 56, 'Cho': 64, 'Bloomberg': 32, 'NYSE': 5,
-                 'HumanActivity': 45, 'Opportunity': 113, 'SonarSub': 100}
-    input_time_len = {'HG': 1125, 'BCI_IV_2a': 1125, 'BCI_IV_2b': 1126, 'NER15': 260, 'Cho': 1537, 'Bloomberg': 950,
-                      'NYSE': 200, 'HumanActivity': 124, 'Opportunity': 128, 'SonarSub': 100}
-    n_classes = {'HG': 4, 'BCI_IV_2a': 4, 'BCI_IV_2b': 2, 'NER15': 2, 'Cho': 2, 'Bloomberg': 3, 'NYSE': 2,
-                 'HumanActivity': 8, 'Opportunity': 18, 'SonarSub': 2}
-    subjects_to_check = {'HG': list(range(1,14+1)), 'BCI_IV_2a': list(range(1,9+1)), 'BCI_IV_2b': list(range(1,9+1)),
-                            'NER15': [1], 'Cho': [[1,2,3,4,5,6,7,8,9,10,
-                            11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,38,39,40,
-                            41,42,43,44,45,47,48,50,51,52]], 'Bloomberg': [1], 'NYSE': [1],
-                            'HumanActivity': list(range(1,19+1)), 'Opportunity': [1], 'SonarSub': [1]}
-    evaluation_metrics = {'HG': ['accuracy'], 'BCI_IV_2a': ['accuracy'], 'BCI_IV_2b': ["kappa"],
-                          'NER15': ["accuracy", "auc"], 'Cho': ['accuracy'], 'Bloomberg': ["accuracy", "auc"],
-                          'NYSE': ['accuracy'], 'HumanActivity': ['accuracy'], 'Opportunity': ["accuracy", "f1"],
-                          'SonarSub': ["accuracy"]}
-    ga_objective = {'HG': 'acc', 'BCI_IV_2a': 'acc', 'BCI_IV_2b': "kappa",
-                          'NER15': "auc", 'Cho': 'acc', 'Bloomberg': "auc",
-                          'NYSE': 'acc', 'HumanActivity': 'acc', 'Opportunity': "f1", 'SonarSub': 'acc'}
-    nn_objective = {'HG': 'accuracy', 'BCI_IV_2a': 'accuracy', 'BCI_IV_2b': "kappa",
-                          'NER15': "auc", 'Cho': 'accuracy', 'Bloomberg': "auc",
-                          'NYSE': 'accuracy', 'HumanActivity': 'accuracy', 'Opportunity': "f1", 'SonarSub': 'accuracy'}
-    globals.set('num_subjects', num_subjects[globals.get('dataset')])
-    globals.set('cross_subject_sampling_rate', cross_subject_sampling_rate[globals.get('dataset')])
-    globals.set('eeg_chans', eeg_chans[globals.get('dataset')])
-    globals.set('input_time_len', input_time_len[globals.get('dataset')])
-    globals.set('n_classes', n_classes[globals.get('dataset')])
-    globals.set_if_not_exists('subjects_to_check', subjects_to_check[globals.get('dataset')])
-    globals.set('evaluation_metrics', evaluation_metrics[globals.get('dataset')])
-    globals.set('ga_objective', ga_objective[globals.get('dataset')])
-    globals.set('nn_objective', nn_objective[globals.get('dataset')])
+def set_params_by_dataset(params_config_path):
+    config_dict = config_to_dict(params_config_path)
+    globals.set('num_subjects', config_dict['num_subjects'][globals.get('dataset')])
+    globals.set('cross_subject_sampling_rate', config_dict['num_subjects'][globals.get('dataset')])
+    globals.set('eeg_chans', config_dict['eeg_chans'][globals.get('dataset')])
+    globals.set('input_time_len', config_dict['input_time_len'][globals.get('dataset')])
+    globals.set('n_classes', config_dict['n_classes'][globals.get('dataset')])
+    globals.set_if_not_exists('subjects_to_check', config_dict['subjects_to_check'][globals.get('dataset')])
+    globals.set('evaluation_metrics', config_dict['evaluation_metrics'][globals.get('dataset')])
+    globals.set('ga_objective', config_dict['ga_objective'][globals.get('dataset')])
+    globals.set('nn_objective', config_dict['nn_objective'][globals.get('dataset')])
     if globals.get('dataset') == 'Cho':
         globals.set('exclude_subjects', [32, 46, 49])
     if globals.get('ensemble_iterations'):
@@ -472,7 +464,7 @@ if __name__ == '__main__':
             for index, configuration in enumerate(configurations):
                 try:
                     globals.set_config(configuration)
-                    set_params_by_dataset()
+                    set_params_by_dataset('configurations/dataset_params.ini')
                     if first_run:
                         first_dataset = globals.get('dataset')
                         if globals.get('include_params_folder_name'):

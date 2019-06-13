@@ -1,10 +1,10 @@
+import pickle
 import unittest
 
 from braindecode.torch_ext.util import np_to_var
-
 from models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
-    MyModel, ActivationLayer, network_similarity, PoolingLayer, add_random_connection, IdentityLayer,\
+    ActivationLayer, network_similarity, PoolingLayer, add_random_connection, IdentityLayer,\
     breed_grid
 import models_generation
 from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset
@@ -14,13 +14,9 @@ import networkx as nx
 import numpy as np
 from globals import init_config
 import matplotlib.pyplot as plt
-# from torchviz import make_dot
-import torchvision.models as models
-from copy import deepcopy
 from graphviz import Source
 import torch
 from networkx.classes.function import create_empty_copy
-from torchsummary import summary
 
 class TestModelGeneration(unittest.TestCase):
     def setUp(self):
@@ -29,12 +25,12 @@ class TestModelGeneration(unittest.TestCase):
         configs = get_configurations('tests')
         assert(len(configs) == 1)
         globals.set_config(configs[0])
-        set_params_by_dataset()
+        set_params_by_dataset('../configurations/dataset_params.ini')
 
     def test_breed(self):
         model1 = uniform_model(10, BatchNormLayer)
         model2 = uniform_model(10, DropoutLayer)
-        model3, _ = breed_layers(0, model1, model2, cut_point=4)
+        model3, _, _ = breed_layers(0, model1, model2, cut_point=4)
         for i in range(10):
             if i < 4:
                 assert(type(model3[i]).__name__ == type(model1[i]).__name__)
@@ -71,7 +67,7 @@ class TestModelGeneration(unittest.TestCase):
         model1_state = finalize_model(model1).state_dict()
         model2 = uniform_model(4, ConvLayer)
         model2_state = finalize_model(model2).state_dict()
-        model3, model3_state = breed_layers(0, model1, model2, model1_state, model2_state, 2)
+        model3, model3_state, _ = breed_layers(0, model1, model2, model1_state, model2_state, 2)
         for s1, s3 in zip(list(model1_state.values())[:4], list(model3_state.values())[:4]):
             assert((s1==s3).all())
         for s2, s3 in zip(list(model2_state.values())[6:8], list(model3_state.values())[6:8]):
@@ -106,8 +102,8 @@ class TestModelGeneration(unittest.TestCase):
     def test_remove_random_connection(self):
         model = models_generation.random_grid_model([10, 10])
         num_connections = len(list(model.edges))
-        models_generation.remove_random_connection(model)
-        assert(len(list(model.edges)) == num_connections - 1)
+        success = models_generation.remove_random_connection(model)
+        assert(len(list(model.edges)) == num_connections - 1 or not success)
 
     def test_draw_grid_model(self):
         layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(5, 5)))
@@ -191,7 +187,7 @@ class TestModelGeneration(unittest.TestCase):
         model_1 = models_generation.ModelFromGrid(layer_grid_1)
         model_2 = models_generation.ModelFromGrid(layer_grid_2)
 
-        child_model, child_model_state = breed_grid(0, layer_grid_1, layer_grid_2, model_1.state_dict(), model_2.state_dict(),
+        child_model, child_model_state, _ = breed_grid(0, layer_grid_1, layer_grid_2, model_1.state_dict(), model_2.state_dict(),
                                  cut_point=2)
 
         assert (type(child_model.nodes[(0, 0)]['layer']) == ConvLayer)
@@ -256,6 +252,22 @@ class TestModelGeneration(unittest.TestCase):
         layer_grid_1.remove_edge('input', (3, 0))
         layer_grid_1.remove_edge('input', (4, 0))
         model = models_generation.ModelFromGrid(layer_grid_1)
+
+    def test_pytorch_average(self):
+        weighted_population = pickle.load(open('../weighted_populations/421_1_SO_pure_cross_subject_BCI_IV_2a.p', 'rb'))
+        model_1_to_conv = torch.nn.Sequential(*list(weighted_population[0]['finalized_model'].children())[:11]).cpu()
+        model_2_to_conv = torch.nn.Sequential(*list(weighted_population[1]['finalized_model'].children())[:11]).cpu()
+        training_example = models_generation.get_dummy_input()
+        model_1_output = model_1_to_conv(training_example)
+        model_2_output = model_2_to_conv(training_example)
+        regular_avg = (model_1_output + model_2_output) / 2
+
+        linear_avg_layer = models_generation.LinearWeightedAvg(globals.get('n_classes'))
+        linear_avg_layer.weight_inp1.data = torch.tensor([[0.5, 0.5, 0.5, 0.5]]).view((1,4,1,1))
+        linear_avg_layer.weight_inp2.data = torch.tensor([[0.5, 0.5, 0.5, 0.5]]).view((1,4,1,1))
+        pytorch_avg = linear_avg_layer.forward(model_1_output, model_2_output)
+
+        assert torch.all(torch.eq(regular_avg, pytorch_avg))
 
 
 if __name__ == '__main__':

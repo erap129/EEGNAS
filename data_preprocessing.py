@@ -324,12 +324,13 @@ def get_human_activity_train_val_test(data_folder, subject_id):
 
 
 def get_mental_imagery_long_words(data_folder, subject_id):
-    long_word_files = [f for f in os.listdir(f'{data_folder}/MentalImagery/LongWords') if os.path.isfile(f)]
+    long_word_files = [f for f in os.listdir(f'{data_folder}MentalImagery/LongWords') if
+                       os.path.isfile(f'{data_folder}MentalImagery/LongWords/{f}')]
     selected_file = ''
     for subj_file in long_word_files:
         if f'sub_{subject_id}' in subj_file:
-            selected_file = subj_file
-    data = scipy.io.loadmat(selected_file)['eeg_data_wrt_task_rop_no_eog_256Hz_last_beep']
+            selected_file = f'{data_folder}MentalImagery/LongWords/{subj_file}'
+    data = scipy.io.loadmat(selected_file)['eeg_data_wrt_task_rep_no_eog_256Hz_last_beep']
     X = []
     y = []
     cls_idx = 0
@@ -426,7 +427,7 @@ def get_pure_cross_subject(data_folder, low_cut_hz):
     train_y = []
     val_y = []
     test_y = []
-    for subject_id in range(1, globals.get('num_subjects') + 1):
+    for subject_id in globals.get('subjects_to_check'):
         train_set, valid_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         train_x.append(train_set.X)
         val_x.append(valid_set.X)
@@ -461,3 +462,5 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_opportunity_train_val_test(data_folder)
     elif globals.get('dataset') == 'SonarSub':
         return get_sonarsub_train_val_test(data_folder)
+    elif globals.get('dataset') == 'MentalImageryLongWords':
+        return get_mental_imagery_long_words(data_folder, subject_id)

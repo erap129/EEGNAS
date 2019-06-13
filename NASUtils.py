@@ -396,8 +396,28 @@ def pytorch_count_params(model):
     return total_params
 
 
-
-
+def format_manual_ensemble_evaluations(avg_evaluations):
+    for eval in avg_evaluations.items():
+        for eval_spec in eval[1].items():
+            if type(eval_spec[1] == list):
+                try:
+                    avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1], axis=0)
+                except TypeError as e:
+                    print(f'the exception is: {str(e)}')
+                    pdb.set_trace()
+            else:
+                avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1])
+    new_avg_evaluations = defaultdict(dict)
+    for dataset in ['train', 'valid', 'test']:
+        ensemble_preds = avg_evaluations['raw'][dataset]
+        pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
+        ensemble_targets = avg_evaluations['target'][dataset]
+        ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
+        objective_str = globals.get("ga_objective")
+        if objective_str == 'acc':
+            objective_str = 'accuracy'
+        new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
+    return new_avg_evaluations
 
 
 

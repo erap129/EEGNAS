@@ -343,8 +343,8 @@ def generate_flatten_layer(layer, in_chans, prev_time):
 class LinearWeightedAvg(torch.nn.Module):
     def __init__(self, n_neurons):
         super(LinearWeightedAvg, self).__init__()
-        self.weight_inp1 = torch.nn.Parameter(torch.randn(1, n_neurons))
-        self.weight_inp2 = torch.nn.Parameter(torch.randn(1, n_neurons))
+        self.weight_inp1 = torch.nn.Parameter(torch.randn(1, n_neurons, 1, 1))
+        self.weight_inp2 = torch.nn.Parameter(torch.randn(1, n_neurons, 1, 1))
         init.xavier_uniform_(self.weight_inp1, gain=1)
         init.xavier_uniform_(self.weight_inp2, gain=1)
 
@@ -607,6 +607,9 @@ def remove_random_connection(layer_grid):
     layer_grid.remove_edge(*random_edge)
     if len(list(nx.all_simple_paths(layer_grid, 'input', 'output_conv'))) == 0:
         layer_grid.add_edge(*random_edge)  # don't leave the input and output unconnected
+        return False
+    else:
+        return True
 
 
 def add_random_connection(layer_grid):
@@ -828,9 +831,6 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                     child_model.remove_edge(edge[0], edge[1])
                 for edge in add_edges:
                     child_model.add_edge(edge[0], edge[1])
-        # if not check_legal_grid_model(child_model):
-        #     globals.set('failed_breedings', globals.get('failed_breedings') + 1)
-        #     return None, None, None
         if globals.get('inherit_weights_crossover') and first_model_state is not None and second_model_state is not None:
             child_model_state = ModelFromGrid(child_model).state_dict()
             inherit_grid_states(first_model.graph['width'], cut_point, child_model_state,
@@ -926,4 +926,20 @@ def get_n_preds_per_input(model):
 
 def get_dummy_input():
     input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
-    return np_to_var(np.ones(input_shape, dtype=np.float32))
+    return np_to_var(np.random.random(input_shape).astype(np.float32))
+
+
+class AveragingEnsemble(nn.Module):
+    def __init__(self, models):
+        self.avg_layer = LinearWeightedAvg(globals.get('n_classes'))
+        self.models = models
+        self.softmax = nn.Softmax()
+        self.flatten = Expression(MyModel._squeeze_final_output)
+
+    def forward(self, input):
+        outputs = []
+        for model in self.models:
+            outputs.append(model(input))
+        avg_output = self.avg_layer(*outputs)
+        softmaxed = self.softmax(avg_output)
+        return self.flatten(softmaxed)

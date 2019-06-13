@@ -154,8 +154,6 @@ class NaiveNAS:
                 model = torch.load(self.model_from_file, map_location='cpu')
         else:
             model = target_model(globals.get('model_name'))
-        # if globals.get('cropping'):
-        #     self.set_cropping_for_model(model)
         final_time, evaluations, model, model_state, num_epochs =\
                     self.evaluate_model(model, final_evaluation=True)
         stats['train_time'] = str(final_time)
@@ -177,8 +175,6 @@ class NaiveNAS:
                 weighted_population[i]['num_epochs'] = 0
                 continue
             finalized_model = finalize_model(pop['model'])
-            # if globals.get('cropping'):
-            #     self.set_cropping_for_model(finalized_model)
             self.current_model_index = i
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
@@ -292,8 +288,6 @@ class NaiveNAS:
 
     def add_final_stats(self, stats, weighted_population):
         model = finalize_model(weighted_population[0]['model'])
-        # if globals.get('cropping'):
-        #     self.set_cropping_for_model(model)
         if globals.get('cross_subject'):
             self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
@@ -495,6 +489,11 @@ class NaiveNAS:
                 NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
 
+    def ensemble_by_avg_layer(self, trained_models):
+        avg_model = models_generation.AveragingEnsemble(trained_models)
+        self.run_one_epoch()
+
+
     def ensemble_evaluate_model(self, models, states=None, subject=None, final_evaluation=False):
         if states is None:
             states = [None for i in range(len(models))]
@@ -504,6 +503,7 @@ class NaiveNAS:
         _, evaluations, _, _, _ = self.evaluate_model(models[0], states[0], subject)
         for eval in evaluations.keys():
             avg_evaluations[eval] = defaultdict(list)
+        trained_models = []
         for model, state in zip(models, states):
             if globals.get('ensemble_pretrain'):
                 if globals.get('random_subject_pretrain'):
@@ -519,26 +519,11 @@ class NaiveNAS:
             avg_final_time += final_time
             avg_num_epochs += num_epochs
             states.append(state)
-        for eval in avg_evaluations.items():
-            for eval_spec in eval[1].items():
-                if type(eval_spec[1] == list):
-                    try:
-                        avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1], axis=0)
-                    except TypeError as e:
-                        print(f'the exception is: {str(e)}')
-                        pdb.set_trace()
-                else:
-                    avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1])
-        new_avg_evaluations = defaultdict(dict)
-        for dataset in ['train', 'valid', 'test']:
-            ensemble_preds = avg_evaluations['raw'][dataset]
-            pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
-            ensemble_targets = avg_evaluations['target'][dataset]
-            ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
-            objective_str = globals.get("ga_objective")
-            if objective_str == 'acc':
-                objective_str = 'accuracy'
-            new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
+            trained_models.append(model)
+            if globals.get('ensembling_method') == 'manual':
+                new_avg_evaluations = NASUtils.format_manual_ensemble_evaluations(avg_evaluations)
+            elif globals.get('ensembling_method') == 'averaging_layer':
+                new_avg_evaluations = self.ensemble_by_avg_layer(trained_models)
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False, ensemble=False):

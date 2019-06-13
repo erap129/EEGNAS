@@ -1,7 +1,6 @@
 import os
 import sys
 sys.path.append("..")
-import scipy
 import torch
 from braindecode.torch_ext.util import np_to_var
 from models_generation import target_model
@@ -16,14 +15,14 @@ from utils import createFolder
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from visualization.tf_plot import tf_plot, get_tf_data, get_tf_data_efficient
+from visualization.tf_plot import tf_plot, get_tf_data_efficient
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import hiddenlayer as hl
 from datetime import datetime
 import models_generation
-from reportlab.platypus import Paragraph, Image
+from reportlab.platypus import Paragraph
 from visualization.pdf_utils import get_image
 from reportlab.lib.styles import getSampleStyleSheet
+from BCI_IV_2a_experiment import config_to_dict
 styles = getSampleStyleSheet()
 from collections import OrderedDict, defaultdict
 
@@ -227,11 +226,7 @@ def get_avg_class_tf(train_set, date_time, eeg_chans=None):
 
 if __name__ == '__main__':
     globals.set_dummy_config()
-    globals.set('input_time_len', 1125)
-    globals.set('n_classes', 4)
-    globals.set('eeg_chans', 22)
     globals.set('valid_set_fraction', 0.2)
-    globals.set('dataset', 'BCI_IV_2b')
     globals.set('batch_size', 60)
     globals.set('do_early_stop', True)
     globals.set('remember_best', True)
@@ -242,16 +237,17 @@ if __name__ == '__main__':
     globals.set('cuda', True)
     globals.set('data_folder', '../../data/')
     globals.set('low_cut_hz', 0)
-    globals.set('dataset', 'BCI_IV_2b')
+    config_dict = config_to_dict('visualization_configurations/viz_config.ini')
+    globals.set('dataset', config_dict['DEFAULT']['dataset'])
+    globals.set('models_dir', config_dict['DEFAULT']['models_dir'])
+    globals.set('model_name', config_dict['DEFAULT']['model_name'])
     set_params_by_dataset()
     model_selection = 'evolution'
     cnn_layer = {'evolution': 10, 'deep4': 25}
     filter_pos = {'evolution': 0, 'deep4': 0}
-    model_dir = '91_x_BCI_IV_2b'
-    model_name = 'best_model_5_1_8_7_9_2_3_4_6.th'
-    model = {'evolution': torch.load(f'../models/{model_dir}/{model_name}'),
+    model = {'evolution': torch.load(f'../models/{globals.get("models_dir")}/{globals.get("model_name")}'),
                         'deep4': target_model('deep')}
-    subject_id = 1
+    subject_id = config_dict['DEFAULT']['subject_id']
     train_set = {}
     val_set = {}
     test_set = {}
