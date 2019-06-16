@@ -160,7 +160,9 @@ def config_to_dict(path):
     conf = configparser.ConfigParser()
     conf.optionxform = str
     conf.read(path)
-    dictionary = {}
+    dictionary = {'DEFAULT': {}}
+    for option in conf.defaults():
+        dictionary['DEFAULT'][option] = eval(conf['DEFAULT'][option])
     for section in conf.sections():
         dictionary[section] = {}
         for option in conf.options(section):
@@ -306,6 +308,7 @@ def set_params_by_dataset(params_config_path):
     globals.set('evaluation_metrics', config_dict['evaluation_metrics'][globals.get('dataset')])
     globals.set('ga_objective', config_dict['ga_objective'][globals.get('dataset')])
     globals.set('nn_objective', config_dict['nn_objective'][globals.get('dataset')])
+    globals.set('frequency', config_dict['frequency'][globals.get('dataset')])
     if globals.get('dataset') == 'Cho':
         globals.set('exclude_subjects', [32, 46, 49])
     if globals.get('ensemble_iterations'):

@@ -15,7 +15,7 @@ from utils import createFolder
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from visualization.tf_plot import tf_plot, get_tf_data_efficient
+from visualization.tf_plot import tf_plot, get_tf_data_efficient, subtract_frequency
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
 import models_generation
@@ -25,6 +25,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from BCI_IV_2a_experiment import config_to_dict
 styles = getSampleStyleSheet()
 from collections import OrderedDict, defaultdict
+from utils import label_by_idx
 
 matplotlib.use("TkAgg")
 plt.interactive(False)
@@ -58,6 +59,7 @@ def create_max_examples_per_channel(select_layer, model, steps=500):
     for c in range(channels):
         layer_vis = CNNLayerVisualization(model, select_layer, c)
         act_maps.append(layer_vis.visualise_layer_with_hooks(steps))
+        print(f'created optimal example for layer {select_layer}, channel {c}')
     return act_maps
 
 
@@ -131,12 +133,16 @@ def plot_all_kernels_to_pdf(pretrained_model, date_time):
 
 def plot_avg_activation_maps(pretrained_model, train_set, date_time):
     img_paths = []
-    left_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 0)]
-    right_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 1)]
+    class_examples = []
+    for class_idx in range(globals.get('n_classes')):
+        class_examples.append(train_set[subject_id].X[np.where(train_set[subject_id].y == class_idx)])
     for index, layer in enumerate(list(pretrained_model.children())[:-1]):
-        left_act_map = plot_one_tensor(get_intermediate_act_map(left_X, index, pretrained_model), f'Layer {index} Left')
-        right_act_map = plot_one_tensor(get_intermediate_act_map(right_X, index, pretrained_model), f'Layer {index} Right')
-        img_paths.extend([left_act_map, right_act_map])
+        act_maps = []
+        for class_idx in range(globals.get('n_classes')):
+            act_maps.append(plot_one_tensor(get_intermediate_act_map
+                                            (class_examples[class_idx], index, pretrained_model),
+                                            f'Layer {index}, {label_by_idx(class_idx)}'))
+        img_paths.extend(act_maps)
     create_pdf(f'results/{date_time}/step2_avg_activation_maps.pdf', img_paths)
     for im in img_paths:
         os.remove(im)
@@ -153,9 +159,14 @@ def find_optimal_samples_per_filter(pretrained_model, train_set, date_time, eeg_
             for eeg_chan in eeg_chans:
                 tf_data.append(get_tf_data_efficient(train_set[subject_id].X[example_idx][None, :, :], eeg_chan, 250))
             max_value = np.max(np.array(tf_data))
+            class_str = ''
+            if layer_idx >= len(list(pretrained_model.children())) - 3:
+                class_str = f', class:{label_by_idx(chan_idx)}'
             plot_dict[(layer_idx, chan_idx)] = tf_plot(tf_data,
-                                                      f'TF plot of example {example_idx} for layer {layer_idx}, channel {chan_idx}',
-                                                       max_value)
+                                                      f'TF plot of example {example_idx} for layer '
+                                                      f'{layer_idx}, channel {chan_idx}{class_str}',max_value)
+            print(f'plot most activating TF for layer {layer_idx}, channel {chan_idx}')
+
     img_paths = list(plot_dict.values())
     story = []
     story.append(Paragraph('<br />\n'.join([f'{x}:{y}' for x,y in pretrained_model._modules.items()]), style=styles["Normal"]))
@@ -178,10 +189,15 @@ def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=Non
             for eeg_chan in eeg_chans:
                 plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example, eeg_chan, 250)
                 max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
+        class_str = ''
+        if layer_idx >= len(list(pretrained_model.children())) - 3:
+            class_str = f', class:{label_by_idx(chan_idx)}'
         for chan_idx, example in enumerate(max_examples):
             plot_imgs[(layer_idx, chan_idx)] = tf_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
-                                                       f'TF plot of optimal example'
-                                                       f' for layer {layer_idx}, channel {chan_idx}', max_value)
+                                                       f'TF plot of optimal example for layer {layer_idx},'
+                                                       f' channel {chan_idx}{class_str}', max_value)
+            print(f'plot gradient ascent TF for layer {layer_idx}, channel {chan_idx}')
+
     story = []
     img_paths = list(plot_imgs.values())
     story.append(
@@ -196,32 +212,29 @@ def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=Non
 def get_avg_class_tf(train_set, date_time, eeg_chans=None):
     if eeg_chans is None:
         eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
-    left_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 0)]
-    right_X = train_set[subject_id].X[np.where(train_set[subject_id].y == 1)]
-
-    left_chan_data = defaultdict(list)
-    right_chan_data = defaultdict(list)
-
-    for left_example in left_X:
+    class_examples = []
+    for class_idx in range(globals.get('n_classes')):
+        class_examples.append(train_set[subject_id].X[np.where(train_set[subject_id].y == class_idx)])
+    chan_data = []
+    for class_idx in range(globals.get('n_classes')):
+        chan_data.append(defaultdict(list))
+        for example in class_examples[class_idx]:
+            for eeg_chan in eeg_chans:
+                chan_data[-1][eeg_chan].append(get_tf_data_efficient(example[None, :, :], eeg_chan, globals.get('frequency')))
+    avg_tfs = []
+    for class_idx in range(globals.get('n_classes')):
+        class_tfs = []
         for eeg_chan in eeg_chans:
-            left_chan_data[eeg_chan].append(get_tf_data_efficient(left_example[None, :, :], eeg_chan, 250))
-
-    for right_example in right_X:
-        for eeg_chan in eeg_chans:
-            right_chan_data[eeg_chan].append(get_tf_data_efficient(right_example[None, :, :], eeg_chan, 250))
-
-    left_chan_avg_tf = []
-    right_chan_avg_tf = []
-    for eeg_chan in eeg_chans:
-        left_chan_avg_tf.append(np.average(np.array(left_chan_data[eeg_chan]), axis=0))
-        right_chan_avg_tf.append(np.average(np.array(right_chan_data[eeg_chan]), axis=0))
-    max_value = max(np.max(np.array(left_chan_avg_tf)), np.max(np.array(right_chan_avg_tf)))
-    left_img = tf_plot(left_chan_avg_tf, 'average TF for left hand', max_value)
-    right_img = tf_plot(right_chan_avg_tf, 'average TF for right hand', max_value)
-    story = [get_image(left_img), get_image(right_img)]
+            class_tfs.append(np.average(np.array(chan_data[class_idx][eeg_chan]), axis=0))
+        avg_tfs.append(class_tfs)
+    max_value = max(*[np.max(np.array(class_chan_avg_tf)) for class_chan_avg_tf in avg_tfs])
+    tf_plots = []
+    for class_idx in range(globals.get('n_classes')):
+        tf_plots.append(tf_plot(avg_tfs[class_idx], f'average TF for {label_by_idx(class_idx)}', max_value))
+    story = [get_image(tf) for tf in tf_plots]
     create_pdf_from_story(f'results/{date_time}/step5_tf_plots_avg_per_class.pdf', story)
-    os.remove(left_img)
-    os.remove(right_img)
+    for tf in tf_plots:
+        os.remove(tf)
 
 
 if __name__ == '__main__':
@@ -241,7 +254,7 @@ if __name__ == '__main__':
     globals.set('dataset', config_dict['DEFAULT']['dataset'])
     globals.set('models_dir', config_dict['DEFAULT']['models_dir'])
     globals.set('model_name', config_dict['DEFAULT']['model_name'])
-    set_params_by_dataset()
+    set_params_by_dataset('../configurations/dataset_params.ini')
     model_selection = 'evolution'
     cnn_layer = {'evolution': 10, 'deep4': 25}
     filter_pos = {'evolution': 0, 'deep4': 0}
@@ -253,6 +266,11 @@ if __name__ == '__main__':
     test_set = {}
     train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
         get_train_val_test(globals.get('data_folder'), subject_id, globals.get('low_cut_hz'))
+
+    orig_data = [get_tf_data_efficient(train_set[1].X[0:2], 0, 250)]
+    tf_plot(orig_data, 'before subtraction')
+    subtracted_data = subtract_frequency(train_set[1].X[0:2], 10, 250)
+    tf_plot([get_tf_data_efficient(subtracted_data, 0, 250)], 'after subtraction')
 
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
@@ -268,6 +286,6 @@ if __name__ == '__main__':
     plot_all_kernels_to_pdf(pretrained_model, date_time)
     plot_avg_activation_maps(pretrained_model, train_set, date_time)
     find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
-    create_optimal_samples_per_filter(pretrained_model, date_time, steps='max')
+    create_optimal_samples_per_filter(pretrained_model, date_time, steps=1)
     get_avg_class_tf(train_set, date_time)
 

@@ -420,4 +420,13 @@ def format_manual_ensemble_evaluations(avg_evaluations):
     return new_avg_evaluations
 
 
+def set_finetuning(model, X):
+    child_idx = 0
+    num_layers = len(list(model.children()))
+    for child in model.children():
+        if child_idx < num_layers - X:
+            for param in child.parameters():
+                param.requires_grad = False
+        child_idx += 1
+
 

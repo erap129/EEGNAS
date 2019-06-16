@@ -341,15 +341,22 @@ def generate_flatten_layer(layer, in_chans, prev_time):
 
 
 class LinearWeightedAvg(torch.nn.Module):
-    def __init__(self, n_neurons):
+    def __init__(self, n_neurons, n_networks, true_avg=False):
         super(LinearWeightedAvg, self).__init__()
-        self.weight_inp1 = torch.nn.Parameter(torch.randn(1, n_neurons, 1, 1))
-        self.weight_inp2 = torch.nn.Parameter(torch.randn(1, n_neurons, 1, 1))
-        init.xavier_uniform_(self.weight_inp1, gain=1)
-        init.xavier_uniform_(self.weight_inp2, gain=1)
+        self.weight_inputs = []
+        for network_idx in range(n_networks):
+            self.weight_inputs.append(torch.nn.Parameter(torch.randn(1, n_neurons, 1, 1).cuda()))
+            init.xavier_uniform_(self.weight_inputs[-1], gain=1)
+        if true_avg:
+            for network_idx in range(n_networks):
+                self.weight_inputs[network_idx].data = torch.tensor([[0.5 for i in range(n_neurons)]]).view((1, n_neurons, 1, 1)).cuda()
+        self.weight_inputs = nn.ParameterList(self.weight_inputs)
 
-    def forward(self, input1, input2):
-        return input1 * self.weight_inp1 + input2 * self.weight_inp2
+    def forward(self, *inputs):
+        res = 0
+        for inp_idx, input in enumerate(inputs):
+            res += input * self.weight_inputs[inp_idx]
+        return res
 
 
 class ModelFromGrid(torch.nn.Module):
@@ -931,7 +938,8 @@ def get_dummy_input():
 
 class AveragingEnsemble(nn.Module):
     def __init__(self, models):
-        self.avg_layer = LinearWeightedAvg(globals.get('n_classes'))
+        super(AveragingEnsemble, self).__init__()
+        self.avg_layer = LinearWeightedAvg(globals.get('n_classes'), globals.get('ensemble_size'), true_avg=True)
         self.models = models
         self.softmax = nn.Softmax()
         self.flatten = Expression(MyModel._squeeze_final_output)

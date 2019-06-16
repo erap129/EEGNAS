@@ -25,7 +25,7 @@ import os
 import globals
 import csv
 from torch import nn
-from utils import summary, NoIncrease, dump_tensors
+from utils import summary, NoIncrease
 import NASUtils
 import pdb
 from tensorboardX import SummaryWriter
@@ -489,10 +489,22 @@ class NaiveNAS:
                 NASUtils.hash_model(new_model, self.models_set, self.genome_set)
         weighted_population.extend(children)
 
-    def ensemble_by_avg_layer(self, trained_models):
+    def ensemble_by_avg_layer(self, trained_models, subject):
+        trained_models = [nn.Sequential(*list(model.children())[:11]) for model in trained_models]
         avg_model = models_generation.AveragingEnsemble(trained_models)
-        self.run_one_epoch()
-
+        single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation=True)
+        if globals.get('ensemble_trained_average'):
+            _, _, avg_model, state, _ = self.evaluate_model(avg_model, None, subject, final_evaluation=True)
+        else:
+            self.monitor_epoch(single_subj_dataset, avg_model)
+        new_avg_evaluations = defaultdict(dict)
+        objective_str = globals.get("ga_objective")
+        if objective_str == 'acc':
+            objective_str = 'accuracy'
+        for dataset in ['train', 'valid', 'test']:
+            new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = \
+                self.epochs_df.tail(1)[f'{dataset}_{objective_str}'].values[0]
+        return new_avg_evaluations
 
     def ensemble_evaluate_model(self, models, states=None, subject=None, final_evaluation=False):
         if states is None:
@@ -520,11 +532,23 @@ class NaiveNAS:
             avg_num_epochs += num_epochs
             states.append(state)
             trained_models.append(model)
-            if globals.get('ensembling_method') == 'manual':
-                new_avg_evaluations = NASUtils.format_manual_ensemble_evaluations(avg_evaluations)
-            elif globals.get('ensembling_method') == 'averaging_layer':
-                new_avg_evaluations = self.ensemble_by_avg_layer(trained_models)
+        if globals.get('ensembling_method') == 'manual':
+            new_avg_evaluations = NASUtils.format_manual_ensemble_evaluations(avg_evaluations)
+        elif globals.get('ensembling_method') == 'averaging_layer':
+            new_avg_evaluations = self.ensemble_by_avg_layer(trained_models, subject)
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
+
+    def get_single_subj_dataset(self, subject=None, final_evaluation=False):
+        if subject not in self.datasets['train'].keys():
+            self.datasets['train'][subject], self.datasets['valid'][subject], self.datasets['test'][subject] = \
+                get_train_val_test(globals.get('data_folder'), subject, globals.get('low_cut_hz'))
+        single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
+                                           ('valid', self.datasets['valid'][subject]),
+                                           ('test', self.datasets['test'][subject])))
+        if final_evaluation:
+            single_subj_dataset['train'] = concatenate_sets(
+                [single_subj_dataset['train'], single_subj_dataset['valid']])
+        return single_subj_dataset
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False, ensemble=False):
         if subject is None:
@@ -536,12 +560,7 @@ class NaiveNAS:
                                  NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
         if globals.get('cropping'):
             self.set_cropping_for_model(model)
-        if subject not in self.datasets['train'].keys():
-            self.datasets['train'][subject], self.datasets['valid'][subject], self.datasets['test'][subject] = \
-                get_train_val_test(globals.get('data_folder'), subject, globals.get('low_cut_hz'))
-        single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
-                                            ('valid', self.datasets['valid'][subject]),
-                                            ('test', self.datasets['test'][subject])))
+        single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation)
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop') or globals.get('remember_best'):
             self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
@@ -579,8 +598,6 @@ class NaiveNAS:
         num_epochs = self.run_until_stop(model, single_subj_dataset)
         self.setup_after_stop_training(model, final_evaluation)
         if final_evaluation:
-            single_subj_dataset['train'] = concatenate_sets(
-                [single_subj_dataset['train'], single_subj_dataset['valid']])
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             if ensemble:
                 self.run_one_epoch(single_subj_dataset, model)
