@@ -1,6 +1,8 @@
 import os
 import sys
+from copy import deepcopy
 sys.path.append("..")
+from NASUtils import evaluate_single_model
 import torch
 from braindecode.torch_ext.util import np_to_var
 from models_generation import target_model
@@ -11,11 +13,11 @@ from data_preprocessing import get_train_val_test
 from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
 import matplotlib
-from utils import createFolder
+from utils import createFolder, kappa_func
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from visualization.tf_plot import tf_plot, get_tf_data_efficient, subtract_frequency
+from visualization.tf_plot import tf_plot, get_tf_data_efficient, subtract_frequency, plot_performance_frequency
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
 import models_generation
@@ -237,6 +239,44 @@ def get_avg_class_tf(train_set, date_time, eeg_chans=None):
         os.remove(tf)
 
 
+def frequency_correlation_single_example():
+    # find the most prominent example in each class
+    # for each freq:
+    #   get probability of correct class after each perturbation
+    # plot probabilities as a function of the frequency
+    pass
+
+
+def performance_frequency_correlation(naiveNAS, pretrained_model, subjects, low_freq, high_freq, eeg_chans=None):
+    pretrained_model_copy = deepcopy(pretrained_model)
+    performances = OrderedDict()
+    baselines = OrderedDict()
+    # perturbation_plots = OrderedDict()
+    for subject in subjects:
+        single_subj_performances = []
+        single_subj_dataset = deepcopy(naiveNAS.get_single_subj_dataset(subject, final_evaluation=True))
+        baselines[subject] = evaluate_single_model(pretrained_model_copy, single_subj_dataset['test'].X,
+                                                     single_subj_dataset['test'].y,
+                                                     kappa_func)
+        for freq in range(low_freq, high_freq+1):
+            single_subj_dataset = deepcopy(naiveNAS.get_single_subj_dataset(subject, final_evaluation=True))
+            perturbed_data = subtract_frequency(single_subj_dataset['test'].X, freq, globals.get('frequency'))
+            # perturbation_freq_plots = []
+            # for eeg_chan in eeg_chans:
+            #     perturbation_freq_plots.append(get_tf_data_efficient(perturbed_data, eeg_chan, globals.get('frequency')))
+            single_subj_dataset['test'].X = perturbed_data
+            single_subj_performances.append(evaluate_single_model(pretrained_model_copy, single_subj_dataset['test'].X,
+                                                                  single_subj_dataset['test'].y, kappa_func))
+        performances[f'subject {subject} performance-frequency'] = single_subj_performances
+    baselines['average'] = np.average(list(baselines.values()))
+    performances['average performance-frequency'] = np.average(np.array(list(performances.values())), axis=0)
+    performance_plot_imgs = plot_performance_frequency(performances, baselines)
+    story = [get_image(tf) for tf in performance_plot_imgs]
+    create_pdf_from_story(f'results/{date_time}/step6_performance_frequency.pdf', story)
+    for tf in performance_plot_imgs:
+        os.remove(tf)
+
+
 if __name__ == '__main__':
     globals.set_dummy_config()
     globals.set('valid_set_fraction', 0.2)
@@ -244,11 +284,11 @@ if __name__ == '__main__':
     globals.set('do_early_stop', True)
     globals.set('remember_best', True)
     globals.set('max_epochs', 50)
-    globals.set('max_increase_epochs', 1)
-    globals.set('final_max_epochs', 1)
+    globals.set('max_increase_epochs', 3)
+    globals.set('final_max_epochs', 800)
     globals.set('final_max_increase_epochs', 80)
     globals.set('cuda', True)
-    globals.set('data_folder', '../../data/')
+    globals.set('data_folder', '../data/')
     globals.set('low_cut_hz', 0)
     config_dict = config_to_dict('visualization_configurations/viz_config.ini')
     globals.set('dataset', config_dict['DEFAULT']['dataset'])
@@ -267,10 +307,10 @@ if __name__ == '__main__':
     train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
         get_train_val_test(globals.get('data_folder'), subject_id, globals.get('low_cut_hz'))
 
-    orig_data = [get_tf_data_efficient(train_set[1].X[0:2], 0, 250)]
-    tf_plot(orig_data, 'before subtraction')
-    subtracted_data = subtract_frequency(train_set[1].X[0:2], 10, 250)
-    tf_plot([get_tf_data_efficient(subtracted_data, 0, 250)], 'after subtraction')
+    # orig_data = [get_tf_data_efficient(train_set[1].X[0:2], 0, 250)]
+    # tf_plot(orig_data, 'before subtraction')
+    # subtracted_data = subtract_frequency(train_set[1].X[0:2], 30, 250)
+    # tf_plot([get_tf_data_efficient(subtracted_data, 0, 250)], 'after subtraction')
 
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
@@ -286,6 +326,7 @@ if __name__ == '__main__':
     plot_all_kernels_to_pdf(pretrained_model, date_time)
     plot_avg_activation_maps(pretrained_model, train_set, date_time)
     find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
-    create_optimal_samples_per_filter(pretrained_model, date_time, steps=1)
+    create_optimal_samples_per_filter(pretrained_model, date_time, steps=500)
     get_avg_class_tf(train_set, date_time)
+    performance_frequency_correlation(naiveNAS, pretrained_model, range(1, globals.get('num_subjects')+1), 1, 40)
 

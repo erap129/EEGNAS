@@ -112,6 +112,17 @@ def subtract_frequency(data, freq, srate):
     return data_copy
 
 
+def get_next_im_filename():
+    im_files = list(os.walk('temp'))[0][2]
+    if len(im_files) == 0:
+        im_num = 1
+    else:
+        im_nums = [int(x[:-4]) for x in im_files]
+        im_nums.sort()
+        im_num = im_nums[-1] + 1
+    return im_num
+
+
 def tf_plot(tf_trial_avgs, title, vmax=None):
     figure(num=None, figsize=(6 * len(tf_trial_avgs), 6), dpi=80, facecolor='w', edgecolor='k')
     for index, tf in enumerate(tf_trial_avgs):
@@ -136,3 +147,19 @@ def tf_plot(tf_trial_avgs, title, vmax=None):
     plt.savefig(im_name, bbox_inches='tight')
     plt.close('all')
     return im_name
+
+
+def plot_performance_frequency(performances, baselines):
+    baseline_idx = 0
+    im_names = []
+    for title, performance in performances.items():
+        baseline = list(baselines.values())[baseline_idx]
+        baseline_idx += 1
+        plt.plot(range(len(performance)), performance, color='blue')
+        plt.axhline(baseline, xmin=0, xmax=1, color='black')
+        plt.title(title)
+        im_name = f'temp/{get_next_im_filename()}.png'
+        plt.savefig(im_name, bbox_inches='tight')
+        plt.clf()
+        im_names.append(im_name)
+    return im_names

@@ -316,7 +316,9 @@ class NaiveNAS:
     def evaluate_ensemble_from_pickle(self, subject, weighted_population=None):
         if weighted_population is None:
             weighted_population = pickle.load(open(self.weighted_population_file, 'rb'))
-        ensemble = [finalize_model(weighted_population[i]['model']) for i in
+        # ensemble = [finalize_model(weighted_population[i]['model']) for i in
+        #             range(globals.get('ensemble_size'))]
+        ensemble = [weighted_population[i]['finalized_model'] for i in
                     range(globals.get('ensemble_size'))]
         return self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
 
@@ -490,6 +492,7 @@ class NaiveNAS:
         weighted_population.extend(children)
 
     def ensemble_by_avg_layer(self, trained_models, subject):
+        old_test_acc = self.epochs_df.tail(1)[f'test_accuracy'].values[0]
         trained_models = [nn.Sequential(*list(model.children())[:11]) for model in trained_models]
         avg_model = models_generation.AveragingEnsemble(trained_models)
         single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation=True)
@@ -497,6 +500,9 @@ class NaiveNAS:
             _, _, avg_model, state, _ = self.evaluate_model(avg_model, None, subject, final_evaluation=True)
         else:
             self.monitor_epoch(single_subj_dataset, avg_model)
+        new_test_acc = self.epochs_df.tail(1)[f'test_accuracy'].values[0]
+        if old_test_acc != new_test_acc:
+            print
         new_avg_evaluations = defaultdict(dict)
         objective_str = globals.get("ga_objective")
         if objective_str == 'acc':

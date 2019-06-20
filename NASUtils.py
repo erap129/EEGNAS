@@ -1,9 +1,13 @@
 import pickle
+import torch
 from collections import defaultdict
 from functools import reduce
 
 import networkx as nx
 import random
+
+from braindecode.torch_ext.util import np_to_var
+
 import models_generation
 import globals
 from scipy.spatial.distance import pdist
@@ -400,11 +404,7 @@ def format_manual_ensemble_evaluations(avg_evaluations):
     for eval in avg_evaluations.items():
         for eval_spec in eval[1].items():
             if type(eval_spec[1] == list):
-                try:
-                    avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1], axis=0)
-                except TypeError as e:
-                    print(f'the exception is: {str(e)}')
-                    pdb.set_trace()
+                avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1], axis=0)
             else:
                 avg_evaluations[eval[0]][eval_spec[0]] = np.mean(eval_spec[1])
     new_avg_evaluations = defaultdict(dict)
@@ -428,5 +428,23 @@ def set_finetuning(model, X):
             for param in child.parameters():
                 param.requires_grad = False
         child_idx += 1
+
+
+def evaluate_single_model(model, X, y, eval_func):
+    if X.ndim == 3:
+        X = X[:, :, :, None]
+    model.eval()
+    with torch.no_grad():
+        X = np_to_var(X, pin_memory=globals.get('pin_memory'))
+        if torch.cuda.is_available():
+            with torch.cuda.device(0):
+                X = X.cuda()
+        preds = model(X)
+        preds = preds.cpu().data.numpy()
+        pred_labels = np.argmax(preds, axis=1).squeeze()
+        return eval_func(pred_labels, y)
+
+
+
 
 
