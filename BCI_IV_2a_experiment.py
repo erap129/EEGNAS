@@ -291,11 +291,7 @@ def cross_subject_exp(stop_criterion, iterator, loss_function):
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=globals.config, subject_id='all', fieldnames=fieldnames, strategy='cross_subject',
                         evolution_file=evolution_file, csv_file=csv_file)
-    if globals.get('exp_type') == 'evolution_layers':
-        naiveNAS.evolution()
-    elif globals.get('exp_type') == 'target':
-        naiveNAS.run_target_model(csv_file)
-
+    naiveNAS.evolution()
 
 def set_params_by_dataset(params_config_path):
     config_dict = config_to_dict(params_config_path)

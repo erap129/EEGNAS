@@ -838,6 +838,9 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                     child_model.remove_edge(edge[0], edge[1])
                 for edge in add_edges:
                     child_model.add_edge(edge[0], edge[1])
+        if not check_legal_grid_model(child_model):
+            globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+            return None, None, None
         if globals.get('inherit_weights_crossover') and first_model_state is not None and second_model_state is not None:
             child_model_state = ModelFromGrid(child_model).state_dict()
             inherit_grid_states(first_model.graph['width'], cut_point, child_model_state,

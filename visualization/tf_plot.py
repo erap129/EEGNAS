@@ -79,7 +79,6 @@ def get_tf_data_efficient(data, channel, srate):
         ass = ass[half_wave + 1:-half_wave+1]
         ass = ass.reshape(num_trials, time_points)
         tf[fi, :] = np.mean(abs(ass) ** 2, axis=0)
-
     return tf
 
 

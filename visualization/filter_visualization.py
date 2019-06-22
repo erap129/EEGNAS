@@ -13,7 +13,7 @@ from data_preprocessing import get_train_val_test
 from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
 import matplotlib
-from utils import createFolder, kappa_func
+from utils import createFolder, kappa_func, acc_func
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
@@ -179,12 +179,12 @@ def find_optimal_samples_per_filter(pretrained_model, train_set, date_time, eeg_
         os.remove(im)
 
 
-def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=None, steps=500):
+def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=None, steps=500, layer_idx_cutoff=0):
     if eeg_chans is None:
         eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     plot_dict = OrderedDict()
     plot_imgs = OrderedDict()
-    for layer_idx, layer in enumerate(list(pretrained_model.children())):
+    for layer_idx, layer in list(enumerate(list(pretrained_model.children())))[layer_idx_cutoff:]:
         max_examples = create_max_examples_per_channel(layer_idx, pretrained_model, steps=steps)
         max_value = 0
         for chan_idx, example in enumerate(max_examples):
@@ -192,9 +192,9 @@ def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=Non
                 plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example, eeg_chan, 250)
                 max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
         class_str = ''
-        if layer_idx >= len(list(pretrained_model.children())) - 3:
-            class_str = f', class:{label_by_idx(chan_idx)}'
         for chan_idx, example in enumerate(max_examples):
+            if layer_idx >= len(list(pretrained_model.children())) - 3:
+                class_str = f', class:{label_by_idx(chan_idx)}'
             plot_imgs[(layer_idx, chan_idx)] = tf_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
                                                        f'TF plot of optimal example for layer {layer_idx},'
                                                        f' channel {chan_idx}{class_str}', max_value)
@@ -239,15 +239,24 @@ def get_avg_class_tf(train_set, date_time, eeg_chans=None):
         os.remove(tf)
 
 
-def frequency_correlation_single_example():
+def frequency_correlation_single_example(pretrained_model, data, discriminating_layer, low_freq, high_freq):
     # find the most prominent example in each class
     # for each freq:
     #   get probability of correct class after each perturbation
     # plot probabilities as a function of the frequency
+    max_per_class = get_max_examples_per_channel(data, discriminating_layer, pretrained_model)
+    for chan_idx, example_idx in enumerate(max_per_class):
+        correct_class_probas = []
+        for freq in range(low_freq, high_freq+1):
+            data_to_perturb = deepcopy(data)
+            perturbed_data = subtract_frequency(data_to_perturb, freq, globals.get('frequency'))
+            pretrained_model.eval()
+            probas = pretrained_model(data[example_idx])
+            print
     pass
 
 
-def performance_frequency_correlation(naiveNAS, pretrained_model, subjects, low_freq, high_freq, eeg_chans=None):
+def performance_frequency_correlation(naiveNAS, pretrained_model, subjects, low_freq, high_freq, eval_func):
     pretrained_model_copy = deepcopy(pretrained_model)
     performances = OrderedDict()
     baselines = OrderedDict()
@@ -257,13 +266,10 @@ def performance_frequency_correlation(naiveNAS, pretrained_model, subjects, low_
         single_subj_dataset = deepcopy(naiveNAS.get_single_subj_dataset(subject, final_evaluation=True))
         baselines[subject] = evaluate_single_model(pretrained_model_copy, single_subj_dataset['test'].X,
                                                      single_subj_dataset['test'].y,
-                                                     kappa_func)
+                                                     eval_func=eval_func)
         for freq in range(low_freq, high_freq+1):
             single_subj_dataset = deepcopy(naiveNAS.get_single_subj_dataset(subject, final_evaluation=True))
             perturbed_data = subtract_frequency(single_subj_dataset['test'].X, freq, globals.get('frequency'))
-            # perturbation_freq_plots = []
-            # for eeg_chan in eeg_chans:
-            #     perturbation_freq_plots.append(get_tf_data_efficient(perturbed_data, eeg_chan, globals.get('frequency')))
             single_subj_dataset['test'].X = perturbed_data
             single_subj_performances.append(evaluate_single_model(pretrained_model_copy, single_subj_dataset['test'].X,
                                                                   single_subj_dataset['test'].y, kappa_func))
@@ -274,6 +280,25 @@ def performance_frequency_correlation(naiveNAS, pretrained_model, subjects, low_
     story = [get_image(tf) for tf in performance_plot_imgs]
     create_pdf_from_story(f'results/{date_time}/step6_performance_frequency.pdf', story)
     for tf in performance_plot_imgs:
+        os.remove(tf)
+
+
+def plot_perturbations(naiveNAS, subjects, low_freq, high_freq):
+    eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
+    tf_plots = []
+    for subject in subjects:
+        single_subj_dataset_orig = naiveNAS.get_single_subj_dataset(subject, final_evaluation=True)
+        for frequency in range(low_freq, high_freq+1):
+            single_subj_dataset = deepcopy(single_subj_dataset_orig)
+            perturbed_data = subtract_frequency(single_subj_dataset['test'].X, frequency, globals.get('frequency'))
+            single_subj_dataset['test'].X = perturbed_data
+            subj_tfs = []
+            for eeg_chan in eeg_chans:
+                subj_tfs.append(get_tf_data_efficient(single_subj_dataset['test'].X, eeg_chan, globals.get('frequency')))
+            tf_plots.append(tf_plot(subj_tfs, f'average TF for subject {subject}, frequency {frequency} removed'))
+    story = [get_image(tf) for tf in tf_plots]
+    create_pdf_from_story(f'results/{date_time}/step7_frequency_removal_plot.pdf', story)
+    for tf in tf_plots:
         os.remove(tf)
 
 
@@ -323,10 +348,13 @@ if __name__ == '__main__':
     now = datetime.now()
     date_time = now.strftime("%m.%d.%Y-%H:%M:%S")
     createFolder(f'results/{date_time}')
-    plot_all_kernels_to_pdf(pretrained_model, date_time)
-    plot_avg_activation_maps(pretrained_model, train_set, date_time)
-    find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
-    create_optimal_samples_per_filter(pretrained_model, date_time, steps=500)
-    get_avg_class_tf(train_set, date_time)
-    performance_frequency_correlation(naiveNAS, pretrained_model, range(1, globals.get('num_subjects')+1), 1, 40)
+    # plot_all_kernels_to_pdf(pretrained_model, date_time)
+    # plot_avg_activation_maps(pretrained_model, train_set, date_time)
+    # find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
+    create_optimal_samples_per_filter(pretrained_model, date_time, steps=500, layer_idx_cutoff=10)
+    # frequency_correlation_single_example(pretrained_model, test_set[1].X, 10, 1, 40)
+    # get_avg_class_tf(train_set, date_time)
+    # plot_perturbations(naiveNAS, [1], 1, 40)
+    # performance_frequency_correlation(naiveNAS, pretrained_model, range(1, globals.get('num_subjects')+1),
+    #                                   1, 40, acc_func)
 
