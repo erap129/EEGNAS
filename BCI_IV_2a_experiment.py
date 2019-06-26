@@ -221,12 +221,11 @@ def not_exclusively_in(subj, model_from_file):
     return True
 
 
-def target_exp(stop_criterion, iterator, loss_function, model_from_file=None):
-    if not globals.get('model_file_name'):
-        model_from_file = None
-    with open(csv_file, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
+def target_exp(stop_criterion, iterator, loss_function, model_from_file=None, write_header=True):
+    if write_header:
+        with open(csv_file, 'a', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
     for subject_id in subjects:
         train_set = {}
         val_set = {}
@@ -268,9 +267,9 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
-        naiveNAS.evolution()
+        best_model_filename = naiveNAS.evolution()
         if globals.get('pure_cross_subject'):
-            break
+            return best_model_filename
 
 
 def cross_subject_exp(stop_criterion, iterator, loss_function):
@@ -291,7 +290,8 @@ def cross_subject_exp(stop_criterion, iterator, loss_function):
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=globals.config, subject_id='all', fieldnames=fieldnames, strategy='cross_subject',
                         evolution_file=evolution_file, csv_file=csv_file)
-    naiveNAS.evolution()
+    return naiveNAS.evolution()
+
 
 def set_params_by_dataset(params_config_path):
     config_dict = config_to_dict(params_config_path)
@@ -495,10 +495,14 @@ if __name__ == '__main__':
                     elif globals.get('exp_type') == 'from_file':
                         target_exp(stop_criterion, iterator, loss_function,
                                    model_from_file=f"models/{globals.get('models_dir')}/{globals.get('model_file_name')}")
-                    elif globals.get('cross_subject'):
-                        cross_subject_exp(stop_criterion, iterator, loss_function)
                     else:
-                        per_subject_exp(subjects, stop_criterion, iterator, loss_function)
+                        if globals.get('cross_subject'):
+                            best_model_filename = cross_subject_exp(stop_criterion, iterator, loss_function)
+                        else:
+                            best_model_filename = per_subject_exp(subjects, stop_criterion, iterator, loss_function)
+                        if best_model_filename is not None:
+                            target_exp(stop_criterion, iterator, loss_function, model_from_file=best_model_filename,
+                                       write_header=False)
                     globals.set('total_time', str(time.time() - start_time))
                     write_dict(globals.config, f"{exp_folder}/final_config_{exp_name}.ini")
                     generate_report(csv_file, report_file)

@@ -17,7 +17,7 @@ class TestModelGeneration(unittest.TestCase):
     def test_perm_ensemble_fitness(self):
         globals.set('pop_size', 10)
         globals.set('ensemble_size', 2)
-        globals.set('ga_objective', 'acc')
+        globals.set('ga_objective', 'accuracy')
         globals.set('permanent_ensembles', True)
         dummy_weighted_pop = [{'val_raw': [[1-(1/i), 0, 0, 1/i]], 'val_target': [3]} for i in range(1, 11)]
         old_len = len(dummy_weighted_pop)

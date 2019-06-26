@@ -20,8 +20,6 @@ from scipy.stats import spearmanr
 def get_metric_strs():
     result = []
     for evaluation_metric in globals.get('evaluation_metrics'):
-        if evaluation_metric == 'accuracy':
-            evaluation_metric = 'acc'
         if evaluation_metric in ['raw', 'target']:
             continue
         result.append(f"train_{evaluation_metric}")
@@ -33,8 +31,6 @@ def get_metric_strs():
 def add_evaluations_to_stats(stats, evaluations, str_prefix=''):
     for metric, valuedict in evaluations.items():
         metric_str = metric
-        if metric == 'accuracy':
-            metric_str = 'acc'
         if metric in ['raw', 'target']:
             continue
         stats[f"{str_prefix}train_{metric_str}"] = valuedict['train']
@@ -45,8 +41,6 @@ def add_evaluations_to_stats(stats, evaluations, str_prefix=''):
 def add_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
     for metric, valuedict in evaluations.items():
         metric_str = metric
-        if metric == 'accuracy':
-            metric_str = 'acc'
         pop[f"{str_prefix}train_{metric_str}"] = valuedict['train']
         pop[f"{str_prefix}val_{metric_str}"] = valuedict['valid']
         pop[f"{str_prefix}test_{metric_str}"] = valuedict['test']
@@ -60,8 +54,6 @@ def add_raw_to_weighted_population(pop, raw):
 def sum_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
     for metric, valuedict in evaluations.items():
         metric_str = metric
-        if metric == 'accuracy':
-            metric_str = 'acc'
         if f"{str_prefix}train_{metric_str}" in pop:
             pop[f"{str_prefix}train_{metric_str}"] += valuedict['train']
             pop[f"{str_prefix}val_{metric_str}"] += valuedict['valid']
@@ -414,8 +406,6 @@ def format_manual_ensemble_evaluations(avg_evaluations):
         ensemble_targets = avg_evaluations['target'][dataset]
         ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
         objective_str = globals.get("ga_objective")
-        if objective_str == 'acc':
-            objective_str = 'accuracy'
         new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
     return new_avg_evaluations
 

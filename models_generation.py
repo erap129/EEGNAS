@@ -217,9 +217,9 @@ def network_similarity(layer_collection1, layer_collection2, return_output=False
 def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
     model = nn.Sequential()
     if globals.get('channel_dim') != 'channels' or globals.get('exp_type') == 'target':
-        model.add_module('dimshuffle', Expression(MyModel._transpose_time_to_spat))
+        model.add_module('dimshuffle', _transpose(shape=[0, 3, 2, 1]))
     if globals.get('time_factor') != -1:
-        model.add_module('stack_by_time', Expression(MyModel._stack_input_by_time))
+        model.add_module('stack_by_time', Expression(_stack_input_by_time))
     activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
     input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
     for i in range(len(layer_collection)):
@@ -284,7 +284,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
             model.add_module('%s_%d' % (type(layer).__name__, i), IdentityModule())
 
         elif isinstance(layer, FlattenLayer):
-            model.add_module('squeeze', Expression(MyModel._squeeze_final_output))
+            model.add_module('squeeze', _squeeze_final_output())
 
     if applyFix:
         return layer_collection
@@ -337,7 +337,7 @@ def generate_linear_weighted_avg(layer, in_chans, prev_time):
 
 
 def generate_flatten_layer(layer, in_chans, prev_time):
-    return Expression(MyModel._squeeze_final_output)
+    return _squeeze_final_output()
 
 
 class LinearWeightedAvg(torch.nn.Module):
@@ -510,6 +510,34 @@ class MyModel:
             return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
         else:
             return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
+
+
+class _squeeze_final_output(nn.Module):
+    def __init__(self):
+        super(_squeeze_final_output, self).__init__()
+
+    def forward(self, x):
+        assert x.size()[3] == 1
+        x = x[:, :, :, 0]
+        if x.size()[2] == 1:
+            x = x[:, :, 0]
+        return x
+
+
+class _transpose(nn.Module):
+    def __init__(self, shape):
+        super(_transpose, self).__init__()
+        self.shape = shape
+
+    def forward(self, x):
+        return x.permute(*self.shape)
+
+
+def _stack_input_by_time(x):
+    if globals.config['DEFAULT']['channel_dim'] == 'one':
+        return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
+    else:
+        return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
 
 
 def check_legal_cropping_model(layer_collection):
@@ -945,7 +973,7 @@ class AveragingEnsemble(nn.Module):
         self.avg_layer = LinearWeightedAvg(globals.get('n_classes'), globals.get('ensemble_size'), true_avg=True)
         self.models = models
         self.softmax = nn.Softmax()
-        self.flatten = Expression(MyModel._squeeze_final_output)
+        self.flatten = _squeeze_final_output()
 
     def forward(self, input):
         outputs = []

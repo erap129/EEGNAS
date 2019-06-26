@@ -15,6 +15,7 @@ from utils import RememberBest
 import pandas as pd
 from collections import OrderedDict, defaultdict
 import numpy as np
+from data_preprocessing import get_pure_cross_subject
 import time
 import torch
 from braindecode.datautil.iterators import CropsFromTrialsIterator
@@ -156,7 +157,7 @@ class NaiveNAS:
             model = target_model(globals.get('model_name'))
         final_time, evaluations, model, model_state, num_epochs =\
                     self.evaluate_model(model, final_evaluation=True)
-        stats['train_time'] = str(final_time)
+        stats['final_train_time'] = str(final_time)
         NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
         self.write_to_csv(stats, generation=1)
 
@@ -316,29 +317,39 @@ class NaiveNAS:
     def evaluate_ensemble_from_pickle(self, subject, weighted_population=None):
         if weighted_population is None:
             weighted_population = pickle.load(open(self.weighted_population_file, 'rb'))
-        # ensemble = [finalize_model(weighted_population[i]['model']) for i in
-        #             range(globals.get('ensemble_size'))]
-        ensemble = [weighted_population[i]['finalized_model'] for i in
-                    range(globals.get('ensemble_size'))]
+        if 'pretrained' in self.weighted_population_file:
+            ensemble = [weighted_population[i]['finalized_model'] for i in
+                        range(globals.get('ensemble_size'))]
+        else:
+            ensemble = [finalize_model(weighted_population[i]['model']) for i in
+                        range(globals.get('ensemble_size'))]
+            self.datasets['train']['pretrain'], self.datasets['valid']['pretrain'], self.datasets['test']['pretrain'] = \
+                get_pure_cross_subject(globals.get('data_folder'), globals.get('low_cut_hz'))
+            for i, model in enumerate(ensemble):
+                _, _, save_model, _, _ = self.evaluate_model(model, subject='pretrain')
+                ensemble[i] = save_model
         return self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
 
     def save_best_model(self, weighted_population):
-        try:
-            if globals.get('delete_finalized_models'):
-                save_model = finalize_model(weighted_population[0]['model'])
-            else:
-                save_model = weighted_population[0]['finalized_model'].to("cpu")
-            subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
-            self.model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
-            torch.save(save_model, self.model_filename)
-        except Exception as e:
-            print('failed to save model. Exception message: %s' % (str(e)))
-            pdb.set_trace()
+        if globals.get('delete_finalized_models'):
+            save_model = finalize_model(weighted_population[0]['model'])
+            _, _, save_model, _, _ = self.evaluate_model(save_model, subject=self.subject_id)
+        else:
+            save_model = weighted_population[0]['finalized_model'].to("cpu")
+        subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
+        self.model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
+        torch.save(save_model, self.model_filename)
+        # torch.onnx.export(save_model, models_generation.get_dummy_input(),
+        #                   f'{self.exp_folder}/best_model_{subject_nums}.onnx',
+        #                   operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN)
         return self.model_filename
 
     def save_final_population(self, weighted_population):
         subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
-        self.weighted_population_file = f'{self.exp_folder}/weighted_population_{subject_nums}.p'
+        pretrained_str = ''
+        if not globals.get('delete_finalized_models'):
+            pretrained_str = '_pretrained'
+        self.weighted_population_file = f'{self.exp_folder}/weighted_population_{subject_nums}{pretrained_str}.p'
         pickle.dump(weighted_population, open(self.weighted_population_file, 'wb'))
 
     @staticmethod
@@ -395,13 +406,14 @@ class NaiveNAS:
                 if globals.get('save_every_generation'):
                     self.save_best_model(weighted_population)
             else:  # last generation
-                self.save_best_model(weighted_population)
+                best_model_filename = self.save_best_model(weighted_population)
                 self.save_final_population(weighted_population)
-                self.add_final_stats(stats, weighted_population)
-                self.validate_model_from_file(stats)
+                # self.add_final_stats(stats, weighted_population)
+                # self.validate_model_from_file(stats)
 
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(weighted_population[:3], generation + 1)
+        return best_model_filename
 
     def selection(self, weighted_population):
         if globals.get('perm_ensembles'):
@@ -492,21 +504,15 @@ class NaiveNAS:
         weighted_population.extend(children)
 
     def ensemble_by_avg_layer(self, trained_models, subject):
-        old_test_acc = self.epochs_df.tail(1)[f'test_accuracy'].values[0]
-        trained_models = [nn.Sequential(*list(model.children())[:11]) for model in trained_models]
+        trained_models = [nn.Sequential(*list(model.children())[:globals.get('num_layers')+1]) for model in trained_models]
         avg_model = models_generation.AveragingEnsemble(trained_models)
         single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation=True)
         if globals.get('ensemble_trained_average'):
             _, _, avg_model, state, _ = self.evaluate_model(avg_model, None, subject, final_evaluation=True)
         else:
             self.monitor_epoch(single_subj_dataset, avg_model)
-        new_test_acc = self.epochs_df.tail(1)[f'test_accuracy'].values[0]
-        if old_test_acc != new_test_acc:
-            print
         new_avg_evaluations = defaultdict(dict)
         objective_str = globals.get("ga_objective")
-        if objective_str == 'acc':
-            objective_str = 'accuracy'
         for dataset in ['train', 'valid', 'test']:
             new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = \
                 self.epochs_df.tail(1)[f'{dataset}_{objective_str}'].values[0]

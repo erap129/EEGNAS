@@ -122,13 +122,14 @@ def get_next_im_filename():
     return im_num
 
 
-def tf_plot(tf_trial_avgs, title, vmax=None):
+def tf_plot(tf_trial_avgs, title, vmax=None, yscale='linear'):
     figure(num=None, figsize=(6 * len(tf_trial_avgs), 6), dpi=80, facecolor='w', edgecolor='k')
     for index, tf in enumerate(tf_trial_avgs):
         ax = plt.subplot(1, len(tf_trial_avgs), index+1)
         ax.set_xlabel('time points')
         if index == 0:
             ax.set_ylabel('frequency (Hz)')
+        ax.set_yscale(yscale)
         cf = ax.contourf(tf, 40, vmin=0, vmax=vmax)
         ax.set_title(f'EEG channel {index + 1}')
     divider = make_axes_locatable(ax)
