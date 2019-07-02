@@ -321,6 +321,9 @@ class NaiveNAS:
             ensemble = [weighted_population[i]['finalized_model'] for i in
                         range(globals.get('ensemble_size'))]
         else:
+            best_model = finalize_model(weighted_population[0]['model'])
+            best_model.load_state_dict(weighted_population[0]['model_state'])
+            torch.save(best_model, 'best_model_1.th')
             ensemble = [finalize_model(weighted_population[i]['model']) for i in
                         range(globals.get('ensemble_size'))]
             self.datasets['train']['pretrain'], self.datasets['valid']['pretrain'], self.datasets['test']['pretrain'] = \
@@ -333,7 +336,7 @@ class NaiveNAS:
     def save_best_model(self, weighted_population):
         if globals.get('delete_finalized_models'):
             save_model = finalize_model(weighted_population[0]['model'])
-            _, _, save_model, _, _ = self.evaluate_model(save_model, subject=self.subject_id)
+            save_model.load_state_dict(weighted_population[0]['model_state'])
         else:
             save_model = weighted_population[0]['finalized_model'].to("cpu")
         subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)

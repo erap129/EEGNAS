@@ -268,7 +268,7 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
                             config=globals.config, subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
         best_model_filename = naiveNAS.evolution()
-        if globals.get('pure_cross_subject'):
+        if globals.get('pure_cross_subject') or len(subjects) == 1:
             return best_model_filename
 
 

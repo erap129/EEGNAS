@@ -262,11 +262,17 @@ def performance_frequency_correlation(naiveNAS, pretrained_model, subjects, low_
     performances = OrderedDict()
     baselines = OrderedDict()
     if globals.get('pure_cross_subject'):
-        pure_cross_subj_dataset = get_pure_cross_subject(globals.get('data_folder'), globals.get('low_cut_hz'))
+        naiveNAS.datasets['train']['pretrain'], naiveNAS.datasets['valid']['pretrain'], naiveNAS.datasets['test']['pretrain'] = \
+            get_pure_cross_subject(globals.get('data_folder'), globals.get('low_cut_hz'))
         freq_models = {}
+        pure_cross_subj_dataset = deepcopy(naiveNAS.get_single_subj_dataset('pretrain', final_evaluation=True))
         for freq in range(low_freq, high_freq + 1):
-            pure_cross_subj_dataset_copy = deepcopy(pure_cross_subj_dataset)
-            perturbed_data = subtract_frequency(single_subj_dataset['test'].X, freq, globals.get('frequency'))
+            naiveNAS.datasets['train']['pretrain'].X = subtract_frequency(pure_cross_subj_dataset['train'].X,
+                                                                       freq, globals.get('frequency'))
+            naiveNAS.datasets['valid']['pretrain'].X = subtract_frequency(pure_cross_subj_dataset['valid'].X, freq,
+                                                                       globals.get('frequency'))
+            naiveNAS.datasets['test']['pretrain'].X = subtract_frequency(pure_cross_subj_dataset['test'].X, freq,
+                                                                          globals.get('frequency'))
 
 
     for subject in subjects:
