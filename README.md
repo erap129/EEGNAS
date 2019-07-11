@@ -31,7 +31,7 @@
 * If you use this code in a scientific publication, please cite us as:
 ```
 @inproceedings{eegnas,
-	title={EEGNAS : Neural Architecture Search forElectroencephalography Data Analysis and Decoding},
+	title={EEGNAS : Neural Architecture Search for Electroencephalography Data Analysis and Decoding},
 	author={Elad Rapaport, Oren Shriki, Rami Puzis},
 	booktitle={Joint Workshop on Human Brain and Artificial Intelligence (HBAI)},
 	year={2019},
