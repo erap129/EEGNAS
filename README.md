@@ -26,3 +26,15 @@
 * The Moabb package is required to run EEGNAS, it isn't available on pip, but can be downloaded manually from git here: https://github.com/NeuroTechX/moabb
 * EEGNAS is **work in progress**. In the future will be added an option to automatically analyze your own data and receive a neural architecture. Meanwhile, interested users can try to understand the NAS process themselves and add their own DB (the main task is to edit the file BCI_IV_2a_experiment.py and configurtions/config.ini)
 * The repository is **heavy** because of the BCI Competition IV 2a dataset. It may take a while to download.
+
+### Citing
+* If you use this code in a scientific publication, please cite us as:
+```
+@inproceedings{eegnas,
+	title={EEGNAS : Neural Architecture Search forElectroencephalography Data Analysis and Decoding},
+	author={Elad Rapaport, Oren Shriki, Rami Puzis},
+	booktitle={Joint Workshop on Human Brain and Artificial Intelligence (HBAI)},
+	year={2019},
+	publisher={Springer}
+}
+```
