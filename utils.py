@@ -173,10 +173,11 @@ class GenericMonitor(object):
         0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
     """
 
-    def __init__(self, measure_name, measure_func,threshold_for_binary_case=None):
+    def __init__(self, measure_name, threshold_for_binary_case=None):
         self.measure_name = measure_name
-        self.measure_func = measure_func
         self.threshold_for_binary_case = threshold_for_binary_case
+        self.monitor_name_mapping = {'auc': auc_func, 'kappa': kappa_func, 'f1': f1_func, 'accuracy': acc_func}
+        self.measure_func = self.monitor_name_mapping[self.measure_name]
 
     def monitor_epoch(self, ):
         return

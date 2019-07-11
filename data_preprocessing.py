@@ -3,7 +3,7 @@ from braindecode.datasets.bbci import BBCIDataset
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
 
-from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidTestSplitter
+from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import matplotlib
@@ -413,10 +413,13 @@ def get_tuh_train_val_test(data_folder):
                                 train_or_eval='eval',
                                 sensor_types=globals.get('sensor_types'))
     X, y = training_set.load()
-    splitter = TrainValidTestSplitter(n_folds, i_valid_fold=i_test_fold, shuffle=globals.get('shuffle'))
+    splitter = TrainValidSplitter(10, i_valid_fold=0, shuffle=globals.get('shuffle'))
     train_set, valid_set = splitter.split(X, y)
     test_X, test_y = test_set.load()
     test_set = SignalAndTarget(test_X, test_y)
+    train_set.X = np.array(train_set.X)
+    valid_set.X = np.array(valid_set.X)
+    test_set.X = np.array(test_set.X)
     return train_set, valid_set, test_set
 
 
@@ -464,3 +467,5 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_sonarsub_train_val_test(data_folder)
     elif globals.get('dataset') == 'MentalImageryLongWords':
         return get_mental_imagery_long_words(data_folder, subject_id)
+    elif globals.get('dataset') == 'TUH':
+        return get_tuh_train_val_test(data_folder)

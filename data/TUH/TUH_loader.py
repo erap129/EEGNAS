@@ -5,6 +5,10 @@ import glob
 import mne
 import re
 
+from braindecode.datautil.signal_target import SignalAndTarget
+
+import globals
+
 import resampy
 from braindecode.datautil.iterators import get_balanced_batches
 from numpy.random.mtrand import RandomState
@@ -24,36 +28,30 @@ def create_set(X, y, inds):
     return SignalAndTarget(new_X, new_y)
 
 
-class TrainValidTestSplitter(object):
-    def __init__(self, n_folds, i_test_fold, shuffle):
+class TrainValidSplitter(object):
+    def __init__(self, n_folds, i_valid_fold, shuffle):
         self.n_folds = n_folds
-        self.i_test_fold = i_test_fold
+        self.i_valid_fold = i_valid_fold
         self.rng = RandomState(39483948)
         self.shuffle = shuffle
 
-    def split(self, X, y,):
+    def split(self, X, y):
         if len(X) < self.n_folds:
             raise ValueError("Less Trials: {:d} than folds: {:d}".format(
                 len(X), self.n_folds
             ))
         folds = get_balanced_batches(len(X), self.rng, self.shuffle,
                                      n_batches=self.n_folds)
-        test_inds = folds[self.i_test_fold]
-        valid_inds = folds[self.i_test_fold - 1]
+        valid_inds = folds[self.i_valid_fold]
         all_inds = list(range(len(X)))
-        train_inds = np.setdiff1d(all_inds, np.union1d(test_inds, valid_inds))
+        train_inds = np.setdiff1d(all_inds, valid_inds)
         assert np.intersect1d(train_inds, valid_inds).size == 0
-        assert np.intersect1d(train_inds, test_inds).size == 0
-        assert np.intersect1d(valid_inds, test_inds).size == 0
-        assert np.array_equal(np.sort(
-            np.union1d(train_inds, np.union1d(valid_inds, test_inds))),
+        assert np.array_equal(np.sort(np.union1d(train_inds, valid_inds)),
             all_inds)
 
         train_set = create_set(X, y, train_inds)
         valid_set = create_set(X, y, valid_inds)
-        test_set = create_set(X, y, test_inds)
-
-        return train_set, valid_set, test_set
+        return train_set, valid_set
 
 
 def create_preproc_functions(
@@ -360,23 +358,21 @@ def load_data(fname, preproc_functions, sensor_types=['EEG']):
         fs = float(fs)
     return data
 
+
 def get_all_sorted_file_names_and_labels(train_or_eval):
-    normal_path = ('/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/'
-        '{:s}/normal/'.format(train_or_eval))
+    normal_path = f'{globals.get("data_folder")}TUH//v2.0.0/edf/{train_or_eval}/normal/'
     normal_file_names = read_all_file_names(normal_path, '.edf', key='time')
-    abnormal_path = ('/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/'
-        '{:s}/abnormal/'.format(train_or_eval))
+    abnormal_path = f'{globals.get("data_folder")}TUH//v2.0.0/edf/{train_or_eval}/abnormal/'
     abnormal_file_names = read_all_file_names(abnormal_path, '.edf', key='time')
-
     all_file_names = normal_file_names + abnormal_file_names
-
     all_file_names = sorted(all_file_names, key=time_key)
 
     abnorm_counts = [fname.count('abnormal') for fname in all_file_names]
-    assert set(abnorm_counts) == set([1, 2])
-    labels = np.array(abnorm_counts) == 2
+    assert set(abnorm_counts) == set([0, 1])
+    labels = np.array(abnorm_counts) == 1
     labels = labels.astype(np.int64)
     return all_file_names, labels
+
 
 class DiagnosisSet(object):
     def __init__(self, n_recordings, max_recording_mins, preproc_functions,

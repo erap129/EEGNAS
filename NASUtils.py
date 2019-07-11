@@ -16,6 +16,9 @@ from copy import deepcopy
 import utils
 from scipy.stats import spearmanr
 
+from model_generation.grid_model_generation import random_grid_model
+from model_generation.simple_model_generation import random_model
+
 
 def get_metric_strs():
     result = []
@@ -88,28 +91,7 @@ def get_average_param(models, layer_type, attribute):
     return attr_count / count
 
 
-def calculate_population_similarity(layer_collections, evolution_file, sim_count):
-    sim = 0
-    to_output = 3
-    for i in range(sim_count):
-        idxs = random.sample(range(len(layer_collections)), 2)
-        score, output = models_generation.network_similarity(layer_collections[idxs[0]],
-                                                             layer_collections[idxs[1]], return_output=True)
-        sim += score
-        if to_output > 0:
-            with open(evolution_file, "a") as text_file:
-                print(output, file=text_file)
-            to_output -= 1
-    return sim / sim_count
 
-
-def calculate_one_similarity(layer_collection, other_layer_collections):
-    sim = 0
-    for other_layer_collection in other_layer_collections:
-        score, output = models_generation.network_similarity(layer_collection,
-                                                             other_layer_collection)
-        sim += score
-    return sim / len(other_layer_collections)
 
 
 def inject_dropout(weighted_population):
@@ -215,9 +197,9 @@ def equal_grid_models(layer_grid_1, layer_grid_2):
 
 def initialize_population(models_set, genome_set, subject_id):
     if globals.get('grid'):
-        model_init = models_generation.random_grid_model
+        model_init = random_grid_model
     else:
-        model_init = models_generation.random_model
+        model_init = random_model
     if globals.get('weighted_population_from_file'):
         folder = f"models/{globals.get('models_dir')}"
         if globals.get('cross_subject'):

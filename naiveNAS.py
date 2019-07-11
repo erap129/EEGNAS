@@ -4,7 +4,7 @@ import platform
 
 import utils
 from data_preprocessing import get_train_val_test
-from models_generation import random_model, finalize_model, target_model,\
+from models_generation import finalize_model, target_model,\
     breed_layers, breed_two_ensembles
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
@@ -155,6 +155,10 @@ class NaiveNAS:
                 model = torch.load(self.model_from_file, map_location='cpu')
         else:
             model = target_model(globals.get('model_name'))
+        if globals.get('target_pretrain'):
+            self.datasets['train']['pretrain'], self.datasets['valid']['pretrain'], self.datasets['test']['pretrain'] = \
+                get_pure_cross_subject(globals.get('data_folder'), globals.get('low_cut_hz'))
+            _, _, model, _, _ = self.evaluate_model(model, subject='pretrain')
         final_time, evaluations, model, model_state, num_epochs =\
                     self.evaluate_model(model, final_evaluation=True)
         stats['final_train_time'] = str(final_time)
@@ -566,6 +570,7 @@ class NaiveNAS:
         return single_subj_dataset
 
     def evaluate_model(self, model, state=None, subject=None, final_evaluation=False, ensemble=False):
+        print(f'free params in network:{NASUtils.pytorch_count_params(model)}')
         if subject is None:
             subject = self.subject_id
         if self.cuda:

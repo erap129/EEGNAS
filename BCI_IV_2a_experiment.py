@@ -1,11 +1,6 @@
 import os
-import pdb
-import platform
-import re
-
-import pandas as pd
-from collections import OrderedDict, defaultdict
-from itertools import product, chain
+from utilities.gdrive import upload_exp_to_gdrive
+from utilities.config_utils import config_to_dict, get_configurations, get_multiple_values
 import torch.nn.functional as F
 import torch
 from data_preprocessing import get_train_val_test, get_pure_cross_subject
@@ -14,6 +9,7 @@ from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
+from utilities.report_generation import add_params_to_name, generate_report
 from utils import createFolder, GenericMonitor, NoIncrease, CroppedTrialGenericMonitor,\
     acc_func, kappa_func, auc_func, f1_func, CroppedGenericMonitorPerTimeStep
 from argparse import ArgumentParser
@@ -23,15 +19,9 @@ import random
 import sys
 import csv
 import time
-import json
 import code, traceback, signal
-import configparser
-from os import listdir
-from os.path import isfile, join
-from pydrive.drive import GoogleDrive
-from pydrive.auth import GoogleAuth
 import numpy as np
-global data_folder, valid_set_fraction, config
+global data_folder, valid_set_fraction
 
 
 def debug(sig, frame):
@@ -62,28 +52,6 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
-def generate_report(filename, report_filename):
-    params = ['final', 'from_file']
-    params_to_average = defaultdict(float)
-    avg_count = defaultdict(int)
-    data = pd.read_csv(filename)
-    for param in params:
-        for index, row in data.iterrows():
-            if param in row['param_name'] and 'raw' not in row['param_name'] and 'target' not in row['param_name']:
-                row_param = row['param_name']
-                intro = re.compile('\d_')
-                if intro.match(row_param):
-                    row_param = row_param[2:]
-                outro = row_param.find('from_file')
-                if outro != -1:
-                    row_param = row_param[outro:]
-                params_to_average[row_param] += float(row['param_value'])
-                avg_count[row_param] += 1
-    for key, value in params_to_average.items():
-        params_to_average[key] = params_to_average[key] / avg_count[key]
-    pd.DataFrame(params_to_average, index=[0]).to_csv(report_filename)
-
-
 def write_dict(dict, filename):
     with open(filename, 'w') as f:
         all_keys = []
@@ -98,14 +66,10 @@ def get_normal_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
                          NoIncrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
-    monitors = [LossMonitor(), GenericMonitor('accuracy', acc_func), RuntimeMonitor()]
+    monitors = [LossMonitor(), GenericMonitor('accuracy'), RuntimeMonitor()]
     loss_function = F.nll_loss
-    if globals.get('dataset') in ['NER15', 'Cho', 'BCI_IV_2b', 'Bloomberg']:
-        monitors.append(GenericMonitor('auc', auc_func))
-    if globals.get('dataset') in ['BCI_IV_2b']:
-        monitors.append(GenericMonitor('kappa', kappa_func))
-    if globals.get('dataset') in ['Opportunity']:
-        monitors.append(GenericMonitor('f1', f1_func))
+    monitors.append(GenericMonitor(globals.get('nn_objective')))
+    monitors.append(GenericMonitor(globals.get('ga_objective')))
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -154,62 +118,6 @@ def garbage_time():
                         config=globals.config, subject_id=1, fieldnames=None, strategy='per_subject',
                           csv_file=None, evolution_file=None)
     garbageNAS.garbage_time()
-
-
-def config_to_dict(path):
-    conf = configparser.ConfigParser()
-    conf.optionxform = str
-    conf.read(path)
-    dictionary = {'DEFAULT': {}}
-    for option in conf.defaults():
-        dictionary['DEFAULT'][option] = eval(conf['DEFAULT'][option])
-    for section in conf.sections():
-        dictionary[section] = {}
-        for option in conf.options(section):
-            dictionary[section][option] = eval(conf.get(section, option))
-    return dictionary
-
-
-def get_configurations(experiment):
-    configurations = []
-    default_config = globals.configs._defaults
-    exp_config = globals.configs._sections[experiment]
-    for key in default_config.keys():
-        default_config[key] = json.loads(default_config[key])
-    default_config['exp_name'] = [experiment]
-    for key in exp_config.keys():
-        exp_config[key] = json.loads(exp_config[key])
-    both_configs = list(default_config.values())
-    both_configs.extend(list(exp_config.values()))
-    config_keys = list(default_config.keys())
-    config_keys.extend(list(exp_config.keys()))
-    all_configs = list(product(*both_configs))
-    for config_index in range(len(all_configs)):
-        configurations.append({'DEFAULT': OrderedDict([]), experiment: OrderedDict([])})
-        i = 0
-        for key in default_config.keys():
-            configurations[config_index]['DEFAULT'][key] = all_configs[config_index][i]
-            i += 1
-        for key in exp_config.keys():
-            configurations[config_index][experiment][key] = all_configs[config_index][i]
-            i += 1
-    return configurations
-
-
-def get_multiple_values(configurations):
-    multiple_values = []
-    value_count = defaultdict(list)
-    for configuration in configurations:
-        combined_config = OrderedDict(chain(*[x.items() for x in configuration.values()]))
-        for key in combined_config.keys():
-            if not combined_config[key] in value_count[key]:
-                value_count[key].append(combined_config[key])
-            if len(value_count[key]) > 1:
-                multiple_values.append(key)
-    res = list(set(multiple_values))
-    if 'dataset' in res:
-        res.remove('dataset')
-    return res
 
 
 def not_exclusively_in(subj, model_from_file):
@@ -313,82 +221,6 @@ def set_params_by_dataset(params_config_path):
             globals.set('ensemble_size', int(globals.get('pop_size') / 100))
 
 
-def connect_to_gdrive():
-    gauth = GoogleAuth()
-    # Try to load saved client credentials
-    gauth.LoadCredentialsFile("mycreds.txt")
-    if gauth.credentials is None:
-        # Authenticate if they're not there
-        gauth.CommandLineAuth()
-    elif gauth.access_token_expired:
-        # Refresh them if expired
-        gauth.Refresh()
-    else:
-        # Initialize the saved creds
-        gauth.Authorize()
-    # Save the current credentials to a file
-    gauth.SaveCredentialsFile("mycreds.txt")
-    drive = GoogleDrive(gauth)
-    return drive
-
-
-def get_base_folder_name(fold_names, first_dataset):
-    ind = fold_names[0].find('_')
-    end_ind = fold_names[0].rfind(first_dataset)
-    base_folder_name = list(fold_names[0])
-    base_folder_name[ind + 1] = 'x'
-    base_folder_name = base_folder_name[:end_ind - 1]
-    base_folder_name = ''.join(base_folder_name)
-    base_folder_name = add_params_to_name(base_folder_name, globals.get('include_params_folder_name'))
-    return base_folder_name
-
-
-def upload_exp_to_gdrive(fold_names, first_dataset):
-    base_folder_name = get_base_folder_name(fold_names, first_dataset)
-    drive = connect_to_gdrive()
-    base_folder = drive.CreateFile({'title': base_folder_name,
-                                   'parents': [{"id": '1z6y-g4HqmQm7i8R2h66sDd5e6AV1IhVM'}],
-                                    'mimeType': "application/vnd.google-apps.folder"})
-    base_folder.Upload()
-    concat_filename = concat_and_pivot_results(fold_names, first_dataset)
-    file_drive = drive.CreateFile({'title': concat_filename,
-                                   'parents': [{"id": base_folder['id']}]})
-    file_drive.SetContentFile(concat_filename)
-    file_drive.Upload()
-    os.remove(concat_filename)
-    for folder in fold_names:
-        full_folder = 'results/' + folder
-        if os.path.isdir(full_folder):
-            spec_folder = drive.CreateFile({'title': folder,
-                                            'parents': [{"id": base_folder['id']}],
-                                            'mimeType': "application/vnd.google-apps.folder"})
-            spec_folder.Upload()
-            files = [f for f in listdir(full_folder) if isfile(join(full_folder, f))]
-            for filename in files:
-                if '.p' not in filename:
-                    file_drive = drive.CreateFile({'title': filename,
-                                                       'parents': [{"id": spec_folder['id']}]})
-                    file_drive.SetContentFile(str(join(full_folder, filename)))
-                    file_drive.Upload()
-
-
-def concat_and_pivot_results(fold_names, first_dataset):
-    to_concat = []
-    for folder in fold_names:
-        full_folder = 'results/' + folder
-        files = [f for f in os.listdir(full_folder) if os.path.isfile(os.path.join(full_folder, f))]
-        for file in files:
-            if file[0].isdigit():
-                to_concat.append(os.path.join(full_folder, file))
-    combined_csv = pd.concat([pd.read_csv(f) for f in to_concat])
-    pivot_df = combined_csv.pivot_table(values='param_value',
-                              index=['exp_name', 'machine', 'dataset', 'date', 'generation', 'subject', 'model'],
-                              columns='param_name', aggfunc='first')
-    filename = f'{get_base_folder_name(fold_names, first_dataset)}_pivoted.csv'
-    pivot_df.to_csv(filename)
-    return filename
-
-
 def set_seeds():
     random_seed = globals.get('random_seed')
     if not random_seed:
@@ -434,13 +266,6 @@ def get_exp_id():
         subdir_names.sort()
         exp_id = subdir_names[-1] + 1
     return exp_id
-
-
-def add_params_to_name(exp_name, multiple_values):
-    if multiple_values:
-        for mul_val in multiple_values:
-            exp_name += f'_{mul_val}_{globals.get(mul_val)}'
-    return exp_name
 
 
 if __name__ == '__main__':
