@@ -1,3 +1,4 @@
+import copy
 import random
 import numpy as np
 from braindecode.torch_ext.util import np_to_var
@@ -148,3 +149,30 @@ def random_model(n_layers):
         return layer_collection
     else:
         return random_model(n_layers)
+
+
+def add_layer_to_state(new_model_state, layer, index, old_model_state):
+    if type(layer).__name__ in ['BatchNormLayer', 'ConvLayer', 'PoolingLayer']:
+        for k, v in old_model_state.items():
+            if '%s_%d' % (type(layer).__name__, index) in k and \
+                    k in new_model_state.keys() and new_model_state[k].shape == v.shape:
+                new_model_state[k] = v
+
+
+def finalize_model(layer_collection):
+    if globals.get('grid'):
+        return ModelFromGrid(layer_collection)
+    layer_collection = copy.deepcopy(layer_collection)
+    if globals.get('cropping'):
+        final_conv_time = globals.get('final_conv_size')
+    else:
+        final_conv_time = 'down_to_one'
+    conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
+                           filter_num=globals.get('n_classes'))
+    layer_collection.append(conv_layer)
+    if globals.get('problem') == 'classification':
+        activation = ActivationLayer('softmax')
+        layer_collection.append(activation)
+    flatten = FlattenLayer()
+    layer_collection.append(flatten)
+    return new_model_from_structure_pytorch(layer_collection)

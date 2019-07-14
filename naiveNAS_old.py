@@ -2,7 +2,6 @@ import itertools
 import pickle
 import platform
 
-import utils
 from data_preprocessing import get_train_val_test
 from models_generation import finalize_model, target_model,\
     breed_layers, breed_two_ensembles
@@ -11,7 +10,7 @@ from braindecode.experiments.loggers import Printer
 import models_generation
 import logging
 import torch.optim as optim
-from utils import RememberBest
+from utilities.misc import RememberBest
 import pandas as pd
 from collections import OrderedDict, defaultdict
 import numpy as np
@@ -26,11 +25,12 @@ import os
 import globals
 import csv
 from torch import nn
-from utils import summary, NoIncrease
+from utilities.model_summary import summary
+from utilities.monitors import NoIncrease
 import NASUtils
+import evolution.fitness_functions
 import pdb
 from tensorboardX import SummaryWriter
-from copy import deepcopy
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
@@ -373,9 +373,9 @@ class NaiveNAS:
 
     def evaluate_and_sort(self, weighted_population):
         self.evo_strategy(weighted_population)
-        getattr(NASUtils, globals.get('fitness_function'))(weighted_population)
+        getattr(evolution.fitness_functions, globals.get('fitness_function'))(weighted_population)
         if globals.get('fitness_penalty_function'):
-            getattr(NASUtils, globals.get('fitness_penalty_function'))(weighted_population)
+            getattr(evolution.fitness_functions, globals.get('fitness_penalty_function'))(weighted_population)
         weighted_population = NASUtils.sort_population(weighted_population)
         stats = self.calculate_stats(weighted_population)
         self.add_parent_child_relations(weighted_population, stats)

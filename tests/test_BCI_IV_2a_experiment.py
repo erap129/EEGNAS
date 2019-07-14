@@ -1,5 +1,5 @@
 import unittest
-from BCI_IV_2a_experiment import get_configurations, get_multiple_values, parse_args
+from EEGNAS_experiment import get_configurations, get_multiple_values, parse_args
 import globals
 from globals import init_config
 

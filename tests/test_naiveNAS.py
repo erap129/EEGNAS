@@ -7,7 +7,7 @@ from naiveNAS import NaiveNAS, finalize_model
 import NASUtils
 from models_generation import uniform_model, breed_layers,\
     ConvLayer, ActivationLayer
-from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset, get_normal_settings
+from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset, get_normal_settings
 from models_generation import target_model, random_model, random_grid_model
 import globals
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or

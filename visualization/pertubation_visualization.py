@@ -11,10 +11,10 @@ import sys
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                      level=logging.INFO, stream=sys.stdout)
 import globals
-from BCI_IV_2a_experiment import set_params_by_dataset
+from EEGNAS_experiment import set_params_by_dataset
 from data_preprocessing import get_train_val_test, get_ch_names
 from braindecode.torch_ext.util import set_random_seeds
-from BCI_IV_2a_experiment import get_normal_settings, parse_args, get_configurations
+from EEGNAS_experiment import get_normal_settings, parse_args, get_configurations
 from naiveNAS import NaiveNAS
 from models_generation import target_model
 from braindecode.torch_ext.util import np_to_var

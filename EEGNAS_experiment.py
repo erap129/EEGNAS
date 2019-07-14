@@ -4,14 +4,14 @@ from utilities.config_utils import config_to_dict, get_configurations, get_multi
 import torch.nn.functional as F
 import torch
 from data_preprocessing import get_train_val_test, get_pure_cross_subject
-from naiveNAS import NaiveNAS
 from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
 from utilities.report_generation import add_params_to_name, generate_report
-from utils import createFolder, GenericMonitor, NoIncrease, CroppedTrialGenericMonitor,\
-    acc_func, kappa_func, auc_func, f1_func, CroppedGenericMonitorPerTimeStep
+from utilities.misc import createFolder
+from utilities.monitors import *
+from evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
 import logging
 import globals
@@ -170,12 +170,12 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
             train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
                 get_train_val_test(data_folder, subject_id, low_cut_hz)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
-        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
+        eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
+                            subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
-        best_model_filename = naiveNAS.evolution()
+        best_model_filename = eegnas.evolution()
         if globals.get('pure_cross_subject') or len(subjects) == 1:
             return best_model_filename
 

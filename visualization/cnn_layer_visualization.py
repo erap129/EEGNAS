@@ -13,7 +13,7 @@ import globals
 import numpy as np
 from data_preprocessing import get_train_val_test
 from scipy.io import savemat
-from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
+from EEGNAS_experiment import get_normal_settings, set_params_by_dataset
 
 class CNNLayerVisualization():
     """

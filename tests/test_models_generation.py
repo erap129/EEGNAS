@@ -7,7 +7,7 @@ from models_generation import uniform_model, breed_layers,\
     ActivationLayer, network_similarity, PoolingLayer, add_random_connection, IdentityLayer,\
     breed_grid
 import models_generation
-from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset
+from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
 import globals
 from NASUtils import equal_grid_models
 import networkx as nx

@@ -10,7 +10,7 @@ from naiveNAS import NaiveNAS
 import globals
 from torch import nn
 from data_preprocessing import get_train_val_test, get_pure_cross_subject
-from BCI_IV_2a_experiment import get_normal_settings, set_params_by_dataset
+from EEGNAS_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
 import matplotlib
 from utils import createFolder, kappa_func, acc_func
@@ -24,7 +24,7 @@ import models_generation
 from reportlab.platypus import Paragraph
 from visualization.pdf_utils import get_image
 from reportlab.lib.styles import getSampleStyleSheet
-from BCI_IV_2a_experiment import config_to_dict
+from EEGNAS_experiment import config_to_dict
 styles = getSampleStyleSheet()
 from collections import OrderedDict, defaultdict
 from utils import label_by_idx

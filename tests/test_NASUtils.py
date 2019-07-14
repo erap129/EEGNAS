@@ -1,5 +1,5 @@
 import unittest
-from BCI_IV_2a_experiment import get_configurations, parse_args, set_params_by_dataset
+from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
 import globals
 from globals import init_config
 import NASUtils
