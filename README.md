@@ -2,7 +2,7 @@
 
 ###Instructions to run cross/per subject experiment on the BCI Competition IV 2a dataset:
 1. git clone the project to your machine
-2. from the main folder 'BCI_Benchmarks' run: `python BCI_IV_2a_experiment.py -e cross_per_subject`
+2. from the main folder 'BCI_Benchmarks' run: `python EEGNAS_experiment.py -e cross_per_subject`
 3. This will run 2 experiment configurations:
     1. Cross subject directed NAS (initial data loading takes ~1 min)
     2. Per subject directed NAS
