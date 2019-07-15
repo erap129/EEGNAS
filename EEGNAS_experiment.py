@@ -1,4 +1,6 @@
 import os
+
+from evolution.loaded_model_evaluations import EEGNAS_from_file
 from utilities.gdrive import upload_exp_to_gdrive
 from utilities.config_utils import config_to_dict, get_configurations, get_multiple_values
 import torch.nn.functional as F
@@ -143,16 +145,15 @@ def target_exp(stop_criterion, iterator, loss_function, model_from_file=None, wr
             continue
         train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
             get_train_val_test(data_folder, subject_id, low_cut_hz)
-        naiveNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
+        eegnas_from_file = EEGNAS_from_file(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            config=globals.config, subject_id=subject_id, fieldnames=fieldnames,
-                            strategy='per_subject', evolution_file=None, csv_file=csv_file,
+                            subject_id=subject_id, fieldnames=fieldnames, csv_file=csv_file,
                             model_from_file=model_from_file)
         if globals.get('weighted_population_file'):
             naiveNAS.run_target_ensemble()
         else:
-            naiveNAS.run_target_model()
+            eegnas_from_file.run_target_model()
 
 
 def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
