@@ -1,13 +1,14 @@
 import itertools
 import pickle
 import platform
-
+import operator
 from data_preprocessing import get_train_val_test
+import torch.nn.functional as F
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import logging
 import torch.optim as optim
-from utilities.misc import RememberBest
+from utilities.misc import RememberBest, get_oper_by_loss_function
 import pandas as pd
 from collections import OrderedDict, defaultdict
 import numpy as np
@@ -23,7 +24,7 @@ import globals
 import csv
 from torch import nn
 from utilities.model_summary import summary
-from utilities.monitors import NoIncrease
+from utilities.monitors import NoIncreaseDecrease
 import NASUtils
 import pdb
 from tensorboardX import SummaryWriter
@@ -69,12 +70,15 @@ class NN_Trainer:
             torch.cuda.empty_cache()
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
-                                 NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
+                                      NoIncreaseDecrease(f'valid_{globals.get("nn_objective")}',
+                                                         globals.get('final_max_increase_epochs'),
+                                                         oper=get_oper_by_loss_function(self.loss_function))])
         if globals.get('cropping'):
             self.set_cropping_for_model(model)
         self.epochs_df = pd.DataFrame()
         if globals.get('do_early_stop') or globals.get('remember_best'):
-            self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
+            self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}",
+                                           oper=get_oper_by_loss_function(self.loss_function, equals=True))
         self.optimizer = optim.Adam(model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
@@ -169,11 +173,9 @@ class NN_Trainer:
                     input_vars = input_vars.cuda()
                     target_vars = target_vars.cuda()
             self.optimizer.zero_grad()
-            try:
-                outputs = model(input_vars)
-            except RuntimeError as e:
-                print('run model failed. Exception message: %s' % (str(e)))
-                pdb.set_trace()
+            outputs = model(input_vars)
+            if self.loss_function == F.mse_loss:
+                target_vars = target_vars.float()
             loss = self.loss_function(outputs, target_vars)
             loss.backward()
             self.optimizer.step()
@@ -250,6 +252,8 @@ class NN_Trainer:
                     input_vars = input_vars.cuda()
                     target_vars = target_vars.cuda()
             outputs = model(input_vars)
+            if self.loss_function == F.mse_loss:
+                target_vars = target_vars.float()
             loss = self.loss_function(outputs, target_vars)
             if hasattr(outputs, 'cpu'):
                 outputs = outputs.cpu().data.numpy()

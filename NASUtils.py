@@ -227,7 +227,7 @@ def ranking_correlations(weighted_population, stats):
     globals.set('ensemble_iterations', old_ensemble_iterations)
 
 
-def sort_population(weighted_population):
+def sort_population(weighted_population, reverse):
     new_weighted_pop = []
     if globals.get('perm_ensembles'):
         ensemble_order = weighted_population[globals.get('pop_size')]
@@ -238,7 +238,7 @@ def sort_population(weighted_population):
             new_weighted_pop.extend(pops)
         return new_weighted_pop
     else:
-        return sorted(weighted_population, key=lambda x: x['fitness'], reverse=True)
+        return sorted(weighted_population, key=lambda x: x['fitness'], reverse=reverse)
 
 
 def add_model_to_stats(pop, model_index, model_stats):

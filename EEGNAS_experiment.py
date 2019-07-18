@@ -11,7 +11,7 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromT
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from globals import init_config
 from utilities.report_generation import add_params_to_name, generate_report
-from utilities.misc import createFolder
+from utilities.misc import createFolder, get_oper_by_loss_function
 from utilities.monitors import *
 from evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
@@ -65,11 +65,15 @@ def write_dict(dict, filename):
 
 
 def get_normal_settings():
+    if globals.get('problem') == 'regression':
+        loss_function = F.mse_loss
+    else:
+        loss_function = F.nll_loss
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                         NoIncrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
+                         NoIncreaseDecrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'),
+                                            oper=get_oper_by_loss_function(loss_function))])
     iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
     monitors = [LossMonitor(), GenericMonitor('accuracy'), RuntimeMonitor()]
-    loss_function = F.nll_loss
     monitors.append(GenericMonitor(globals.get('nn_objective')))
     monitors.append(GenericMonitor(globals.get('ga_objective')))
     return stop_criterion, iterator, loss_function, monitors
@@ -77,7 +81,7 @@ def get_normal_settings():
 
 def get_cropped_settings():
     stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                         NoIncrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
+                         NoIncreaseDecrease(f'valid_{globals.get("nn_objective")}', globals.get('max_increase_epochs'))])
     iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
                                        input_time_length=globals.get('input_time_len'),
                                        n_preds_per_input=globals.get('n_preds_per_input'))
@@ -89,12 +93,8 @@ def get_cropped_settings():
         monitors.append(CroppedTrialGenericMonitor('auc', auc_func,
                     input_time_length=globals.get('input_time_len')))
     if globals.get('dataset') in ['BCI_IV_2b']:
-        # monitors.append(CroppedTrialGenericMonitor('kappa', kappa_func,
-        #             input_time_length=globals.get('input_time_len')))
-        # monitors = [LossMonitor(), RuntimeMonitor()]
         monitors.append(CroppedGenericMonitorPerTimeStep('kappa', kappa_func,
                     input_time_length=globals.get('input_time_len')))
-
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -214,6 +214,7 @@ def set_params_by_dataset(params_config_path):
     globals.set('ga_objective', config_dict['ga_objective'][globals.get('dataset')])
     globals.set('nn_objective', config_dict['nn_objective'][globals.get('dataset')])
     globals.set('frequency', config_dict['frequency'][globals.get('dataset')])
+    globals.set('problem', config_dict['problem'][globals.get('dataset')])
     if globals.get('dataset') == 'Cho':
         globals.set('exclude_subjects', [32, 46, 49])
     if globals.get('ensemble_iterations'):

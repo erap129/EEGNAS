@@ -6,6 +6,7 @@ from model_generation.abstract_layers import *
 from model_generation.custom_modules import *
 from torch import nn
 from torch.nn import init
+from utilities.misc import get_index_of_last_layertype
 
 from model_generation.custom_modules import _squeeze_final_output
 
@@ -86,8 +87,9 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
         return layer_collection
     if check_model:
         return
-    init.xavier_uniform_(list(model._modules.items())[-3][1].weight, gain=1)
-    init.constant_(list(model._modules.items())[-3][1].bias, 0)
+    last_conv_idx = get_index_of_last_layertype(model, nn.Conv2d)
+    init.xavier_uniform_(list(model._modules.items())[last_conv_idx][1].weight, gain=1)
+    init.constant_(list(model._modules.items())[last_conv_idx][1].bias, 0)
     return model
 
 

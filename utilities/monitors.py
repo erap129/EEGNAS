@@ -1,7 +1,13 @@
+import operator
+
 import numpy as np
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score, mean_squared_error
 from sklearn.preprocessing import LabelBinarizer
+
+
+def mse_func(all_preds, all_trials):
+    return mean_squared_error(all_trials, all_preds)
 
 
 def acc_func(all_pred_labels, all_trial_labels):
@@ -53,7 +59,8 @@ class GenericMonitor(object):
     def __init__(self, measure_name, threshold_for_binary_case=None):
         self.measure_name = measure_name
         self.threshold_for_binary_case = threshold_for_binary_case
-        self.monitor_name_mapping = {'auc': auc_func, 'kappa': kappa_func, 'f1': f1_func, 'accuracy': acc_func}
+        self.monitor_name_mapping = {'auc': auc_func, 'kappa': kappa_func, 'f1': f1_func, 'accuracy': acc_func,
+                                     'mse': mse_func}
         self.measure_func = self.monitor_name_mapping[self.measure_name]
 
     def monitor_epoch(self, ):
@@ -167,7 +174,7 @@ class MultiLabelAccuracyMonitor(object):
         return {column_name: float(accuracy)}
 
 
-class NoIncrease(object):
+class NoIncreaseDecrease(object):
     """ Stops if there is no decrease on a given monitor channel
     for given number of epochs.
 
@@ -181,18 +188,19 @@ class NoIncrease(object):
         Minimum relative decrease that counts as a decrease. E.g. 0.1 means
         only 10% decreases count as a decrease and reset the counter.
     """
-    def __init__(self, column_name, num_epochs, min_increase=1e-6):
+    def __init__(self, column_name, num_epochs, min_step=1e-6, oper=operator.gt):
         self.column_name = column_name
         self.num_epochs = num_epochs
-        self.min_increase = min_increase
+        self.min_step = min_step
         self.best_epoch = 0
         self.highest_val = 0
+        self.oper = oper
 
     def should_stop(self, epochs_df):
         # -1 due to doing one monitor at start of training
         i_epoch = len(epochs_df) - 1
         current_val = float(epochs_df[self.column_name].iloc[-1])
-        if current_val > ((1 + self.min_increase) * self.highest_val):
+        if self.oper(current_val, (1 + self.min_step) * self.highest_val):
             self.best_epoch = i_epoch
             self.highest_val = current_val
 

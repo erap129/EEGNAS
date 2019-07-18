@@ -36,7 +36,7 @@ class EEGNAS_from_file(EEGNAS):
         nn_trainer = NN_Trainer(self.iterator, self.loss_function, self.stop_criterion, self.monitors)
         _, _, model, _, _ = nn_trainer.evaluate_model(model, dataset)
         final_time, evaluations, model, model_state, num_epochs =\
-                    nn_trainer.evaluate_model(model, final_evaluation=True)
+                    nn_trainer.evaluate_model(model, dataset)
         stats['final_train_time'] = str(final_time)
         NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
         self.write_to_csv(stats, generation=1)

@@ -382,6 +382,17 @@ def get_sonarsub_train_val_test(data_folder):
     return train_set, valid_set, test_set
 
 
+def get_netflow_train_val_test(data_folder):
+    X = np.load(f"{data_folder}netflow/X.npy")
+    y = np.load(f"{data_folder}netflow/y.npy").astype(np.float32)
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=globals.get('valid_set_fraction'))
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=globals.get('valid_set_fraction'))
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
+
+
 def get_tuh_train_val_test(data_folder):
     preproc_functions = create_preproc_functions(
         sec_to_cut_at_start=globals.get('sec_to_cut_at_start'),
@@ -469,3 +480,5 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_mental_imagery_long_words(data_folder, subject_id)
     elif globals.get('dataset') == 'TUH':
         return get_tuh_train_val_test(data_folder)
+    elif globals.get('dataset') == 'netflow':
+        return get_netflow_train_val_test(data_folder)

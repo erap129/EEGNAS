@@ -7,7 +7,7 @@ from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import logging
 import torch.optim as optim
-
+import torch.nn.functional as F
 from model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
 from model_generation.simple_model_generation import finalize_model
@@ -32,7 +32,7 @@ import csv
 from torch import nn
 import evolution.fitness_functions
 from utilities.model_summary import summary
-from utilities.monitors import NoIncrease
+from utilities.monitors import NoIncreaseDecrease
 import NASUtils
 import pdb
 from tensorboardX import SummaryWriter
@@ -265,7 +265,10 @@ class EEGNAS_evolution:
         getattr(evolution.fitness_functions, globals.get('fitness_function'))(weighted_population)
         if globals.get('fitness_penalty_function'):
             getattr(NASUtils, globals.get('fitness_penalty_function'))(weighted_population)
-        weighted_population = NASUtils.sort_population(weighted_population)
+        reverse_order = True
+        if self.loss_function == F.mse_loss:
+            reverse_order = False
+        weighted_population = NASUtils.sort_population(weighted_population, reverse=reverse_order)
         stats = self.calculate_stats(weighted_population)
         add_parent_child_relations(weighted_population, stats)
         if globals.get('ranking_correlation_num_iterations'):
@@ -401,7 +404,7 @@ class EEGNAS_evolution:
             torch.cuda.empty_cache()
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
-                                 NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
+                                      NoIncreaseDecrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
         if globals.get('cropping'):
             self.set_cropping_for_model(model)
         dataset = self.get_single_subj_dataset(subject, final_evaluation)

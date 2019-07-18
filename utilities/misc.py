@@ -2,6 +2,9 @@ import os
 from copy import deepcopy
 import logging
 log = logging.getLogger(__name__)
+import math
+import operator
+import torch.nn.functional as F
 
 
 def createFolder(directory):
@@ -29,12 +32,16 @@ class RememberBest(object):
         Index of best epoch
     """
 
-    def __init__(self, column_name):
+    def __init__(self, column_name, oper=operator.ge):
         self.column_name = column_name
         self.best_epoch = 0
-        self.highest_val = -2
         self.model_state_dict = None
         self.optimizer_state_dict = None
+        self.oper = oper
+        if self.oper == operator.ge:
+            self.best_val = -math.inf
+        else:
+            self.best_val = math.inf
 
     def remember_epoch(self, epochs_df, model, optimizer, force=False):
         """
@@ -49,10 +56,11 @@ class RememberBest(object):
         model: `torch.nn.Module`
         optimizer: `torch.optim.Optimizer`
         force: `remember this epoch no matter what`
+        oper: `which operation to use if need to remember`
         """
         i_epoch = len(epochs_df) - 1
         current_val = float(epochs_df[self.column_name].iloc[-1])
-        if current_val >= self.highest_val or force:
+        if self.oper(current_val, self.best_val) or force:
             self.best_epoch = i_epoch
             self.highest_val = current_val
             self.model_state_dict = deepcopy(model.state_dict())
@@ -90,3 +98,22 @@ def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
         yield l[i:i + n]
+
+
+def get_index_of_last_layertype(model, layertype):
+    for index, layer in reversed(list(enumerate(list(model.children())))):
+        if type(layer) == layertype:
+            return index
+
+
+def get_oper_by_loss_function(loss_func, equals=False):
+    if not equals:
+        loss_func_opers = {F.nll_loss: operator.gt,
+                           F.mse_loss: operator.lt}
+    else:
+        loss_func_opers = {F.nll_loss: operator.ge,
+                           F.mse_loss: operator.le}
+    return loss_func_opers[loss_func]
+
+
+

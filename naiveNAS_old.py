@@ -26,7 +26,7 @@ import globals
 import csv
 from torch import nn
 from utilities.model_summary import summary
-from utilities.monitors import NoIncrease
+from utilities.monitors import NoIncreaseDecrease
 import NASUtils
 import evolution.fitness_functions
 import pdb
@@ -577,7 +577,7 @@ class NaiveNAS:
             torch.cuda.empty_cache()
         if final_evaluation:
             self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
-                                 NoIncrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
+                                      NoIncreaseDecrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
         if globals.get('cropping'):
             self.set_cropping_for_model(model)
         single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation)
