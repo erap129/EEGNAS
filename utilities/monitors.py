@@ -5,6 +5,8 @@ from sklearn import metrics
 from sklearn.metrics import roc_auc_score, mean_squared_error
 from sklearn.preprocessing import LabelBinarizer
 
+import global_vars
+
 
 def mse_func(all_preds, all_trials):
     try:
@@ -42,6 +44,12 @@ def auc_func(all_pred_labels, all_target_labels):
     else:
         auc = multiclass_roc_auc_score(all_target_labels, all_pred_labels)
     return auc
+
+
+def get_eval_function():
+    monitor_name_mapping = {'auc': auc_func, 'kappa': kappa_func, 'f1': f1_func, 'accuracy': acc_func,
+                                 'mse': mse_func}
+    return monitor_name_mapping[global_vars.get('nn_objective')]
 
 
 class GenericMonitor(object):

@@ -8,7 +8,6 @@ import torch
 from torch.optim import Adam
 from braindecode.torch_ext.util import np_to_var
 from models_generation import target_model
-from naiveNAS import NaiveNAS
 import global_vars
 import numpy as np
 from data_preprocessing import get_train_val_test

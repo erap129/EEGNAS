@@ -482,3 +482,10 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_tuh_train_val_test(data_folder)
     elif global_vars.get('dataset') == 'netflow':
         return get_netflow_train_val_test(data_folder, n_sequences=global_vars.get('n_classes'))
+
+
+def get_dataset(subject_id):
+    dataset = {}
+    dataset['train'][subject_id], dataset['valid'][subject_id], dataset['test'][subject_id] =\
+        get_train_val_test(global_vars.get('data_folder'), subject_id, global_vars.get('low_cut_hz'))
+    return dataset

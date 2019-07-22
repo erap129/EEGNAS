@@ -1,6 +1,9 @@
 import os
 from copy import deepcopy
 import logging
+
+from braindecode.datautil.splitters import concatenate_sets
+
 log = logging.getLogger(__name__)
 import math
 import operator
@@ -116,4 +119,5 @@ def get_oper_by_loss_function(loss_func, equals=False):
     return loss_func_opers[loss_func]
 
 
-
+def concat_train_val_sets(dataset):
+    dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
