@@ -1,8 +1,4 @@
 import itertools
-import pickle
-import platform
-import operator
-from data_preprocessing import get_train_val_test
 import torch.nn.functional as F
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
@@ -15,17 +11,11 @@ import numpy as np
 from data_preprocessing import get_pure_cross_subject
 import time
 import torch
-from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or, ColumnBelow
-from braindecode.datautil.splitters import concatenate_sets
-import os
-import globals
-import csv
+import global_vars
 from torch import nn
-from utilities.model_summary import summary
 from utilities.monitors import NoIncreaseDecrease
-import NASUtils
 import pdb
 from tensorboardX import SummaryWriter
 import random
@@ -44,7 +34,7 @@ class NN_Trainer:
         self.loggers = [Printer()]
         self.stop_criterion = stop_criterion
         self.monitors = monitors
-        self.cuda = globals.get('cuda')
+        self.cuda = global_vars.get('cuda')
         self.loggers = [Printer()]
         self.epochs_df = None
 
@@ -52,13 +42,13 @@ class NN_Trainer:
         to_dense_prediction_model(model)
         conv_classifier = model.conv_classifier
         model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
-                                          (globals.get('final_conv_size'),
+                                          (global_vars.get('final_conv_size'),
                                            conv_classifier.kernel_size[1]), stride=conv_classifier.stride,
                                           dilation=conv_classifier.dilation)
 
     def get_n_preds_per_input(self, model):
         dummy_input = self.get_dummy_input()
-        if globals.get('cuda'):
+        if global_vars.get('cuda'):
             model.cuda()
             dummy_input = dummy_input.cuda()
         out = model(dummy_input)
@@ -69,29 +59,29 @@ class NN_Trainer:
         if self.cuda:
             torch.cuda.empty_cache()
         if final_evaluation:
-            self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
-                                      NoIncreaseDecrease(f'valid_{globals.get("nn_objective")}',
-                                                         globals.get('final_max_increase_epochs'),
+            self.stop_criterion = Or([MaxEpochs(global_vars.get('final_max_epochs')),
+                                      NoIncreaseDecrease(f'valid_{global_vars.get("nn_objective")}',
+                                                         global_vars.get('final_max_increase_epochs'),
                                                          oper=get_oper_by_loss_function(self.loss_function))])
-        if globals.get('cropping'):
+        if global_vars.get('cropping'):
             self.set_cropping_for_model(model)
         self.epochs_df = pd.DataFrame()
-        if globals.get('do_early_stop') or globals.get('remember_best'):
-            self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}",
+        if global_vars.get('do_early_stop') or global_vars.get('remember_best'):
+            self.rememberer = RememberBest(f"valid_{global_vars.get('nn_objective')}",
                                            oper=get_oper_by_loss_function(self.loss_function, equals=True))
         self.optimizer = optim.Adam(model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
-            if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
+            if torch.cuda.device_count() > 1 and global_vars.get('parallel_gpu'):
                 model.cuda()
                 with torch.cuda.device(0):
                     model = nn.DataParallel(model.cuda(), device_ids=
-                        [int(s) for s in globals.get('gpu_select').split(',')])
+                        [int(s) for s in global_vars.get('gpu_select').split(',')])
             else:
                 model.cuda()
 
         try:
-            if globals.get('inherit_weights_normal') and state is not None:
+            if global_vars.get('inherit_weights_normal') and state is not None:
                     current_state = model.state_dict()
                     for k, v in state.items():
                         if k in current_state and current_state[k].shape == v.shape:
@@ -104,9 +94,9 @@ class NN_Trainer:
             print('load state dict failed. Exception message: %s' % (str(e)))
             pdb.set_trace()
         self.monitor_epoch(dataset, model)
-        if globals.get('log_epochs'):
+        if global_vars.get('log_epochs'):
             self.log_epoch()
-        if globals.get('remember_best'):
+        if global_vars.get('remember_best'):
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
         self.iterator.reset_rng()
         start = time.time()
@@ -123,19 +113,19 @@ class NN_Trainer:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
         evaluations = {}
-        for evaluation_metric in globals.get('evaluation_metrics'):
+        for evaluation_metric in global_vars.get('evaluation_metrics'):
             evaluations[evaluation_metric] = {'train': self.epochs_df.iloc[-1][f"train_{evaluation_metric}"],
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
         if self.cuda:
             torch.cuda.empty_cache()
-        if globals.get('use_tensorboard'):
+        if global_vars.get('use_tensorboard'):
             if self.current_model_index > 0:
                 with SummaryWriter(log_dir=f'{self.exp_folder}/tensorboard/gen_{self.current_generation}_model{self.current_model_index}') as w:
                     w.add_graph(model, self.get_dummy_input())
-        if globals.get('delete_finalized_models'):
-            if globals.get('grid_as_ensemble'):
+        if global_vars.get('delete_finalized_models'):
+            if global_vars.get('grid_as_ensemble'):
                 model_stats = {}
                 for param_idx, param in enumerate(list(model.pytorch_layers['averaging_layer'].parameters())):
                     for inner_idx, inner_param in enumerate(param[0]):
@@ -166,8 +156,8 @@ class NN_Trainer:
         model.train()
         batch_generator = self.iterator.get_batches(datasets['train'], shuffle=True)
         for inputs, targets in batch_generator:
-            input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
             if self.cuda:
                 with torch.cuda.device(0):
                     input_vars = input_vars.cuda()
@@ -180,9 +170,9 @@ class NN_Trainer:
             loss.backward()
             self.optimizer.step()
         self.monitor_epoch(datasets, model)
-        if globals.get('log_epochs'):
+        if global_vars.get('log_epochs'):
             self.log_epoch()
-        if globals.get('remember_best'):
+        if global_vars.get('remember_best'):
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
 
     def monitor_epoch(self, datasets, model):
@@ -215,11 +205,11 @@ class NN_Trainer:
                 if result_dict is not None:
                     result_dicts_per_monitor[m].update(result_dict)
 
-            if globals.get('ensemble_iterations'):
+            if global_vars.get('ensemble_iterations'):
                 raws.update({f'{setname}_raw': list(itertools.chain.from_iterable(all_preds))})
                 targets.update({f'{setname}_target': list(itertools.chain.from_iterable(all_targets))})
         row_dict = OrderedDict()
-        if globals.get('ensemble_iterations'):
+        if global_vars.get('ensemble_iterations'):
             row_dict.update(raws)
             row_dict.update(targets)
         for m in self.monitors:
@@ -245,8 +235,8 @@ class NN_Trainer:
         """
         model.eval()
         with torch.no_grad():
-            input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
             if self.cuda:
                 with torch.cuda.device(0):
                     input_vars = input_vars.cuda()

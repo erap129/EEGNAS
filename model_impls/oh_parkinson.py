@@ -2,7 +2,7 @@ from braindecode.torch_ext.util import np_to_var
 import numpy as np
 from braindecode.torch_ext.modules import Expression
 from torch import nn
-import globals
+import global_vars
 
 
 class MyModel:
@@ -30,10 +30,10 @@ class MyModel:
 
     @staticmethod
     def _stack_input_by_time(x):
-        if globals.config['DEFAULT']['channel_dim'] == 'one':
-            return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
+        if global_vars.config['DEFAULT']['channel_dim'] == 'one':
+            return x.view(x.shape[0], -1, int(x.shape[2] / global_vars.get('time_factor')), x.shape[3])
         else:
-            return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
+            return x.view(x.shape[0], x.shape[1], int(x.shape[2] / global_vars.get('time_factor')), -1)
 
 
 class Flatten(nn.Module):
@@ -45,7 +45,7 @@ class OhParkinson:
     @staticmethod
     def create_network():
         model = nn.Sequential()
-        model.add_module('conv_1', nn.Conv2d(globals.get('eeg_chans'), 5,
+        model.add_module('conv_1', nn.Conv2d(global_vars.get('eeg_chans'), 5,
                                              kernel_size=(20, 1), stride=1))
         model.add_module('pool_1', nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)))
         model.add_module('conv_2', nn.Conv2d(5, 10, kernel_size=(10, 1), stride=1))
@@ -56,7 +56,7 @@ class OhParkinson:
         model.add_module('pool_4', nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)))
         model.add_module('flatten', Flatten())
 
-        input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+        input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
         out = model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
         dim = 1
         for muldim in out.shape[1:]:
@@ -65,6 +65,6 @@ class OhParkinson:
         model.add_module('dropout_1', nn.Dropout(p=0.5))
         model.add_module('dense_2', nn.Linear(in_features=20, out_features=10))
         model.add_module('dropout_2', nn.Dropout(p=0.5))
-        model.add_module('dense_3', nn.Linear(in_features=10, out_features=globals.get('n_classes')))
+        model.add_module('dense_3', nn.Linear(in_features=10, out_features=global_vars.get('n_classes')))
         model.add_module('softmax', nn.Softmax())
         return model

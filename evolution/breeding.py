@@ -1,6 +1,6 @@
 import random
 import NASUtils
-import globals
+import global_vars
 import torch
 from torch import nn
 import sys
@@ -11,11 +11,11 @@ from model_generation.simple_model_generation import new_model_from_structure_py
 
 
 def breed_population(weighted_population, eegnas):
-    if globals.get('grid'):
+    if global_vars.get('grid'):
         breeding_method = models_generation.breed_grid
     else:
         breeding_method = breed_layers
-    if globals.get('perm_ensembles'):
+    if global_vars.get('perm_ensembles'):
         breed_perm_ensembles(weighted_population, breeding_method, eegnas)
     else:
         breed_normal_population(weighted_population, breeding_method, eegnas)
@@ -23,8 +23,8 @@ def breed_population(weighted_population, eegnas):
 
 def breed_perm_ensembles(weighted_population, breeding_method, eegnas):
     children = []
-    ensembles = list(NASUtils.chunks(list(range(len(weighted_population))), globals.get('ensemble_size')))
-    while len(weighted_population) + len(children) < globals.get('pop_size'):
+    ensembles = list(NASUtils.chunks(list(range(len(weighted_population))), global_vars.get('ensemble_size')))
+    while len(weighted_population) + len(children) < global_vars.get('pop_size'):
         breeders = random.sample(ensembles, 2)
         first_ensemble = [weighted_population[i] for i in breeders[0]]
         second_ensemble = [weighted_population[i] for i in breeders[1]]
@@ -51,7 +51,7 @@ def breed_perm_ensembles(weighted_population, breeding_method, eegnas):
 
 def breed_normal_population(weighted_population, breeding_method, eegnas):
     children = []
-    while len(weighted_population) + len(children) < globals.get('pop_size'):
+    while len(weighted_population) + len(children) < global_vars.get('pop_size'):
         breeders = random.sample(range(len(weighted_population)), 2)
         first_breeder = weighted_population[breeders[0]]
         second_breeder = weighted_population[breeders[1]]
@@ -73,34 +73,34 @@ def breed_normal_population(weighted_population, breeding_method, eegnas):
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
     save_weights = False
-    if random.random() < globals.get('breed_rate'):
+    if random.random() < global_vars.get('breed_rate'):
         if cut_point is None:
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
             second_model[i] = first_model[i]
-        save_weights = globals.get('inherit_weights_crossover') and globals.get('inherit_weights_normal')
+        save_weights = global_vars.get('inherit_weights_crossover') and global_vars.get('inherit_weights_normal')
     this_module = sys.modules[__name__]
-    getattr(this_module, globals.get('mutation_method'))(second_model, mutation_rate)
+    getattr(this_module, global_vars.get('mutation_method'))(second_model, mutation_rate)
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
-        if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
+        if torch.cuda.device_count() > 1 and global_vars.get('parallel_gpu'):
             finalized_new_model.cuda()
             with torch.cuda.device(0):
                 finalized_new_model = nn.DataParallel(finalized_new_model.cuda(), device_ids=
-                    [int(s) for s in globals.get('gpu_select').split(',')])
+                    [int(s) for s in global_vars.get('gpu_select').split(',')])
         finalized_new_model_state = finalized_new_model.state_dict()
         if None not in [first_model_state, second_model_state]:
             for i in range(cut_point):
                 add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)
-            for i in range(cut_point+1, globals.get('num_layers')):
+            for i in range(cut_point+1, global_vars.get('num_layers')):
                 add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
     else:
         finalized_new_model_state = None
     if check_legal_model(new_model):
         return new_model, finalized_new_model_state, cut_point
     else:
-        globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+        global_vars.set('failed_breedings', global_vars.get('failed_breedings') + 1)
         return None, None, None
 
 

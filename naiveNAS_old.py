@@ -22,7 +22,7 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or, ColumnBelow
 from braindecode.datautil.splitters import concatenate_sets
 import os
-import globals
+import global_vars
 import csv
 from torch import nn
 from utilities.model_summary import summary
@@ -60,7 +60,7 @@ def time_f(t_secs):
 
 def show_progress(train_time, exp_name):
     global model_train_times
-    total_trainings = globals.get('num_generations') * globals.get('pop_size') * len(globals.get('subjects_to_check'))
+    total_trainings = global_vars.get('num_generations') * global_vars.get('pop_size') * len(global_vars.get('subjects_to_check'))
     model_train_times.append(train_time)
     avg_model_train_time = sum(model_train_times) / len(model_train_times)
     time_left = (total_trainings - len(model_train_times)) * avg_model_train_time
@@ -88,7 +88,7 @@ class NaiveNAS:
         self.loggers = [Printer()]
         self.stop_criterion = stop_criterion
         self.monitors = monitors
-        self.cuda = globals.get('cuda')
+        self.cuda = global_vars.get('cuda')
         self.loggers = [Printer()]
         self.epochs_df = None
         self.fieldnames = fieldnames
@@ -102,7 +102,7 @@ class NaiveNAS:
             self.current_chosen_population_sample = [self.subject_id]
         else:
             self.current_chosen_population_sample = []
-        self.mutation_rate = globals.get('mutation_rate')
+        self.mutation_rate = global_vars.get('mutation_rate')
 
     def get_dummy_input(self):
         random_subj = list(self.datasets['train'].keys())[0]
@@ -115,13 +115,13 @@ class NaiveNAS:
         to_dense_prediction_model(model)
         conv_classifier = model.conv_classifier
         model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
-                                          (globals.get('final_conv_size'),
+                                          (global_vars.get('final_conv_size'),
                                            conv_classifier.kernel_size[1]), stride=conv_classifier.stride,
                                           dilation=conv_classifier.dilation)
 
     def get_n_preds_per_input(self, model):
         dummy_input = self.get_dummy_input()
-        if globals.get('cuda'):
+        if global_vars.get('cuda'):
             model.cuda()
             dummy_input = dummy_input.cuda()
         out = model(dummy_input)
@@ -130,23 +130,23 @@ class NaiveNAS:
 
     def set_cropping_for_model(self, model):
         models_generation.finalized_model_to_dilated(model)
-        globals.set('n_preds_per_input', models_generation.get_n_preds_per_input(model))
-        self.iterator = CropsFromTrialsIterator(batch_size=globals.get('batch_size'),
-                                                input_time_length=globals.get('input_time_len'),
-                                                n_preds_per_input=globals.get('n_preds_per_input'))
+        global_vars.set('n_preds_per_input', models_generation.get_n_preds_per_input(model))
+        self.iterator = CropsFromTrialsIterator(batch_size=global_vars.get('batch_size'),
+                                                input_time_length=global_vars.get('input_time_len'),
+                                                n_preds_per_input=global_vars.get('n_preds_per_input'))
 
     def run_target_ensemble(self):
-        globals.set('max_epochs', globals.get('final_max_epochs'))
-        globals.set('max_increase_epochs', globals.get('final_max_increase_epochs'))
+        global_vars.set('max_epochs', global_vars.get('final_max_epochs'))
+        global_vars.set('max_increase_epochs', global_vars.get('final_max_increase_epochs'))
         stats = {}
-        self.weighted_population_file = f'weighted_populations/{globals.get("weighted_population_file")}'
+        self.weighted_population_file = f'weighted_populations/{global_vars.get("weighted_population_file")}'
         _, evaluations, _, num_epochs = self.evaluate_ensemble_from_pickle(self.subject_id)
         NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix='final_')
         self.write_to_csv(stats, generation=1)
 
     def run_target_model(self):
-        globals.set('max_epochs', globals.get('final_max_epochs'))
-        globals.set('max_increase_epochs', globals.get('final_max_increase_epochs'))
+        global_vars.set('max_epochs', global_vars.get('final_max_epochs'))
+        global_vars.set('max_increase_epochs', global_vars.get('final_max_increase_epochs'))
         stats = {}
         if self.model_from_file is not None:
             if torch.cuda.is_available():
@@ -154,10 +154,10 @@ class NaiveNAS:
             else:
                 model = torch.load(self.model_from_file, map_location='cpu')
         else:
-            model = target_model(globals.get('model_name'))
-        if globals.get('target_pretrain'):
+            model = target_model(global_vars.get('model_name'))
+        if global_vars.get('target_pretrain'):
             self.datasets['train']['pretrain'], self.datasets['valid']['pretrain'], self.datasets['test']['pretrain'] = \
-                get_pure_cross_subject(globals.get('data_folder'), globals.get('low_cut_hz'))
+                get_pure_cross_subject(global_vars.get('data_folder'), global_vars.get('low_cut_hz'))
             _, _, model, _, _ = self.evaluate_model(model, subject='pretrain')
         final_time, evaluations, model, model_state, num_epochs =\
                     self.evaluate_model(model, final_evaluation=True)
@@ -167,8 +167,8 @@ class NaiveNAS:
 
     def sample_subjects(self):
         self.current_chosen_population_sample = sorted(random.sample(
-            [i for i in range(1, globals.get('num_subjects') + 1) if i not in globals.get('exclude_subjects')],
-            globals.get('cross_subject_sampling_rate')))
+            [i for i in range(1, global_vars.get('num_subjects') + 1) if i not in global_vars.get('exclude_subjects')],
+            global_vars.get('cross_subject_sampling_rate')))
 
     def one_strategy(self, weighted_population):
         self.current_chosen_population_sample = [self.subject_id]
@@ -183,7 +183,7 @@ class NaiveNAS:
             self.current_model_index = i
             final_time, evaluations, model, model_state, num_epochs = \
                 self.evaluate_model(finalized_model, pop['model_state'], subject=self.subject_id)
-            if globals.get('grid_as_ensemble') and globals.get('delete_finalized_models'):
+            if global_vars.get('grid_as_ensemble') and global_vars.get('delete_finalized_models'):
                 pop['weighted_avg_params'] = model
             self.current_model_index = -1
             NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
@@ -198,7 +198,7 @@ class NaiveNAS:
     def all_strategy(self, weighted_population):
         summed_parameters = ['train_time', 'num_epochs']
         summed_parameters.extend(NASUtils.get_metric_strs())
-        if globals.get('cross_subject_sampling_method') == 'generation':
+        if global_vars.get('cross_subject_sampling_method') == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
             start_time = time.time()
@@ -207,7 +207,7 @@ class NaiveNAS:
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
                 continue
-            if globals.get('cross_subject_sampling_method') == 'model':
+            if global_vars.get('cross_subject_sampling_method') == 'model':
                 self.sample_subjects()
             for key in summed_parameters:
                 weighted_population[i][key] = 0
@@ -229,7 +229,7 @@ class NaiveNAS:
                 print('trained model %d in subject %d in generation %d' % (i + 1, subject, self.current_generation))
             weighted_population[i]['finalized_model'] = model
             for key in summed_parameters:
-                weighted_population[i][key] /= globals.get('cross_subject_sampling_rate')
+                weighted_population[i][key] /= global_vars.get('cross_subject_sampling_rate')
 
     def calculate_stats(self, weighted_population):
         stats = {}
@@ -238,8 +238,8 @@ class NaiveNAS:
         for param in params:
             stats[param] = np.mean([sample[param] for sample in weighted_population])
         if self.subject_id == 'all':
-            if globals.get('cross_subject_sampling_method') == 'model':
-                self.current_chosen_population_sample = range(1, globals.get('num_subjects')+1)
+            if global_vars.get('cross_subject_sampling_method') == 'model':
+                self.current_chosen_population_sample = range(1, global_vars.get('num_subjects') + 1)
             for subject in self.current_chosen_population_sample:
                 for param in params:
                     stats[f'{subject}_{param}'] = np.mean(
@@ -249,8 +249,8 @@ class NaiveNAS:
             for param in params:
                 model_stats[param] = pop[param]
             if self.subject_id == 'all':
-                if globals.get('cross_subject_sampling_method') == 'model':
-                    self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
+                if global_vars.get('cross_subject_sampling_method') == 'model':
+                    self.current_chosen_population_sample = range(1, global_vars.get('num_subjects') + 1)
                 for subject in self.current_chosen_population_sample:
                     for param in params:
                         if f'{subject}_{param}' in pop.keys():
@@ -273,7 +273,7 @@ class NaiveNAS:
         for stat in layer_stats.keys():
             stats[stat] = NASUtils.get_average_param([pop['model'] for pop in weighted_population],
                                                                  layer_stats[stat][0], layer_stats[stat][1])
-            if globals.get('add_top_20_stats'):
+            if global_vars.get('add_top_20_stats'):
                 stats[f'top20_{stat}'] = NASUtils.get_average_param([pop['model'] for pop in
                                                                      weighted_population[:int(len(weighted_population)/5)]],
                                                          layer_stats[stat][0], layer_stats[stat][1])
@@ -283,21 +283,21 @@ class NaiveNAS:
                            models_generation.IdentityLayer, models_generation.BatchNormLayer, models_generation.PoolingLayer]:
             stats['%s_count' % layer_type.__name__] = \
                 NASUtils.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
-            if globals.get('add_top_20_stats'):
+            if global_vars.get('add_top_20_stats'):
                 stats['top20_%s_count' % layer_type.__name__] = \
                     NASUtils.count_layer_type_in_pop([pop['model'] for pop in
                                                       weighted_population[:int(len(weighted_population)/5)]], layer_type)
-        if globals.get('grid') and not globals.get('grid_as_ensemble'):
+        if global_vars.get('grid') and not global_vars.get('grid_as_ensemble'):
             stats['num_of_models_with_skip'] = NASUtils.num_of_models_with_skip_connection(weighted_population)
         return stats
 
     def add_final_stats(self, stats, weighted_population):
         model = finalize_model(weighted_population[0]['model'])
-        if globals.get('cross_subject'):
-            self.current_chosen_population_sample = range(1, globals.get('num_subjects') + 1)
+        if global_vars.get('cross_subject'):
+            self.current_chosen_population_sample = range(1, global_vars.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
-            if globals.get('ensemble_iterations'):
-                ensemble = [finalize_model(weighted_population[i]['model']) for i in range(globals.get('ensemble_size'))]
+            if global_vars.get('ensemble_iterations'):
+                ensemble = [finalize_model(weighted_population[i]['model']) for i in range(global_vars.get('ensemble_size'))]
                 _, evaluations, _, num_epochs = self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
                 NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
@@ -305,15 +305,15 @@ class NaiveNAS:
             stats['%d_final_epoch_num' % subject] = num_epochs
 
     def validate_model_from_file(self, stats):
-        if globals.get('ensemble_iterations'):
+        if global_vars.get('ensemble_iterations'):
             weighted_population = pickle.load(open(self.weighted_population_file, 'rb'))
         for subject in self.current_chosen_population_sample:
-            for iteration in range(globals.get('final_test_iterations')):
+            for iteration in range(global_vars.get('final_test_iterations')):
                 model = torch.load(self.model_filename)
                 _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
                 NASUtils.add_evaluations_to_stats(stats, evaluations,
                                                   str_prefix=f"{subject}_iteration_{iteration}_from_file_")
-                if globals.get('ensemble_iterations'):
+                if global_vars.get('ensemble_iterations'):
                     _, evaluations, _, num_epochs = self.evaluate_ensemble_from_pickle(subject, weighted_population)
                     NASUtils.add_evaluations_to_stats(stats, evaluations,
                                                       str_prefix=f"{subject}_iteration_{iteration}_from_file_")
@@ -323,22 +323,22 @@ class NaiveNAS:
             weighted_population = pickle.load(open(self.weighted_population_file, 'rb'))
         if 'pretrained' in self.weighted_population_file:
             ensemble = [weighted_population[i]['finalized_model'] for i in
-                        range(globals.get('ensemble_size'))]
+                        range(global_vars.get('ensemble_size'))]
         else:
             best_model = finalize_model(weighted_population[0]['model'])
             best_model.load_state_dict(weighted_population[0]['model_state'])
             torch.save(best_model, 'best_model_1.th')
             ensemble = [finalize_model(weighted_population[i]['model']) for i in
-                        range(globals.get('ensemble_size'))]
+                        range(global_vars.get('ensemble_size'))]
             self.datasets['train']['pretrain'], self.datasets['valid']['pretrain'], self.datasets['test']['pretrain'] = \
-                get_pure_cross_subject(globals.get('data_folder'), globals.get('low_cut_hz'))
+                get_pure_cross_subject(global_vars.get('data_folder'), global_vars.get('low_cut_hz'))
             for i, model in enumerate(ensemble):
                 _, _, save_model, _, _ = self.evaluate_model(model, subject='pretrain')
                 ensemble[i] = save_model
         return self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
 
     def save_best_model(self, weighted_population):
-        if globals.get('delete_finalized_models'):
+        if global_vars.get('delete_finalized_models'):
             save_model = finalize_model(weighted_population[0]['model'])
             save_model.load_state_dict(weighted_population[0]['model_state'])
         else:
@@ -354,7 +354,7 @@ class NaiveNAS:
     def save_final_population(self, weighted_population):
         subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
         pretrained_str = ''
-        if not globals.get('delete_finalized_models'):
+        if not global_vars.get('delete_finalized_models'):
             pretrained_str = '_pretrained'
         self.weighted_population_file = f'{self.exp_folder}/weighted_population_{subject_nums}{pretrained_str}.p'
         pickle.dump(weighted_population, open(self.weighted_population_file, 'wb'))
@@ -373,44 +373,44 @@ class NaiveNAS:
 
     def evaluate_and_sort(self, weighted_population):
         self.evo_strategy(weighted_population)
-        getattr(evolution.fitness_functions, globals.get('fitness_function'))(weighted_population)
-        if globals.get('fitness_penalty_function'):
-            getattr(evolution.fitness_functions, globals.get('fitness_penalty_function'))(weighted_population)
+        getattr(evolution.fitness_functions, global_vars.get('fitness_function'))(weighted_population)
+        if global_vars.get('fitness_penalty_function'):
+            getattr(evolution.fitness_functions, global_vars.get('fitness_penalty_function'))(weighted_population)
         weighted_population = NASUtils.sort_population(weighted_population)
         stats = self.calculate_stats(weighted_population)
         self.add_parent_child_relations(weighted_population, stats)
-        if globals.get('ranking_correlation_num_iterations'):
+        if global_vars.get('ranking_correlation_num_iterations'):
             NASUtils.ranking_correlations(weighted_population, stats)
         return stats, weighted_population
 
     @staticmethod
     def mark_perm_ensembles(weighted_population):
         for i, pop in enumerate(weighted_population):
-            pop['perm_ensemble_role'] = i % globals.get('ensemble_size')
-            pop['perm_ensemble_id'] = int(i / globals.get('ensemble_size'))
+            pop['perm_ensemble_role'] = i % global_vars.get('ensemble_size')
+            pop['perm_ensemble_id'] = int(i / global_vars.get('ensemble_size'))
 
     def evolution(self):
-        num_generations = globals.get('num_generations')
+        num_generations = global_vars.get('num_generations')
         weighted_population = NASUtils.initialize_population(self.models_set, self.genome_set, self.subject_id)
         for generation in range(num_generations):
             self.current_generation = generation
-            if globals.get('perm_ensembles'):
+            if global_vars.get('perm_ensembles'):
                 self.mark_perm_ensembles(weighted_population)
-            if globals.get('inject_dropout') and generation == int((num_generations / 2) - 1):
+            if global_vars.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NASUtils.inject_dropout(weighted_population)
             stats, weighted_population = self.evaluate_and_sort(weighted_population)
             if generation < num_generations - 1:
                 weighted_population = self.selection(weighted_population)
                 self.breed_population(weighted_population)
-                if globals.get('dynamic_mutation_rate'):
-                    if len(self.models_set) < globals.get('pop_size') * globals.get('unique_model_threshold'):
-                        self.mutation_rate *= globals.get('mutation_rate_increase_rate')
+                if global_vars.get('dynamic_mutation_rate'):
+                    if len(self.models_set) < global_vars.get('pop_size') * global_vars.get('unique_model_threshold'):
+                        self.mutation_rate *= global_vars.get('mutation_rate_increase_rate')
                     else:
-                        if globals.get('mutation_rate_gradual_decrease'):
-                            self.mutation_rate /= globals.get('mutation_rate_decrease_rate')
+                        if global_vars.get('mutation_rate_gradual_decrease'):
+                            self.mutation_rate /= global_vars.get('mutation_rate_decrease_rate')
                         else:
-                            self.mutation_rate = globals.get('mutation_rate')
-                if globals.get('save_every_generation'):
+                            self.mutation_rate = global_vars.get('mutation_rate')
+                if global_vars.get('save_every_generation'):
                     self.save_best_model(weighted_population)
             else:  # last generation
                 best_model_filename = self.save_best_model(weighted_population)
@@ -423,7 +423,7 @@ class NaiveNAS:
         return best_model_filename
 
     def selection(self, weighted_population):
-        if globals.get('perm_ensembles'):
+        if global_vars.get('perm_ensembles'):
             return self.selection_perm_ensembles(weighted_population)
         else:
             return self.selection_normal(weighted_population)
@@ -432,7 +432,7 @@ class NaiveNAS:
         for index, model in enumerate(weighted_population):
             decay_functions = {'linear': lambda x: x,
                                'log': lambda x: np.sqrt(np.log(x + 1))}
-            if random.uniform(0, 1) < decay_functions[globals.get('decay_function')](index / globals.get('pop_size')):
+            if random.uniform(0, 1) < decay_functions[global_vars.get('decay_function')](index / global_vars.get('pop_size')):
                 NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
                 del weighted_population[index]
             else:
@@ -440,12 +440,12 @@ class NaiveNAS:
         return weighted_population
 
     def selection_perm_ensembles(self, weighted_population):
-        ensembles = list(NASUtils.chunks(list(range(globals.get('pop_size'))), globals.get('ensemble_size')))
+        ensembles = list(NASUtils.chunks(list(range(global_vars.get('pop_size'))), global_vars.get('ensemble_size')))
         for index, ensemble in enumerate(ensembles):
             decay_functions = {'linear': lambda x: x,
                                'log': lambda x: np.sqrt(np.log(x + 1))}
-            if random.uniform(0, 1) < decay_functions[globals.get('decay_function')](index / len(ensembles)) and\
-                len([pop for pop in weighted_population if pop is not None]) > 2 * globals.get('ensemble_size'):
+            if random.uniform(0, 1) < decay_functions[global_vars.get('decay_function')](index / len(ensembles)) and\
+                len([pop for pop in weighted_population if pop is not None]) > 2 * global_vars.get('ensemble_size'):
                 for pop in ensemble:
                     NASUtils.remove_from_models_hash(weighted_population[pop]['model'], self.models_set, self.genome_set)
                     weighted_population[pop] = None
@@ -455,19 +455,19 @@ class NaiveNAS:
         return [pop for pop in weighted_population if pop is not None]
 
     def breed_population(self, weighted_population):
-        if globals.get('grid'):
+        if global_vars.get('grid'):
             breeding_method = models_generation.breed_grid
         else:
             breeding_method = breed_layers
-        if globals.get('perm_ensembles'):
+        if global_vars.get('perm_ensembles'):
             self.breed_perm_ensembles(weighted_population, breeding_method)
         else:
             self.breed_normal_population(weighted_population, breeding_method)
 
     def breed_perm_ensembles(self, weighted_population, breeding_method):
         children = []
-        ensembles = list(NASUtils.chunks(list(range(len(weighted_population))), globals.get('ensemble_size')))
-        while len(weighted_population) + len(children) < globals.get('pop_size'):
+        ensembles = list(NASUtils.chunks(list(range(len(weighted_population))), global_vars.get('ensemble_size')))
+        while len(weighted_population) + len(children) < global_vars.get('pop_size'):
             breeders = random.sample(ensembles, 2)
             first_ensemble = [weighted_population[i] for i in breeders[0]]
             second_ensemble = [weighted_population[i] for i in breeders[1]]
@@ -492,7 +492,7 @@ class NaiveNAS:
 
     def breed_normal_population(self, weighted_population, breeding_method):
         children = []
-        while len(weighted_population) + len(children) < globals.get('pop_size'):
+        while len(weighted_population) + len(children) < global_vars.get('pop_size'):
             breeders = random.sample(range(len(weighted_population)), 2)
             first_breeder = weighted_population[breeders[0]]
             second_breeder = weighted_population[breeders[1]]
@@ -511,15 +511,15 @@ class NaiveNAS:
         weighted_population.extend(children)
 
     def ensemble_by_avg_layer(self, trained_models, subject):
-        trained_models = [nn.Sequential(*list(model.children())[:globals.get('num_layers')+1]) for model in trained_models]
+        trained_models = [nn.Sequential(*list(model.children())[:global_vars.get('num_layers') + 1]) for model in trained_models]
         avg_model = models_generation.AveragingEnsemble(trained_models)
         single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation=True)
-        if globals.get('ensemble_trained_average'):
+        if global_vars.get('ensemble_trained_average'):
             _, _, avg_model, state, _ = self.evaluate_model(avg_model, None, subject, final_evaluation=True)
         else:
             self.monitor_epoch(single_subj_dataset, avg_model)
         new_avg_evaluations = defaultdict(dict)
-        objective_str = globals.get("ga_objective")
+        objective_str = global_vars.get("ga_objective")
         for dataset in ['train', 'valid', 'test']:
             new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = \
                 self.epochs_df.tail(1)[f'{dataset}_{objective_str}'].values[0]
@@ -536,9 +536,9 @@ class NaiveNAS:
             avg_evaluations[eval] = defaultdict(list)
         trained_models = []
         for model, state in zip(models, states):
-            if globals.get('ensemble_pretrain'):
-                if globals.get('random_subject_pretrain'):
-                    pretrain_subject = random.randint(1, globals.get('num_subjects'))
+            if global_vars.get('ensemble_pretrain'):
+                if global_vars.get('random_subject_pretrain'):
+                    pretrain_subject = random.randint(1, global_vars.get('num_subjects'))
                 else:
                     pretrain_subject = subject
                 _, _, model, state, _ = self.evaluate_model(model, state, pretrain_subject)
@@ -551,16 +551,16 @@ class NaiveNAS:
             avg_num_epochs += num_epochs
             states.append(state)
             trained_models.append(model)
-        if globals.get('ensembling_method') == 'manual':
+        if global_vars.get('ensembling_method') == 'manual':
             new_avg_evaluations = NASUtils.format_manual_ensemble_evaluations(avg_evaluations)
-        elif globals.get('ensembling_method') == 'averaging_layer':
+        elif global_vars.get('ensembling_method') == 'averaging_layer':
             new_avg_evaluations = self.ensemble_by_avg_layer(trained_models, subject)
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
     def get_single_subj_dataset(self, subject=None, final_evaluation=False):
         if subject not in self.datasets['train'].keys():
             self.datasets['train'][subject], self.datasets['valid'][subject], self.datasets['test'][subject] = \
-                get_train_val_test(globals.get('data_folder'), subject, globals.get('low_cut_hz'))
+                get_train_val_test(global_vars.get('data_folder'), subject, global_vars.get('low_cut_hz'))
         single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
                                            ('valid', self.datasets['valid'][subject]),
                                            ('test', self.datasets['test'][subject])))
@@ -576,27 +576,27 @@ class NaiveNAS:
         if self.cuda:
             torch.cuda.empty_cache()
         if final_evaluation:
-            self.stop_criterion = Or([MaxEpochs(globals.get('final_max_epochs')),
-                                      NoIncreaseDecrease('valid_accuracy', globals.get('final_max_increase_epochs'))])
-        if globals.get('cropping'):
+            self.stop_criterion = Or([MaxEpochs(global_vars.get('final_max_epochs')),
+                                      NoIncreaseDecrease('valid_accuracy', global_vars.get('final_max_increase_epochs'))])
+        if global_vars.get('cropping'):
             self.set_cropping_for_model(model)
         single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation)
         self.epochs_df = pd.DataFrame()
-        if globals.get('do_early_stop') or globals.get('remember_best'):
-            self.rememberer = RememberBest(f"valid_{globals.get('nn_objective')}")
+        if global_vars.get('do_early_stop') or global_vars.get('remember_best'):
+            self.rememberer = RememberBest(f"valid_{global_vars.get('nn_objective')}")
         self.optimizer = optim.Adam(model.parameters())
         if self.cuda:
             assert torch.cuda.is_available(), "Cuda not available"
-            if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
+            if torch.cuda.device_count() > 1 and global_vars.get('parallel_gpu'):
                 model.cuda()
                 with torch.cuda.device(0):
                     model = nn.DataParallel(model.cuda(), device_ids=
-                        [int(s) for s in globals.get('gpu_select').split(',')])
+                        [int(s) for s in global_vars.get('gpu_select').split(',')])
             else:
                 model.cuda()
 
         try:
-            if globals.get('inherit_weights_normal') and state is not None:
+            if global_vars.get('inherit_weights_normal') and state is not None:
                     current_state = model.state_dict()
                     for k, v in state.items():
                         if k in current_state and current_state[k].shape == v.shape:
@@ -609,9 +609,9 @@ class NaiveNAS:
             print('load state dict failed. Exception message: %s' % (str(e)))
             pdb.set_trace()
         self.monitor_epoch(single_subj_dataset, model)
-        if globals.get('log_epochs'):
+        if global_vars.get('log_epochs'):
             self.log_epoch()
-        if globals.get('remember_best'):
+        if global_vars.get('remember_best'):
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
         self.iterator.reset_rng()
         start = time.time()
@@ -628,19 +628,19 @@ class NaiveNAS:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
         evaluations = {}
-        for evaluation_metric in globals.get('evaluation_metrics'):
+        for evaluation_metric in global_vars.get('evaluation_metrics'):
             evaluations[evaluation_metric] = {'train': self.epochs_df.iloc[-1][f"train_{evaluation_metric}"],
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         final_time = end-start
         if self.cuda:
             torch.cuda.empty_cache()
-        if globals.get('use_tensorboard'):
+        if global_vars.get('use_tensorboard'):
             if self.current_model_index > 0:
                 with SummaryWriter(log_dir=f'{self.exp_folder}/tensorboard/gen_{self.current_generation}_model{self.current_model_index}') as w:
                     w.add_graph(model, self.get_dummy_input())
-        if globals.get('delete_finalized_models'):
-            if globals.get('grid_as_ensemble'):
+        if global_vars.get('delete_finalized_models'):
+            if global_vars.get('grid_as_ensemble'):
                 model_stats = {}
                 for param_idx, param in enumerate(list(model.pytorch_layers['averaging_layer'].parameters())):
                     for inner_idx, inner_param in enumerate(param[0]):
@@ -671,8 +671,8 @@ class NaiveNAS:
         model.train()
         batch_generator = self.iterator.get_batches(datasets['train'], shuffle=True)
         for inputs, targets in batch_generator:
-            input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
             if self.cuda:
                 with torch.cuda.device(0):
                     input_vars = input_vars.cuda()
@@ -687,9 +687,9 @@ class NaiveNAS:
             loss.backward()
             self.optimizer.step()
         self.monitor_epoch(datasets, model)
-        if globals.get('log_epochs'):
+        if global_vars.get('log_epochs'):
             self.log_epoch()
-        if globals.get('remember_best'):
+        if global_vars.get('remember_best'):
             self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer)
 
     def monitor_epoch(self, datasets, model):
@@ -722,11 +722,11 @@ class NaiveNAS:
                 if result_dict is not None:
                     result_dicts_per_monitor[m].update(result_dict)
 
-            if globals.get('ensemble_iterations'):
+            if global_vars.get('ensemble_iterations'):
                 raws.update({f'{setname}_raw': list(itertools.chain.from_iterable(all_preds))})
                 targets.update({f'{setname}_target': list(itertools.chain.from_iterable(all_targets))})
         row_dict = OrderedDict()
-        if globals.get('ensemble_iterations'):
+        if global_vars.get('ensemble_iterations'):
             row_dict.update(raws)
             row_dict.update(targets)
         for m in self.monitors:
@@ -752,8 +752,8 @@ class NaiveNAS:
         """
         model.eval()
         with torch.no_grad():
-            input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
             if self.cuda:
                 with torch.cuda.device(0):
                     input_vars = input_vars.cuda()
@@ -780,8 +780,8 @@ class NaiveNAS:
         batch_generator = self.iterator.get_batches(self.train_set, shuffle=True)
         optimizer = optim.Adam(model.parameters())
         for inputs, targets in batch_generator:
-            input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
-            target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
+            input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
+            target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
             optimizer.zero_grad()
             outputs = model(input_vars)
             loss = self.loss_function(outputs, target_vars)
@@ -794,8 +794,8 @@ class NaiveNAS:
         correct = 0
         with torch.no_grad():
             for inputs, targets in self.iterator.get_batches(data, shuffle=False):
-                input_vars = np_to_var(inputs, pin_memory=globals.get('pin_memory'))
-                target_vars = np_to_var(targets, pin_memory=globals.get('pin_memory'))
+                input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
+                target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
                 outputs = model(input_vars)
                 val_loss += self.loss_function(outputs, target_vars)
                 pred = outputs.max(1, keepdim=True)[1]  # get the index of the max log-probability
@@ -814,7 +814,7 @@ class NaiveNAS:
                     subject = str(self.subject_id)
                 for key, value in stats.items():
                     writer.writerow({'exp_name': self.exp_name, 'machine': platform.node(),
-                                    'dataset': globals.get('dataset'), 'date': time.strftime("%d/%m/%Y"),
+                                    'dataset': global_vars.get('dataset'), 'date': time.strftime("%d/%m/%Y"),
                                     'subject': subject, 'generation': str(generation), 'model': str(model),
                                     'param_name': key, 'param_value': value})
 
@@ -834,7 +834,7 @@ class NaiveNAS:
                     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
                     finalized_model = finalize_model(model['model'])
                     print_model = finalized_model.to(device)
-                    summary(print_model, (globals.get('eeg_chans'), globals.get('input_time_len'), 1), file=text_file)
+                    summary(print_model, (global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1), file=text_file)
 
 
 

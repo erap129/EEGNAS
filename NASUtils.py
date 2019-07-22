@@ -6,7 +6,7 @@ from functools import reduce
 import networkx as nx
 import random
 from braindecode.torch_ext.util import np_to_var
-import globals
+import global_vars
 import numpy as np
 from copy import deepcopy
 from scipy.stats import spearmanr
@@ -16,7 +16,7 @@ from model_generation.simple_model_generation import random_model
 
 def get_metric_strs():
     result = []
-    for evaluation_metric in globals.get('evaluation_metrics'):
+    for evaluation_metric in global_vars.get('evaluation_metrics'):
         if evaluation_metric in ['raw', 'target']:
             continue
         result.append(f"train_{evaluation_metric}")
@@ -58,7 +58,7 @@ def sum_evaluations_to_weighted_population(pop, evaluations, str_prefix=''):
 
 
 def get_model_state(model):
-    if globals.get('cross_subject'):
+    if global_vars.get('cross_subject'):
         available_states = [x for x in model.keys() if 'model_state' in x]
         model_state_str = random.sample(available_states, 1)[0]
     else:
@@ -67,8 +67,8 @@ def get_model_state(model):
 
 
 def check_age(model):
-    return globals.get('use_aging') and\
-        random.random() < 1 - 1 / (model['age'] + 1)
+    return global_vars.get('use_aging') and \
+           random.random() < 1 - 1 / (model['age'] + 1)
 
 
 def get_average_param(models, layer_type, attribute):
@@ -89,7 +89,7 @@ def inject_dropout(weighted_population):
     for pop in weighted_population:
         layer_collection = pop['model']
         for i in range(len(layer_collection)):
-            if random.uniform(0, 1) < globals.get('dropout_injection_rate'):
+            if random.uniform(0, 1) < global_vars.get('dropout_injection_rate'):
                 old_layer = layer_collection[i]
                 layer_collection[i] = models_generation.DropoutLayer()
                 if not models_generation.check_legal_model(layer_collection):
@@ -98,7 +98,7 @@ def inject_dropout(weighted_population):
 
 
 def remove_from_models_hash(model, model_set, genome_set):
-    if globals.get('grid'):
+    if global_vars.get('grid'):
         for layer in model.nodes.values():
             remove_layer = True
             for other_model in model_set:
@@ -131,14 +131,14 @@ def remove_from_models_hash(model, model_set, genome_set):
 
 
 def get_model_layers(model):
-    if globals.get('grid'):
+    if global_vars.get('grid'):
         return [layer['layer'] for layer in model.nodes.values()]
     else:
         return model
 
 
 def hash_model(model, model_set, genome_set):
-    if globals.get('grid'):
+    if global_vars.get('grid'):
         add_model = True
         for other_model in model_set:
             if equal_grid_models(model, other_model):
@@ -187,34 +187,34 @@ def equal_grid_models(layer_grid_1, layer_grid_2):
 
 
 def initialize_population(models_set, genome_set, subject_id):
-    if globals.get('grid'):
+    if global_vars.get('grid'):
         model_init = random_grid_model
     else:
         model_init = random_model
-    if globals.get('weighted_population_from_file'):
-        folder = f"models/{globals.get('models_dir')}"
-        if globals.get('cross_subject'):
+    if global_vars.get('weighted_population_from_file'):
+        folder = f"models/{global_vars.get('models_dir')}"
+        if global_vars.get('cross_subject'):
             weighted_population = pickle.load(f'{folder}/weighted_population_'
-                               f'{"_".join([i for i in range(1, globals.get("num_subjects") + 1)])}.p')
+                               f'{"_".join([i for i in range(1, global_vars.get("num_subjects") + 1)])}.p')
         else:
             weighted_population = pickle.load(f'{folder}/weighted_population_{subject_id}.p')
     else:
         weighted_population = []
-        for i in range(globals.get('pop_size')):
-            new_rand_model = model_init(globals.get('num_layers'))
+        for i in range(global_vars.get('pop_size')):
+            new_rand_model = model_init(global_vars.get('num_layers'))
             weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
-    for i in range(globals.get('pop_size')):
+    for i in range(global_vars.get('pop_size')):
         hash_model(weighted_population[i]['model'], models_set, genome_set)
     return weighted_population
 
 
 def ranking_correlations(weighted_population, stats):
-    old_ensemble_iterations = globals.get('ensemble_iterations')
+    old_ensemble_iterations = global_vars.get('ensemble_iterations')
     fitness_funcs = {'ensemble_fitness': ensemble_fitness, 'normal_fitness': normal_fitness}
-    for num_iterations in globals.get('ranking_correlation_num_iterations'):
+    for num_iterations in global_vars.get('ranking_correlation_num_iterations'):
         rankings = []
-        globals.set('ensemble_iterations', num_iterations)
-        for fitness_func in globals.get('ranking_correlation_fitness_funcs'):
+        global_vars.set('ensemble_iterations', num_iterations)
+        for fitness_func in global_vars.get('ranking_correlation_fitness_funcs'):
             weighted_pop_copy = deepcopy(weighted_population)
             for i, pop in enumerate(weighted_pop_copy):
                 pop['order'] = i
@@ -224,16 +224,16 @@ def ranking_correlations(weighted_population, stats):
             rankings.append(ranking)
         correlation = spearmanr(*rankings)
         stats[f'ranking_correlation_{num_iterations}'] = correlation[0]
-    globals.set('ensemble_iterations', old_ensemble_iterations)
+    global_vars.set('ensemble_iterations', old_ensemble_iterations)
 
 
 def sort_population(weighted_population, reverse):
     new_weighted_pop = []
-    if globals.get('perm_ensembles'):
-        ensemble_order = weighted_population[globals.get('pop_size')]
-        del weighted_population[globals.get('pop_size')]
+    if global_vars.get('perm_ensembles'):
+        ensemble_order = weighted_population[global_vars.get('pop_size')]
+        del weighted_population[global_vars.get('pop_size')]
         for order in ensemble_order:
-            pops = [weighted_population[i] for i in range(globals.get('pop_size'))
+            pops = [weighted_population[i] for i in range(global_vars.get('pop_size'))
                     if weighted_population[i]['group_id'] == order['group_id']]
             new_weighted_pop.extend(pops)
         return new_weighted_pop
@@ -242,8 +242,8 @@ def sort_population(weighted_population, reverse):
 
 
 def add_model_to_stats(pop, model_index, model_stats):
-    if globals.get('grid'):
-        if globals.get('grid_as_ensemble'):
+    if global_vars.get('grid'):
+        if global_vars.get('grid_as_ensemble'):
             for key, value in pop['weighted_avg_params'].items():
                 model_stats[key] = value
     else:
@@ -251,11 +251,11 @@ def add_model_to_stats(pop, model_index, model_stats):
             model_stats[f'layer_{i}'] = type(layer).__name__
             for key, value in vars(layer).items():
                 model_stats[f'layer_{i}_{key}'] = value
-    if globals.get('perm_ensembles'):
-        model_stats['ensemble_role'] = (model_index % globals.get('ensemble_size'))
+    if global_vars.get('perm_ensembles'):
+        model_stats['ensemble_role'] = (model_index % global_vars.get('ensemble_size'))
         assert pop['perm_ensemble_role'] == model_stats['ensemble_role']
         model_stats['perm_ensemble_id'] = pop['perm_ensemble_id']
-    if globals.get('delete_finalized_models'):
+    if global_vars.get('delete_finalized_models'):
         finalized_model = models_generation.finalize_model(pop['model'])
     else:
         finalized_model = pop['finalized_model']
@@ -266,8 +266,8 @@ def train_time_penalty(weighted_population):
     train_time_indices = [i[0] for i in sorted(enumerate
                                                (weighted_population), key=lambda x: x[1]['train_time'])]
     for rank, idx in enumerate(train_time_indices):
-        weighted_population[idx]['fitness'] -= (rank / globals.get('pop_size')) *\
-                                                weighted_population[idx]['fitness'] * globals.get('penalty_factor')
+        weighted_population[idx]['fitness'] -= (rank / global_vars.get('pop_size')) * \
+                                               weighted_population[idx]['fitness'] * global_vars.get('penalty_factor')
 
 
 def pytorch_count_params(model):
@@ -287,8 +287,8 @@ def format_manual_ensemble_evaluations(avg_evaluations):
         ensemble_preds = avg_evaluations['raw'][dataset]
         pred_labels = np.argmax(ensemble_preds, axis=1).squeeze()
         ensemble_targets = avg_evaluations['target'][dataset]
-        ensemble_fit = getattr(utils, f'{globals.get("ga_objective")}_func')(pred_labels, ensemble_targets)
-        objective_str = globals.get("ga_objective")
+        ensemble_fit = getattr(utils, f'{global_vars.get("ga_objective")}_func')(pred_labels, ensemble_targets)
+        objective_str = global_vars.get("ga_objective")
         new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = ensemble_fit
     return new_avg_evaluations
 
@@ -308,7 +308,7 @@ def evaluate_single_model(model, X, y, eval_func):
         X = X[:, :, :, None]
     model.eval()
     with torch.no_grad():
-        X = np_to_var(X, pin_memory=globals.get('pin_memory'))
+        X = np_to_var(X, pin_memory=global_vars.get('pin_memory'))
         if torch.cuda.is_available():
             with torch.cuda.device(0):
                 X = X.cuda()

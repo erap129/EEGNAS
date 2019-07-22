@@ -9,7 +9,7 @@ from torch.optim import Adam
 from braindecode.torch_ext.util import np_to_var
 from models_generation import target_model
 from naiveNAS import NaiveNAS
-import globals
+import global_vars
 import numpy as np
 from data_preprocessing import get_train_val_test
 from scipy.io import savemat
@@ -41,8 +41,8 @@ class CNNLayerVisualization():
         # Hook the selected layer
         self.hook_layer()
         # Generate a random image
-        random_image = np.float32(np.random.uniform(-1, 1, (1, globals.get('eeg_chans'),
-                                                            globals.get('input_time_len'), 1)))
+        random_image = np.float32(np.random.uniform(-1, 1, (1, global_vars.get('eeg_chans'),
+                                                            global_vars.get('input_time_len'), 1)))
         # Process image and return variable
         processed_image = torch.tensor(np_to_var(random_image), requires_grad=True, device='cuda')
         # Define optimizer for the image
@@ -93,23 +93,23 @@ def dataset_to_mat(dataset_name, data_sets_X, data_sets_y, class_ids):
 
 
 if __name__ == '__main__':
-    globals.set_dummy_config()
-    globals.set('input_time_len', 1125)
-    globals.set('n_classes', 4)
-    globals.set('eeg_chans', 22)
-    globals.set('valid_set_fraction', 0.2)
-    globals.set('dataset', 'BCI_IV_2b')
-    globals.set('batch_size', 60)
-    globals.set('do_early_stop', True)
-    globals.set('remember_best', True)
-    globals.set('max_epochs', 50)
-    globals.set('max_increase_epochs', 3)
-    globals.set('final_max_epochs', 800)
-    globals.set('final_max_increase_epochs', 80)
-    globals.set('cuda', True)
-    globals.set('data_folder', '../../data/')
-    globals.set('low_cut_hz', 0)
-    globals.set('dataset', 'BCI_IV_2b')
+    global_vars.set_dummy_config()
+    global_vars.set('input_time_len', 1125)
+    global_vars.set('n_classes', 4)
+    global_vars.set('eeg_chans', 22)
+    global_vars.set('valid_set_fraction', 0.2)
+    global_vars.set('dataset', 'BCI_IV_2b')
+    global_vars.set('batch_size', 60)
+    global_vars.set('do_early_stop', True)
+    global_vars.set('remember_best', True)
+    global_vars.set('max_epochs', 50)
+    global_vars.set('max_increase_epochs', 3)
+    global_vars.set('final_max_epochs', 800)
+    global_vars.set('final_max_increase_epochs', 80)
+    global_vars.set('cuda', True)
+    global_vars.set('data_folder', '../../data/')
+    global_vars.set('low_cut_hz', 0)
+    global_vars.set('dataset', 'BCI_IV_2b')
     set_params_by_dataset()
     model_selection = 'deep4'
     cnn_layer = {'evolution': 10, 'deep4': 25}
@@ -123,12 +123,12 @@ if __name__ == '__main__':
     val_set = {}
     test_set = {}
     train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
-        get_train_val_test(globals.get('data_folder'), subject_id, globals.get('low_cut_hz'))
+        get_train_val_test(global_vars.get('data_folder'), subject_id, global_vars.get('low_cut_hz'))
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
                         train_set=train_set, val_set=val_set, test_set=test_set,
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=globals.config, subject_id=subject_id, fieldnames=None, strategy='cross_subject',
+                        config=global_vars.config, subject_id=subject_id, fieldnames=None, strategy='cross_subject',
                         evolution_file=None, csv_file=None)
     _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
     layer_vis = CNNLayerVisualization(pretrained_model, cnn_layer[model_selection], filter_pos[model_selection])

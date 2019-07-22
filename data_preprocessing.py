@@ -23,7 +23,7 @@ from data.HumanActivity.human_activity_preproc import get_human_activity
 from data.Opportunity.sliding_window import sliding_window
 from sklearn import preprocessing
 import pickle
-import globals
+import global_vars
 import logging
 import numpy as np
 import pandas as pd
@@ -100,7 +100,7 @@ def get_bci_iv_2a_train_val_test(data_folder,subject_id, low_cut_hz):
     train_set = create_signal_target_from_raw_mne(train_cnt, marker_def, ival)
     test_set = create_signal_target_from_raw_mne(test_cnt, marker_def, ival)
     train_set, valid_set = split_into_two_sets(
-        train_set, first_set_fraction=1 - globals.get('valid_set_fraction'))
+        train_set, first_set_fraction=1 - global_vars.get('valid_set_fraction'))
 
     return train_set, valid_set, test_set
 
@@ -213,7 +213,7 @@ def get_ner_train_val_test(data_folder):
     y, User = np.load(f"{data_folder}NER15/preproc/infos.npy")
     X_test = np.load(f"{data_folder}NER15/preproc/test_epochs.npy")
     y_test = pd.read_csv(f"{data_folder}NER15/preproc/true_labels.csv").values.reshape(-1)
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=globals.get('valid_set_fraction'))
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
@@ -229,7 +229,7 @@ def get_cho_train_val_test(subject_id):
     y = np.where(y=='right_hand', 1, y)
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.3) # test = 30%, same as paper
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                      test_size=globals.get('valid_set_fraction'))
+                                                      test_size=global_vars.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
@@ -253,7 +253,7 @@ def get_bci_iv_2b_train_val_test(subject_id):
     X_test = X[test_indexes]
     y_test = y[test_indexes]
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                      test_size=globals.get('valid_set_fraction'))
+                                                      test_size=global_vars.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
@@ -263,7 +263,7 @@ def get_bci_iv_2b_train_val_test(subject_id):
 def get_bloomberg_train_val_test(data_folder):
     X_train_val, y_train_val, X_test, y_test = get_bloomberg(f'{data_folder}/Bloomberg')
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                      test_size=globals.get('valid_set_fraction'))
+                                                      test_size=global_vars.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
@@ -316,7 +316,7 @@ def get_nyse_train_val_test(data_folder):
 def get_human_activity_train_val_test(data_folder, subject_id):
     X_train_val, y_train_val, X_test, y_test = get_human_activity(f'{data_folder}/HumanActivity', subject_id)
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                      test_size=globals.get('valid_set_fraction'))
+                                                      test_size=global_vars.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
@@ -341,7 +341,7 @@ def get_mental_imagery_long_words(data_folder, subject_id):
         cls_idx += 1
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.1)
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=
-                                                      globals.get('valid_set_fraction'))
+                                                      global_vars.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
@@ -364,7 +364,7 @@ def get_opportunity_train_val_test(data_folder):
         X_test = np.swapaxes(X_test, 1, 2)
         X_train_val = np.swapaxes(X_train_val, 1, 2)
         X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                          test_size=globals.get('valid_set_fraction'))
+                                                          test_size=global_vars.get('valid_set_fraction'))
         train_set = DummySignalTarget(X_train, y_train)
         valid_set = DummySignalTarget(X_val, y_val)
         test_set = DummySignalTarget(X_test, y_test)
@@ -374,19 +374,19 @@ def get_opportunity_train_val_test(data_folder):
 def get_sonarsub_train_val_test(data_folder):
     X = np.load(f"{data_folder}SonarSub/data_file_aug.npy")
     y = np.load(f"{data_folder}SonarSub/labels_file_aug.npy")
-    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=globals.get('valid_set_fraction'))
-    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=globals.get('valid_set_fraction'))
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'))
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'))
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
     return train_set, valid_set, test_set
 
 
-def get_netflow_train_val_test(data_folder):
-    X = np.load(f"{data_folder}netflow/X.npy")
-    y = np.load(f"{data_folder}netflow/y.npy").astype(np.float32)
-    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=globals.get('valid_set_fraction'))
-    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=globals.get('valid_set_fraction'))
+def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
+    X = np.load(f"{data_folder}netflow/X.npy")[:, :n_sequences]
+    y = np.load(f"{data_folder}netflow/y.npy")[:, :n_sequences]
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     train_set = DummySignalTarget(X_train, y_train)
     valid_set = DummySignalTarget(X_val, y_val)
     test_set = DummySignalTarget(X_test, y_test)
@@ -395,36 +395,36 @@ def get_netflow_train_val_test(data_folder):
 
 def get_tuh_train_val_test(data_folder):
     preproc_functions = create_preproc_functions(
-        sec_to_cut_at_start=globals.get('sec_to_cut_at_start'),
-        sec_to_cut_at_end=globals.get('sec_to_cut_at_end'),
-        duration_recording_mins=globals.get('duration_recording_mins'),
-        max_abs_val=globals.get('max_abs_val'),
-        clip_before_resample=globals.get('clip_before_resample'),
-        sampling_freq=globals.get('sampling_freq'),
-        divisor=globals.get('divisor'))
+        sec_to_cut_at_start=global_vars.get('sec_to_cut_at_start'),
+        sec_to_cut_at_end=global_vars.get('sec_to_cut_at_end'),
+        duration_recording_mins=global_vars.get('duration_recording_mins'),
+        max_abs_val=global_vars.get('max_abs_val'),
+        clip_before_resample=global_vars.get('clip_before_resample'),
+        sampling_freq=global_vars.get('sampling_freq'),
+        divisor=global_vars.get('divisor'))
 
     test_preproc_functions = create_preproc_functions(
-        sec_to_cut_at_start=globals.get('sec_to_cut_at_start'),
-        sec_to_cut_at_end=globals.get('sec_to_cut_at_end'),
-        duration_recording_mins=globals.get('test_recording_mins'),
-        max_abs_val=globals.get('max_abs_val'),
-        clip_before_resample=globals.get('clip_before_resample'),
-        sampling_freq=globals.get('sampling_freq'),
-        divisor=globals.get('divisor'))
+        sec_to_cut_at_start=global_vars.get('sec_to_cut_at_start'),
+        sec_to_cut_at_end=global_vars.get('sec_to_cut_at_end'),
+        duration_recording_mins=global_vars.get('test_recording_mins'),
+        max_abs_val=global_vars.get('max_abs_val'),
+        clip_before_resample=global_vars.get('clip_before_resample'),
+        sampling_freq=global_vars.get('sampling_freq'),
+        divisor=global_vars.get('divisor'))
 
-    training_set = DiagnosisSet(n_recordings=globals.get('n_recordings'),
-                           max_recording_mins=globals.get('max_recording_mins'),
-                           preproc_functions=preproc_functions,
-                           train_or_eval='train',
-                            sensor_types=globals.get('sensor_types'))
+    training_set = DiagnosisSet(n_recordings=global_vars.get('n_recordings'),
+                                max_recording_mins=global_vars.get('max_recording_mins'),
+                                preproc_functions=preproc_functions,
+                                train_or_eval='train',
+                                sensor_types=global_vars.get('sensor_types'))
 
-    test_set = DiagnosisSet(n_recordings=globals.get('n_recordings'),
-                                max_recording_mins=None,
-                                preproc_functions=test_preproc_functions,
-                                train_or_eval='eval',
-                                sensor_types=globals.get('sensor_types'))
+    test_set = DiagnosisSet(n_recordings=global_vars.get('n_recordings'),
+                            max_recording_mins=None,
+                            preproc_functions=test_preproc_functions,
+                            train_or_eval='eval',
+                            sensor_types=global_vars.get('sensor_types'))
     X, y = training_set.load()
-    splitter = TrainValidSplitter(10, i_valid_fold=0, shuffle=globals.get('shuffle'))
+    splitter = TrainValidSplitter(10, i_valid_fold=0, shuffle=global_vars.get('shuffle'))
     train_set, valid_set = splitter.split(X, y)
     test_X, test_y = test_set.load()
     test_set = SignalAndTarget(test_X, test_y)
@@ -441,7 +441,7 @@ def get_pure_cross_subject(data_folder, low_cut_hz):
     train_y = []
     val_y = []
     test_y = []
-    for subject_id in globals.get('subjects_to_check'):
+    for subject_id in global_vars.get('subjects_to_check'):
         train_set, valid_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
         train_x.append(train_set.X)
         val_x.append(valid_set.X)
@@ -456,29 +456,29 @@ def get_pure_cross_subject(data_folder, low_cut_hz):
 
 
 def get_train_val_test(data_folder, subject_id, low_cut_hz):
-    if globals.get('dataset') == 'BCI_IV_2a':
+    if global_vars.get('dataset') == 'BCI_IV_2a':
         return get_bci_iv_2a_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)
-    elif globals.get('dataset') == 'HG':
+    elif global_vars.get('dataset') == 'HG':
         return get_hg_train_val_test(f"{data_folder}HG/", subject_id, low_cut_hz)
-    elif globals.get('dataset') == 'NER15':
+    elif global_vars.get('dataset') == 'NER15':
         return get_ner_train_val_test(data_folder)
-    elif globals.get('dataset') == 'Cho':
+    elif global_vars.get('dataset') == 'Cho':
         return get_cho_train_val_test(subject_id)
-    elif globals.get('dataset') == 'BCI_IV_2b':
+    elif global_vars.get('dataset') == 'BCI_IV_2b':
         return get_bci_iv_2b_train_val_test(subject_id)
-    elif globals.get('dataset') == 'Bloomberg':
+    elif global_vars.get('dataset') == 'Bloomberg':
         return get_bloomberg_train_val_test(data_folder)
-    elif globals.get('dataset') == 'NYSE':
+    elif global_vars.get('dataset') == 'NYSE':
         return get_nyse_train_val_test(data_folder)
-    elif globals.get('dataset') == 'HumanActivity':
+    elif global_vars.get('dataset') == 'HumanActivity':
         return get_human_activity_train_val_test(data_folder, subject_id)
-    elif globals.get('dataset') == 'Opportunity':
+    elif global_vars.get('dataset') == 'Opportunity':
         return get_opportunity_train_val_test(data_folder)
-    elif globals.get('dataset') == 'SonarSub':
+    elif global_vars.get('dataset') == 'SonarSub':
         return get_sonarsub_train_val_test(data_folder)
-    elif globals.get('dataset') == 'MentalImageryLongWords':
+    elif global_vars.get('dataset') == 'MentalImageryLongWords':
         return get_mental_imagery_long_words(data_folder, subject_id)
-    elif globals.get('dataset') == 'TUH':
+    elif global_vars.get('dataset') == 'TUH':
         return get_tuh_train_val_test(data_folder)
-    elif globals.get('dataset') == 'netflow':
-        return get_netflow_train_val_test(data_folder)
+    elif global_vars.get('dataset') == 'netflow':
+        return get_netflow_train_val_test(data_folder, n_sequences=global_vars.get('n_classes'))

@@ -13,12 +13,12 @@ from model_generation.custom_modules import _squeeze_final_output
 
 def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
     model = nn.Sequential()
-    if globals.get('channel_dim') != 'channels' or globals.get('exp_type') == 'target':
+    if global_vars.get('channel_dim') != 'channels' or global_vars.get('exp_type') == 'target':
         model.add_module('dimshuffle', _transpose(shape=[0, 3, 2, 1]))
-    if globals.get('time_factor') != -1:
+    if global_vars.get('time_factor') != -1:
         model.add_module('stack_by_time', Expression(_stack_input_by_time))
     activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
-    input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
     for i in range(len(layer_collection)):
         layer = layer_collection[i]
         if i > 0:
@@ -29,11 +29,11 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
             prev_time = out.cpu().data.numpy().shape[2]
             prev_eeg_channels = out.cpu().data.numpy().shape[3]
         else:
-            prev_eeg_channels = globals.get('eeg_chans')
-            prev_time = globals.get('input_time_len')
+            prev_eeg_channels = global_vars.get('eeg_chans')
+            prev_time = global_vars.get('input_time_len')
             prev_channels = 1
-            if globals.get('channel_dim') == 'channels':
-                prev_channels = globals.get('eeg_chans')
+            if global_vars.get('channel_dim') == 'channels':
+                prev_channels = global_vars.get('eeg_chans')
                 prev_eeg_channels = 1
         if isinstance(layer, PoolingLayer):
             while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
@@ -43,13 +43,13 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.stride_time -= 1
                 if layer.pool_time == 1 and layer.stride_time == 1:
                     break
-            if globals.get('channel_dim') == 'channels':
+            if global_vars.get('channel_dim') == 'channels':
                 layer.pool_eeg_chan = 1
             model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(int(layer.pool_time), int(layer.pool_eeg_chan)),
                                                                       stride=(int(layer.stride_time), 1)))
 
         elif isinstance(layer, ConvLayer):
-            if layer.kernel_time == 'down_to_one' or i >= globals.get('num_layers'):
+            if layer.kernel_time == 'down_to_one' or i >= global_vars.get('num_layers'):
                 layer.kernel_time = prev_time
                 layer.kernel_eeg_chan = prev_eeg_channels
                 conv_name = 'conv_classifier'
@@ -59,7 +59,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.kernel_eeg_chan = prev_eeg_channels
                 if applyFix and layer.kernel_time > prev_time:
                     layer.kernel_time = prev_time
-            if globals.get('channel_dim') == 'channels':
+            if global_vars.get('channel_dim') == 'channels':
                 layer.kernel_eeg_chan = 1
             model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
                                                 (layer.kernel_time, layer.kernel_eeg_chan),
@@ -67,15 +67,15 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
         elif isinstance(layer, BatchNormLayer):
             model.add_module('%s_%d' % (type(layer).__name__, i), nn.BatchNorm2d(prev_channels,
-                                                                momentum=globals.get('batch_norm_alpha'),
-                                                                affine=True, eps=1e-5), )
+                                                                                 momentum=global_vars.get('batch_norm_alpha'),
+                                                                                 affine=True, eps=1e-5), )
 
         elif isinstance(layer, ActivationLayer):
             model.add_module('%s_%d' % (layer.activation_type, i), activations[layer.activation_type]())
 
 
         elif isinstance(layer, DropoutLayer):
-            model.add_module('%s_%d' % (type(layer).__name__, i), nn.Dropout(p=globals.get('dropout_p')))
+            model.add_module('%s_%d' % (type(layer).__name__, i), nn.Dropout(p=global_vars.get('dropout_p')))
 
         elif isinstance(layer, IdentityLayer):
             model.add_module('%s_%d' % (type(layer).__name__, i), IdentityModule())
@@ -94,11 +94,11 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
 
 def check_legal_model(layer_collection):
-    if globals.get('channel_dim') == 'channels':
+    if global_vars.get('channel_dim') == 'channels':
         input_chans = 1
     else:
-        input_chans = globals.get('eeg_chans')
-    input_time = globals.get('input_time_len')
+        input_chans = global_vars.get('eeg_chans')
+    input_time = global_vars.get('input_time_len')
     for layer in layer_collection:
         if type(layer) == ConvLayer:
             input_time = (input_time - layer.kernel_time) + 1
@@ -109,7 +109,7 @@ def check_legal_model(layer_collection):
         if input_time < 1 or input_chans < 1:
             print(f"illegal model, input_time={input_time}, input_chans={input_chans}")
             return False
-    if globals.get('cropping'):
+    if global_vars.get('cropping'):
         return check_legal_cropping_model(layer_collection)
     return True
 
@@ -143,7 +143,7 @@ def random_layer():
 def random_model(n_layers):
     layer_collection = []
     for i in range(n_layers):
-        if globals.get('simple_start'):
+        if global_vars.get('simple_start'):
             layer_collection.append(IdentityLayer())
         else:
             layer_collection.append(random_layer())
@@ -162,17 +162,17 @@ def add_layer_to_state(new_model_state, layer, index, old_model_state):
 
 
 def finalize_model(layer_collection):
-    if globals.get('grid'):
+    if global_vars.get('grid'):
         return ModelFromGrid(layer_collection)
     layer_collection = copy.deepcopy(layer_collection)
-    if globals.get('cropping'):
-        final_conv_time = globals.get('final_conv_size')
+    if global_vars.get('cropping'):
+        final_conv_time = global_vars.get('final_conv_size')
     else:
         final_conv_time = 'down_to_one'
     conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
-                           filter_num=globals.get('n_classes'))
+                           filter_num=global_vars.get('n_classes'))
     layer_collection.append(conv_layer)
-    if globals.get('problem') == 'classification':
+    if global_vars.get('problem') == 'classification':
         activation = ActivationLayer('softmax')
         layer_collection.append(activation)
     flatten = FlattenLayer()

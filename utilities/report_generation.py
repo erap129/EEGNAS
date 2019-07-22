@@ -2,7 +2,7 @@ import os
 from collections import defaultdict
 import re
 import pandas as pd
-import globals
+import global_vars
 
 
 def get_base_folder_name(fold_names, first_dataset):
@@ -12,7 +12,7 @@ def get_base_folder_name(fold_names, first_dataset):
     base_folder_name[ind + 1] = 'x'
     base_folder_name = base_folder_name[:end_ind - 1]
     base_folder_name = ''.join(base_folder_name)
-    base_folder_name = add_params_to_name(base_folder_name, globals.get('include_params_folder_name'))
+    base_folder_name = add_params_to_name(base_folder_name, global_vars.get('include_params_folder_name'))
     return base_folder_name
 
 
@@ -58,5 +58,5 @@ def concat_and_pivot_results(fold_names, first_dataset):
 def add_params_to_name(exp_name, multiple_values):
     if multiple_values:
         for mul_val in multiple_values:
-            exp_name += f'_{mul_val}_{globals.get(mul_val)}'
+            exp_name += f'_{mul_val}_{global_vars.get(mul_val)}'
     return exp_name

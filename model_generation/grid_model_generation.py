@@ -11,21 +11,21 @@ from model_generation.simple_model_generation import random_layer
 def generate_conv_layer(layer, in_chans, prev_time):
     if layer.kernel_time == 'down_to_one':
         layer.kernel_time = prev_time
-        layer.filter_num = globals.get('n_classes')
-    if globals.get('channel_dim') == 'channels':
+        layer.filter_num = global_vars.get('n_classes')
+    if global_vars.get('channel_dim') == 'channels':
         layer.kernel_eeg_chan = 1
     return nn.Conv2d(in_chans, layer.filter_num, (layer.kernel_time, layer.kernel_eeg_chan), stride=1)
 
 
 def generate_pooling_layer(layer, in_chans, prev_time):
-    if globals.get('channel_dim') == 'channels':
+    if global_vars.get('channel_dim') == 'channels':
         layer.pool_eeg_chan = 1
     return nn.MaxPool2d(kernel_size=(int(layer.pool_time), int(layer.pool_eeg_chan)),
                                   stride=(int(layer.stride_time), 1))
 
 
 def generate_batchnorm_layer(layer, in_chans, prev_time):
-    return nn.BatchNorm2d(in_chans, momentum=globals.get('batch_norm_alpha'), affine=True, eps=1e-5)
+    return nn.BatchNorm2d(in_chans, momentum=global_vars.get('batch_norm_alpha'), affine=True, eps=1e-5)
 
 
 def generate_activation_layer(layer, in_chans, prev_time):
@@ -34,7 +34,7 @@ def generate_activation_layer(layer, in_chans, prev_time):
 
 
 def generate_dropout_layer(layer, in_chans, prev_time):
-    return nn.Dropout(p=globals.get('dropout_p'))
+    return nn.Dropout(p=global_vars.get('dropout_p'))
 
 
 def generate_identity_layer(layer, in_chans, prev_time):
@@ -46,7 +46,7 @@ def generate_averaging_layer(layer, in_chans, prev_time):
 
 
 def generate_linear_weighted_avg(layer, in_chans, prev_time):
-    return LinearWeightedAvg(globals.get('n_classes'))
+    return LinearWeightedAvg(global_vars.get('n_classes'))
 
 
 def generate_flatten_layer(layer, in_chans, prev_time):
@@ -69,14 +69,14 @@ class ModelFromGrid(torch.nn.Module):
         }
         layers = layer_grid.copy()
         self.pytorch_layers = nn.ModuleDict({})
-        if globals.get('grid_as_ensemble'):
+        if global_vars.get('grid_as_ensemble'):
             self.finalize_grid_network_weighted_avg(layers)
         else:
             self.finalize_grid_network_concatenation(layers)
-        input_chans = globals.get('eeg_chans')
-        input_time = globals.get('input_time_len')
+        input_chans = global_vars.get('eeg_chans')
+        input_time = global_vars.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
-        if globals.get('grid_as_ensemble'):
+        if global_vars.get('grid_as_ensemble'):
             self.final_layer_name = 'output_softmax'
         else:
             self.final_layer_name = 'output_flatten'
@@ -104,8 +104,8 @@ class ModelFromGrid(torch.nn.Module):
             if len(predecessors) == 0:
                 continue
             self.calc_shape_multi(predecessors, node, layers)
-        if globals.get('grid_as_ensemble'):
-            for row in range(globals.get('num_layers')[0]):
+        if global_vars.get('grid_as_ensemble'):
+            for row in range(global_vars.get('num_layers')[0]):
                 init.xavier_uniform_(self.pytorch_layers[f'output_conv_{row}'].weight, gain=1)
                 init.constant_(self.pytorch_layers[f'output_conv_{row}'].bias, 0)
         else:
@@ -113,7 +113,7 @@ class ModelFromGrid(torch.nn.Module):
             init.constant_(self.pytorch_layers['output_conv'].bias, 0)
 
     def finalize_grid_network_weighted_avg(self, layers):
-        for row in range(globals.get('num_layers')[0]):
+        for row in range(global_vars.get('num_layers')[0]):
             layers.add_node(f'output_flatten_{row}')
             layers.nodes[f'output_conv_{row}']['layer'] = ConvLayer(kernel_time='down_to_one')
             layers.nodes[f'output_flatten_{row}']['layer'] = FlattenLayer()
@@ -121,8 +121,8 @@ class ModelFromGrid(torch.nn.Module):
         layers.add_node('averaging_layer')
         layers.add_node('output_softmax')
         layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
-        layers.nodes['averaging_layer']['layer'] = LinearWeightedAvg(globals.get('n_classes'))
-        for row in range(globals.get('num_layers')[0]):
+        layers.nodes['averaging_layer']['layer'] = LinearWeightedAvg(global_vars.get('n_classes'))
+        for row in range(global_vars.get('num_layers')[0]):
             layers.add_edge(f'output_flatten_{row}', 'averaging_layer')
         layers.add_edge('averaging_layer', 'output_softmax')
 
@@ -168,7 +168,7 @@ class ModelFromGrid(torch.nn.Module):
                         to_concat.append(self.tensors[pred])
                 if node != 'averaging_layer':
                     self.tensors[node] = self.pytorch_layers[str(node)](torch.cat(tuple(to_concat), dim=1))
-                if globals.get('grid_as_ensemble'):
+                if global_vars.get('grid_as_ensemble'):
                     if node == 'averaging_layer':
                         self.tensors[node] = self.pytorch_layers[str(node)](*to_concat)
             if node == self.final_layer_name:
@@ -189,8 +189,8 @@ def calc_shape_channels(in_shape, layer):
 
 
 def check_grid_shapes(layer_grid):
-    input_chans = globals.get('eeg_chans')
-    input_time = globals.get('input_time_len')
+    input_chans = global_vars.get('eeg_chans')
+    input_time = global_vars.get('input_time_len')
     input_shape = {'time': input_time, 'chans': input_chans}
     layers = layer_grid.copy()
     layers.nodes['input']['shape'] = input_shape
@@ -221,7 +221,7 @@ def check_legal_grid_model(layer_grid):
         return False
     if not check_grid_shapes(layer_grid):
         return False
-    if not globals.get('grid_as_ensemble'):
+    if not global_vars.get('grid_as_ensemble'):
         if len(list(nx.all_simple_paths(layer_grid, 'input', 'output_conv'))) == 0:
             return False
     return True
@@ -230,13 +230,13 @@ def check_legal_grid_model(layer_grid):
 def random_grid_model(dim):
     layer_grid = nx.create_empty_copy(nx.to_directed(nx.grid_2d_graph(dim[0], dim[1])))
     for node in layer_grid.nodes.values():
-        if globals.get('simple_start'):
+        if global_vars.get('simple_start'):
             node['layer'] = IdentityLayer()
         else:
             node['layer'] = random_layer()
     layer_grid.add_node('input')
     layer_grid.nodes['input']['layer'] = IdentityLayer()
-    if globals.get('grid_as_ensemble'):
+    if global_vars.get('grid_as_ensemble'):
         for row in range(dim[0]):
             layer_grid.add_node(f'output_conv_{row}')
             layer_grid.nodes[f'output_conv_{row}']['layer'] = IdentityLayer()
@@ -250,7 +250,7 @@ def random_grid_model(dim):
         layer_grid.add_edge((0, i), (0, i+1))
     layer_grid.graph['height'] = dim[0]
     layer_grid.graph['width'] = dim[1]
-    if globals.get('parallel_paths_experiment'):
+    if global_vars.get('parallel_paths_experiment'):
         set_parallel_paths(layer_grid)
     if check_legal_grid_model(layer_grid):
         return layer_grid
@@ -268,5 +268,5 @@ def set_parallel_paths(layer_grid):
             layer_grid.nodes[(i,j)]['layer'] = layers[j]
             if j > 0:
                 layer_grid.add_edge((i, j-1), (i, j))
-        if not globals.get('grid_as_ensemble'):
+        if not global_vars.get('grid_as_ensemble'):
             layer_grid.add_edge((i, layer_grid.graph['width'] - 1), 'output_conv')

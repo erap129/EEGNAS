@@ -9,9 +9,9 @@ from models_generation import uniform_model, breed_layers,\
     ConvLayer, ActivationLayer
 from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset, get_normal_settings
 from models_generation import target_model, random_model, random_grid_model
-import globals
+import global_vars
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
-from globals import init_config
+from global_vars import init_config
 from data_preprocessing import DummySignalTarget
 import torch.nn.functional as F
 
@@ -22,33 +22,33 @@ class TestModelGeneration(unittest.TestCase):
         init_config(args.config)
         configs = get_configurations(args.experiment)
         assert(len(configs) == 1)
-        globals.set_config(configs[0])
-        globals.set('eeg_chans', 22)
-        globals.set('num_subjects', 9)
-        globals.set('input_time_len', 1125)
-        globals.set('n_classes', 4)
+        global_vars.set_config(configs[0])
+        global_vars.set('eeg_chans', 22)
+        global_vars.set('num_subjects', 9)
+        global_vars.set('input_time_len', 1125)
+        global_vars.set('n_classes', 4)
         set_params_by_dataset()
-        input_shape = (50, globals.get('eeg_chans'), globals.get('input_time_len'))
+        input_shape = (50, global_vars.get('eeg_chans'), global_vars.get('input_time_len'))
         class Dummy:
             def __init__(self, X, y):
                 self.X = X
                 self.y = y
         dummy_data = Dummy(X=np.ones(input_shape, dtype=np.float32), y=np.ones(50, dtype=np.longlong))
-        self.iterator = BalancedBatchSizeIterator(batch_size=globals.get('batch_size'))
+        self.iterator = BalancedBatchSizeIterator(batch_size=global_vars.get('batch_size'))
         self.loss_function = F.nll_loss
         self.monitors = [LossMonitor(), MisclassMonitor(), GenericMonitor('accuracy', acc_func), RuntimeMonitor()]
-        self.stop_criterion = Or([MaxEpochs(globals.get('max_epochs')),
-                             NoDecrease('valid_misclass', globals.get('max_increase_epochs'))])
+        self.stop_criterion = Or([MaxEpochs(global_vars.get('max_epochs')),
+                                  NoDecrease('valid_misclass', global_vars.get('max_increase_epochs'))])
         self.naiveNAS = NaiveNAS(iterator=self.iterator, exp_folder='../tests', exp_name='',
-                            train_set=dummy_data, val_set=dummy_data, test_set=dummy_data,
-                            stop_criterion=self.stop_criterion, monitors=self.monitors, loss_function=self.loss_function,
-                            config=globals.config, subject_id=1, fieldnames=None,
-                            model_from_file=None)
+                                 train_set=dummy_data, val_set=dummy_data, test_set=dummy_data,
+                                 stop_criterion=self.stop_criterion, monitors=self.monitors, loss_function=self.loss_function,
+                                 config=global_vars.config, subject_id=1, fieldnames=None,
+                                 model_from_file=None)
 
     @staticmethod
     def generate_dummy_data(batch_size):
-        dummy_data = DummySignalTarget(np.random.rand(batch_size, globals.get('eeg_chans'), globals.get('input_time_len')),
-                                 np.random.randint(0, globals.get('n_classes')-1, batch_size))
+        dummy_data = DummySignalTarget(np.random.rand(batch_size, global_vars.get('eeg_chans'), global_vars.get('input_time_len')),
+                                       np.random.randint(0, global_vars.get('n_classes') - 1, batch_size))
         return dummy_data, dummy_data, dummy_data
 
     def test_hash_model_nochange(self):
@@ -64,7 +64,7 @@ class TestModelGeneration(unittest.TestCase):
     def test_hash_model(self):
         model1 = uniform_model(10, ActivationLayer)
         model2 = uniform_model(10, ActivationLayer)
-        globals.set('mutation_rate', 1)
+        global_vars.set('mutation_rate', 1)
         model3, _ = breed_layers(1, model1, model2)
         model_set = []
         genome_set = []
@@ -106,8 +106,8 @@ class TestModelGeneration(unittest.TestCase):
         self.naiveNAS.save_best_model(weighted_population)
 
     def test_save_best_model_grid(self):
-        globals.set('grid', True)
-        globals.set('layer_num', [10, 10])
+        global_vars.set('grid', True)
+        global_vars.set('layer_num', [10, 10])
         weighted_population = [{'model': random_grid_model([10,10])}]
         self.naiveNAS.save_best_model(weighted_population)
 

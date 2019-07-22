@@ -10,7 +10,7 @@ log.setLevel('INFO')
 import sys
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                      level=logging.INFO, stream=sys.stdout)
-import globals
+import global_vars
 from EEGNAS_experiment import set_params_by_dataset
 from data_preprocessing import get_train_val_test, get_ch_names
 from braindecode.torch_ext.util import set_random_seeds
@@ -27,10 +27,10 @@ matplotlib.use('qt5agg')
 
 
 args = parse_args(['-e', 'tests', '-c', '../configurations/config.ini'])
-globals.init_config(args.config)
+global_vars.init_config(args.config)
 configs = get_configurations(args.experiment)
 assert (len(configs) == 1)
-globals.set_config(configs[0])
+global_vars.set_config(configs[0])
 
 subject_id = 1
 low_cut_hz = 0
@@ -38,9 +38,9 @@ fs = 250
 valid_set_fraction = 0.2
 dataset = 'BCI_IV_2a'
 data_folder = '../data/'
-globals.set('dataset', dataset)
+global_vars.set('dataset', dataset)
 set_params_by_dataset()
-globals.set('cuda', True)
+global_vars.set('cuda', True)
 model_select = 'deep4'
 model_dir = '143_x_evolution_layers_cross_subject'
 model_name = 'best_model_9_8_6_7_2_1_3_4_5.th'
@@ -61,12 +61,12 @@ input_time_length = 450
 models = {'evolution': torch.load(f'../models/{model_dir}/{model_name}'),
          'deep4': target_model('deep')}
 model = models[model_select]
-input_time_length = globals.get('input_time_len')
+input_time_length = global_vars.get('input_time_len')
 stop_criterion, iterator, loss_function, monitors = get_normal_settings()
 naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
                     train_set=train_set, val_set=val_set, test_set=test_set,
                     stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                    config=globals.config, subject_id=1, fieldnames=None, strategy='per_subject',
+                    config=global_vars.config, subject_id=1, fieldnames=None, strategy='per_subject',
                     csv_file=None, evolution_file=None)
 naiveNAS.evaluate_model(model)
 
@@ -111,10 +111,10 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 max_abs_val = np.max([np.abs(band['freq_corr']) for band in bands])
 
-fig, axes = plt.subplots(len(bands), globals.get('n_classes'))
+fig, axes = plt.subplots(len(bands), global_vars.get('n_classes'))
 class_names = ['Left Hand', 'Right Hand', 'Feet', 'Tongue']
 for band_i, band in enumerate(bands):
-    for i_class in range(globals.get('n_classes')):
+    for i_class in range(global_vars.get('n_classes')):
         ax = axes[band_i, i_class]
         mne.viz.plot_topomap(band['freq_corr'][:, i_class], positions,
                          vmin=-max_abs_val, vmax=max_abs_val, contours=0,

@@ -1,7 +1,11 @@
 import configparser
 import json
+import os
+import random
+import torch
 from itertools import product, chain
-import globals
+import global_vars
+import numpy as np
 from collections import OrderedDict, defaultdict
 
 
@@ -21,8 +25,8 @@ def config_to_dict(path):
 
 def get_configurations(experiment):
     configurations = []
-    default_config = globals.configs._defaults
-    exp_config = globals.configs._sections[experiment]
+    default_config = global_vars.configs._defaults
+    exp_config = global_vars.configs._sections[experiment]
     for key in default_config.keys():
         default_config[key] = json.loads(default_config[key])
     default_config['exp_name'] = [experiment]
@@ -45,6 +49,12 @@ def get_configurations(experiment):
     return configurations
 
 
+def set_default_config(path):
+    global_vars.init_config(path)
+    configurations = get_configurations('default_exp')
+    global_vars.set_config(configurations[0])
+
+
 def get_multiple_values(configurations):
     multiple_values = []
     value_count = defaultdict(list)
@@ -59,3 +69,47 @@ def get_multiple_values(configurations):
     if 'dataset' in res:
         res.remove('dataset')
     return res
+
+
+def set_params_by_dataset(params_config_path):
+    config_dict = config_to_dict(params_config_path)
+    global_vars.set('num_subjects', config_dict['num_subjects'][global_vars.get('dataset')])
+    global_vars.set('cross_subject_sampling_rate', config_dict['num_subjects'][global_vars.get('dataset')])
+    global_vars.set('eeg_chans', config_dict['eeg_chans'][global_vars.get('dataset')])
+    global_vars.set('input_time_len', config_dict['input_time_len'][global_vars.get('dataset')])
+    global_vars.set('n_classes', config_dict['n_classes'][global_vars.get('dataset')])
+    global_vars.set_if_not_exists('subjects_to_check', config_dict['subjects_to_check'][global_vars.get('dataset')])
+    global_vars.set('evaluation_metrics', config_dict['evaluation_metrics'][global_vars.get('dataset')])
+    global_vars.set('ga_objective', config_dict['ga_objective'][global_vars.get('dataset')])
+    global_vars.set('nn_objective', config_dict['nn_objective'][global_vars.get('dataset')])
+    global_vars.set('frequency', config_dict['frequency'][global_vars.get('dataset')])
+    global_vars.set('problem', config_dict['problem'][global_vars.get('dataset')])
+    if global_vars.get('dataset') == 'Cho':
+        global_vars.set('exclude_subjects', [32, 46, 49])
+    if global_vars.get('ensemble_iterations'):
+        global_vars.set('evaluation_metrics', global_vars.get('evaluation_metrics') + ['raw', 'target'])
+        if not global_vars.get('ensemble_size'):
+            global_vars.set('ensemble_size', int(global_vars.get('pop_size') / 100))
+
+
+def set_seeds():
+    random_seed = global_vars.get('random_seed')
+    if not random_seed:
+        random_seed = random.randint(0, 2**32 - 1)
+        global_vars.set('random_seed', random_seed)
+    random.seed(random_seed)
+    torch.manual_seed(random_seed)
+    if global_vars.get('cuda'):
+        torch.cuda.manual_seed_all(random_seed)
+    np.random.seed(random_seed)
+
+
+def set_gpu():
+    os.environ["CUDA_VISIBLE_DEVICES"] = global_vars.get('gpu_select')
+    try:
+        torch.cuda.current_device()
+        if not global_vars.get('force_gpu_off'):
+            global_vars.set('cuda', True)
+            print(f'set active GPU to {global_vars.get("gpu_select")}')
+    except AssertionError as e:
+        print('no cuda available, using CPU')

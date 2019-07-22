@@ -5,7 +5,7 @@ from collections import OrderedDict
 
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.experiments.loggers import Printer
-import globals
+import global_vars
 from data_preprocessing import get_train_val_test
 
 
@@ -25,7 +25,7 @@ class EEGNAS:
         self.datasets = OrderedDict(
             (('train', train_set), ('valid', val_set), ('test', test_set))
         )
-        self.cuda = globals.get('cuda')
+        self.cuda = global_vars.get('cuda')
         self.loggers = [Printer()]
         self.fieldnames = fieldnames
         self.models_set = []
@@ -36,7 +36,7 @@ class EEGNAS:
             self.current_chosen_population_sample = [self.subject_id]
         else:
             self.current_chosen_population_sample = []
-        self.mutation_rate = globals.get('mutation_rate')
+        self.mutation_rate = global_vars.get('mutation_rate')
 
     def write_to_csv(self, stats, generation, model='avg'):
         if self.csv_file is not None:
@@ -48,14 +48,14 @@ class EEGNAS:
                     subject = str(self.subject_id)
                 for key, value in stats.items():
                     writer.writerow({'exp_name': self.exp_name, 'machine': platform.node(),
-                                    'dataset': globals.get('dataset'), 'date': time.strftime("%d/%m/%Y"),
+                                    'dataset': global_vars.get('dataset'), 'date': time.strftime("%d/%m/%Y"),
                                     'subject': subject, 'generation': str(generation), 'model': str(model),
                                     'param_name': key, 'param_value': value})
 
     def get_single_subj_dataset(self, subject=None, final_evaluation=False):
         if subject not in self.datasets['train'].keys():
             self.datasets['train'][subject], self.datasets['valid'][subject], self.datasets['test'][subject] = \
-                get_train_val_test(globals.get('data_folder'), subject, globals.get('low_cut_hz'))
+                get_train_val_test(global_vars.get('data_folder'), subject, global_vars.get('low_cut_hz'))
         single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
                                            ('valid', self.datasets['valid'][subject]),
                                            ('test', self.datasets['test'][subject])))

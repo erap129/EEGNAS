@@ -14,7 +14,7 @@ from torch import nn
 from torch.nn import init
 import random
 import copy
-import globals
+import global_vars
 from Bio import pairwise2
 from collections import defaultdict
 import networkx as nx
@@ -93,13 +93,13 @@ class ConvLayer(Layer):
     def __init__(self, kernel_eeg_chan=None, kernel_time=None, filter_num=None, name=None):
         Layer.__init__(self, name)
         if kernel_eeg_chan is None:
-            kernel_eeg_chan = random.randint(1, globals.get('kernel_height_max'))
+            kernel_eeg_chan = random.randint(1, global_vars.get('kernel_height_max'))
             # kernel_eeg_chan = random.randint(1, globals.get('eeg_chans'))
         if kernel_time is None:
-            kernel_time = random.randint(1, globals.get('kernel_time_max'))
+            kernel_time = random.randint(1, global_vars.get('kernel_time_max'))
         if filter_num is None:
-            filter_num = random.randint(1, globals.get('filter_num_max'))
-        if globals.get('channel_dim') == 'channels':
+            filter_num = random.randint(1, global_vars.get('filter_num_max'))
+        if global_vars.get('channel_dim') == 'channels':
             kernel_eeg_chan = 1
         self.kernel_eeg_chan = kernel_eeg_chan
         self.kernel_time = kernel_time
@@ -111,9 +111,9 @@ class PoolingLayer(Layer):
     def __init__(self, pool_time=None, stride_time=None, mode='max', stride_eeg_chan=1, pool_eeg_chan=1):
         Layer.__init__(self)
         if pool_time is None:
-            pool_time = random.randint(1, globals.get('pool_time_max'))
+            pool_time = random.randint(1, global_vars.get('pool_time_max'))
         if stride_time is None:
-            stride_time = random.randint(1, globals.get('pool_time_max'))
+            stride_time = random.randint(1, global_vars.get('pool_time_max'))
         self.pool_time = pool_time
         self.stride_time = stride_time
         self.mode = mode
@@ -216,12 +216,12 @@ def network_similarity(layer_collection1, layer_collection2, return_output=False
 
 def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
     model = nn.Sequential()
-    if globals.get('channel_dim') != 'channels' or globals.get('exp_type') == 'target':
+    if global_vars.get('channel_dim') != 'channels' or global_vars.get('exp_type') == 'target':
         model.add_module('dimshuffle', _transpose(shape=[0, 3, 2, 1]))
-    if globals.get('time_factor') != -1:
+    if global_vars.get('time_factor') != -1:
         model.add_module('stack_by_time', Expression(_stack_input_by_time))
     activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
-    input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
     for i in range(len(layer_collection)):
         layer = layer_collection[i]
         if i > 0:
@@ -232,11 +232,11 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
             prev_time = out.cpu().data.numpy().shape[2]
             prev_eeg_channels = out.cpu().data.numpy().shape[3]
         else:
-            prev_eeg_channels = globals.get('eeg_chans')
-            prev_time = globals.get('input_time_len')
+            prev_eeg_channels = global_vars.get('eeg_chans')
+            prev_time = global_vars.get('input_time_len')
             prev_channels = 1
-            if globals.get('channel_dim') == 'channels':
-                prev_channels = globals.get('eeg_chans')
+            if global_vars.get('channel_dim') == 'channels':
+                prev_channels = global_vars.get('eeg_chans')
                 prev_eeg_channels = 1
         if isinstance(layer, PoolingLayer):
             while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
@@ -246,13 +246,13 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.stride_time -= 1
                 if layer.pool_time == 1 and layer.stride_time == 1:
                     break
-            if globals.get('channel_dim') == 'channels':
+            if global_vars.get('channel_dim') == 'channels':
                 layer.pool_eeg_chan = 1
             model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(int(layer.pool_time), int(layer.pool_eeg_chan)),
                                                                       stride=(int(layer.stride_time), 1)))
 
         elif isinstance(layer, ConvLayer):
-            if layer.kernel_time == 'down_to_one' or i >= globals.get('num_layers'):
+            if layer.kernel_time == 'down_to_one' or i >= global_vars.get('num_layers'):
                 layer.kernel_time = prev_time
                 layer.kernel_eeg_chan = prev_eeg_channels
                 conv_name = 'conv_classifier'
@@ -262,7 +262,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.kernel_eeg_chan = prev_eeg_channels
                 if applyFix and layer.kernel_time > prev_time:
                     layer.kernel_time = prev_time
-            if globals.get('channel_dim') == 'channels':
+            if global_vars.get('channel_dim') == 'channels':
                 layer.kernel_eeg_chan = 1
             model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
                                                 (layer.kernel_time, layer.kernel_eeg_chan),
@@ -270,15 +270,15 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
         elif isinstance(layer, BatchNormLayer):
             model.add_module('%s_%d' % (type(layer).__name__, i), nn.BatchNorm2d(prev_channels,
-                                                                momentum=globals.get('batch_norm_alpha'),
-                                                                affine=True, eps=1e-5), )
+                                                                                 momentum=global_vars.get('batch_norm_alpha'),
+                                                                                 affine=True, eps=1e-5), )
 
         elif isinstance(layer, ActivationLayer):
             model.add_module('%s_%d' % (layer.activation_type, i), activations[layer.activation_type]())
 
 
         elif isinstance(layer, DropoutLayer):
-            model.add_module('%s_%d' % (type(layer).__name__, i), nn.Dropout(p=globals.get('dropout_p')))
+            model.add_module('%s_%d' % (type(layer).__name__, i), nn.Dropout(p=global_vars.get('dropout_p')))
 
         elif isinstance(layer, IdentityLayer):
             model.add_module('%s_%d' % (type(layer).__name__, i), IdentityModule())
@@ -298,21 +298,21 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 def generate_conv_layer(layer, in_chans, prev_time):
     if layer.kernel_time == 'down_to_one':
         layer.kernel_time = prev_time
-        layer.filter_num = globals.get('n_classes')
-    if globals.get('channel_dim') == 'channels':
+        layer.filter_num = global_vars.get('n_classes')
+    if global_vars.get('channel_dim') == 'channels':
         layer.kernel_eeg_chan = 1
     return nn.Conv2d(in_chans, layer.filter_num, (layer.kernel_time, layer.kernel_eeg_chan), stride=1)
 
 
 def generate_pooling_layer(layer, in_chans, prev_time):
-    if globals.get('channel_dim') == 'channels':
+    if global_vars.get('channel_dim') == 'channels':
         layer.pool_eeg_chan = 1
     return nn.MaxPool2d(kernel_size=(int(layer.pool_time), int(layer.pool_eeg_chan)),
                                   stride=(int(layer.stride_time), 1))
 
 
 def generate_batchnorm_layer(layer, in_chans, prev_time):
-    return nn.BatchNorm2d(in_chans, momentum=globals.get('batch_norm_alpha'), affine=True, eps=1e-5)
+    return nn.BatchNorm2d(in_chans, momentum=global_vars.get('batch_norm_alpha'), affine=True, eps=1e-5)
 
 
 def generate_activation_layer(layer, in_chans, prev_time):
@@ -321,7 +321,7 @@ def generate_activation_layer(layer, in_chans, prev_time):
 
 
 def generate_dropout_layer(layer, in_chans, prev_time):
-    return nn.Dropout(p=globals.get('dropout_p'))
+    return nn.Dropout(p=global_vars.get('dropout_p'))
 
 
 def generate_identity_layer(layer, in_chans, prev_time):
@@ -333,7 +333,7 @@ def generate_averaging_layer(layer, in_chans, prev_time):
 
 
 def generate_linear_weighted_avg(layer, in_chans, prev_time):
-    return LinearWeightedAvg(globals.get('n_classes'))
+    return LinearWeightedAvg(global_vars.get('n_classes'))
 
 
 def generate_flatten_layer(layer, in_chans, prev_time):
@@ -375,14 +375,14 @@ class ModelFromGrid(torch.nn.Module):
         }
         layers = layer_grid.copy()
         self.pytorch_layers = nn.ModuleDict({})
-        if globals.get('grid_as_ensemble'):
+        if global_vars.get('grid_as_ensemble'):
             self.finalize_grid_network_weighted_avg(layers)
         else:
             self.finalize_grid_network_concatenation(layers)
-        input_chans = globals.get('eeg_chans')
-        input_time = globals.get('input_time_len')
+        input_chans = global_vars.get('eeg_chans')
+        input_time = global_vars.get('input_time_len')
         input_shape = {'time': input_time, 'chans': input_chans}
-        if globals.get('grid_as_ensemble'):
+        if global_vars.get('grid_as_ensemble'):
             self.final_layer_name = 'output_softmax'
         else:
             self.final_layer_name = 'output_flatten'
@@ -410,8 +410,8 @@ class ModelFromGrid(torch.nn.Module):
             if len(predecessors) == 0:
                 continue
             self.calc_shape_multi(predecessors, node, layers)
-        if globals.get('grid_as_ensemble'):
-            for row in range(globals.get('num_layers')[0]):
+        if global_vars.get('grid_as_ensemble'):
+            for row in range(global_vars.get('num_layers')[0]):
                 init.xavier_uniform_(self.pytorch_layers[f'output_conv_{row}'].weight, gain=1)
                 init.constant_(self.pytorch_layers[f'output_conv_{row}'].bias, 0)
         else:
@@ -419,7 +419,7 @@ class ModelFromGrid(torch.nn.Module):
             init.constant_(self.pytorch_layers['output_conv'].bias, 0)
 
     def finalize_grid_network_weighted_avg(self, layers):
-        for row in range(globals.get('num_layers')[0]):
+        for row in range(global_vars.get('num_layers')[0]):
             layers.add_node(f'output_flatten_{row}')
             layers.nodes[f'output_conv_{row}']['layer'] = ConvLayer(kernel_time='down_to_one')
             layers.nodes[f'output_flatten_{row}']['layer'] = FlattenLayer()
@@ -427,8 +427,8 @@ class ModelFromGrid(torch.nn.Module):
         layers.add_node('averaging_layer')
         layers.add_node('output_softmax')
         layers.nodes['output_softmax']['layer'] = ActivationLayer('softmax')
-        layers.nodes['averaging_layer']['layer'] = LinearWeightedAvg(globals.get('n_classes'))
-        for row in range(globals.get('num_layers')[0]):
+        layers.nodes['averaging_layer']['layer'] = LinearWeightedAvg(global_vars.get('n_classes'))
+        for row in range(global_vars.get('num_layers')[0]):
             layers.add_edge(f'output_flatten_{row}', 'averaging_layer')
         layers.add_edge('averaging_layer', 'output_softmax')
 
@@ -474,7 +474,7 @@ class ModelFromGrid(torch.nn.Module):
                         to_concat.append(self.tensors[pred])
                 if node != 'averaging_layer':
                     self.tensors[node] = self.pytorch_layers[str(node)](torch.cat(tuple(to_concat), dim=1))
-                if globals.get('grid_as_ensemble'):
+                if global_vars.get('grid_as_ensemble'):
                     if node == 'averaging_layer':
                         self.tensors[node] = self.pytorch_layers[str(node)](*to_concat)
             if node == self.final_layer_name:
@@ -506,10 +506,10 @@ class MyModel:
 
     @staticmethod
     def _stack_input_by_time(x):
-        if globals.config['DEFAULT']['channel_dim'] == 'one':
-            return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
+        if global_vars.config['DEFAULT']['channel_dim'] == 'one':
+            return x.view(x.shape[0], -1, int(x.shape[2] / global_vars.get('time_factor')), x.shape[3])
         else:
-            return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
+            return x.view(x.shape[0], x.shape[1], int(x.shape[2] / global_vars.get('time_factor')), -1)
 
 
 class _squeeze_final_output(nn.Module):
@@ -534,28 +534,28 @@ class _transpose(nn.Module):
 
 
 def _stack_input_by_time(x):
-    if globals.config['DEFAULT']['channel_dim'] == 'one':
-        return x.view(x.shape[0], -1, int(x.shape[2] / globals.get('time_factor')), x.shape[3])
+    if global_vars.config['DEFAULT']['channel_dim'] == 'one':
+        return x.view(x.shape[0], -1, int(x.shape[2] / global_vars.get('time_factor')), x.shape[3])
     else:
-        return x.view(x.shape[0], x.shape[1], int(x.shape[2] / globals.get('time_factor')), -1)
+        return x.view(x.shape[0], x.shape[1], int(x.shape[2] / global_vars.get('time_factor')), -1)
 
 
 def check_legal_cropping_model(layer_collection):
     finalized_model = finalize_model(layer_collection)
     finalized_model_to_dilated(finalized_model)
     n_preds_per_input = get_n_preds_per_input(finalized_model)
-    n_receptive_field = globals.get('input_time_len') - n_preds_per_input + 1
-    n_preds_per_trial = globals.get('original_input_time_len') - n_receptive_field + 1
+    n_receptive_field = global_vars.get('input_time_len') - n_preds_per_input + 1
+    n_preds_per_trial = global_vars.get('original_input_time_len') - n_receptive_field + 1
     return n_preds_per_trial <= n_preds_per_input * \
-           (math.ceil(globals.get('original_input_time_len') / globals.get('input_time_len')))
+           (math.ceil(global_vars.get('original_input_time_len') / global_vars.get('input_time_len')))
 
 
 def check_legal_model(layer_collection):
-    if globals.get('channel_dim') == 'channels':
+    if global_vars.get('channel_dim') == 'channels':
         input_chans = 1
     else:
-        input_chans = globals.get('eeg_chans')
-    input_time = globals.get('input_time_len')
+        input_chans = global_vars.get('eeg_chans')
+    input_time = global_vars.get('input_time_len')
     for layer in layer_collection:
         if type(layer) == ConvLayer:
             input_time = (input_time - layer.kernel_time) + 1
@@ -566,7 +566,7 @@ def check_legal_model(layer_collection):
         if input_time < 1 or input_chans < 1:
             print(f"illegal model, input_time={input_time}, input_chans={input_chans}")
             return False
-    if globals.get('cropping'):
+    if global_vars.get('cropping'):
         return check_legal_cropping_model(layer_collection)
     return True
 
@@ -599,8 +599,8 @@ def calc_shape_channels(in_shape, layer):
 
 
 def check_grid_shapes(layer_grid):
-    input_chans = globals.get('eeg_chans')
-    input_time = globals.get('input_time_len')
+    input_chans = global_vars.get('eeg_chans')
+    input_time = global_vars.get('input_time_len')
     input_shape = {'time': input_time, 'chans': input_chans}
     layers = layer_grid.copy()
     layers.nodes['input']['shape'] = input_shape
@@ -631,7 +631,7 @@ def check_legal_grid_model(layer_grid):
         return False
     if not check_grid_shapes(layer_grid):
         return False
-    if not globals.get('grid_as_ensemble'):
+    if not global_vars.get('grid_as_ensemble'):
         if len(list(nx.all_simple_paths(layer_grid, 'input', 'output_conv'))) == 0:
             return False
     return True
@@ -683,7 +683,7 @@ def random_layer():
 def random_model(n_layers):
     layer_collection = []
     for i in range(n_layers):
-        if globals.get('simple_start'):
+        if global_vars.get('simple_start'):
             layer_collection.append(IdentityLayer())
         else:
             layer_collection.append(random_layer())
@@ -703,20 +703,20 @@ def set_parallel_paths(layer_grid):
             layer_grid.nodes[(i,j)]['layer'] = layers[j]
             if j > 0:
                 layer_grid.add_edge((i, j-1), (i, j))
-        if not globals.get('grid_as_ensemble'):
+        if not global_vars.get('grid_as_ensemble'):
             layer_grid.add_edge((i, layer_grid.graph['width'] - 1), 'output_conv')
 
 
 def random_grid_model(dim):
     layer_grid = create_empty_copy(nx.to_directed(nx.grid_2d_graph(dim[0], dim[1])))
     for node in layer_grid.nodes.values():
-        if globals.get('simple_start'):
+        if global_vars.get('simple_start'):
             node['layer'] = IdentityLayer()
         else:
             node['layer'] = random_layer()
     layer_grid.add_node('input')
     layer_grid.nodes['input']['layer'] = IdentityLayer()
-    if globals.get('grid_as_ensemble'):
+    if global_vars.get('grid_as_ensemble'):
         for row in range(dim[0]):
             layer_grid.add_node(f'output_conv_{row}')
             layer_grid.nodes[f'output_conv_{row}']['layer'] = IdentityLayer()
@@ -730,7 +730,7 @@ def random_grid_model(dim):
         layer_grid.add_edge((0, i), (0, i+1))
     layer_grid.graph['height'] = dim[0]
     layer_grid.graph['width'] = dim[1]
-    if globals.get('parallel_paths_experiment'):
+    if global_vars.get('parallel_paths_experiment'):
         set_parallel_paths(layer_grid)
     if check_legal_grid_model(layer_grid):
         return layer_grid
@@ -812,43 +812,43 @@ def mutate_layers(model, mutation_rate):
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
     save_weights = False
-    if random.random() < globals.get('breed_rate'):
+    if random.random() < global_vars.get('breed_rate'):
         if cut_point is None:
             cut_point = random.randint(0, len(first_model) - 1)
         for i in range(cut_point):
             second_model[i] = first_model[i]
-        save_weights = globals.get('inherit_weights_crossover') and globals.get('inherit_weights_normal')
+        save_weights = global_vars.get('inherit_weights_crossover') and global_vars.get('inherit_weights_normal')
     this_module = sys.modules[__name__]
-    getattr(this_module, globals.get('mutation_method'))(second_model, mutation_rate)
+    getattr(this_module, global_vars.get('mutation_method'))(second_model, mutation_rate)
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
-        if torch.cuda.device_count() > 1 and globals.get('parallel_gpu'):
+        if torch.cuda.device_count() > 1 and global_vars.get('parallel_gpu'):
             finalized_new_model.cuda()
             with torch.cuda.device(0):
                 finalized_new_model = nn.DataParallel(finalized_new_model.cuda(), device_ids=
-                    [int(s) for s in globals.get('gpu_select').split(',')])
+                    [int(s) for s in global_vars.get('gpu_select').split(',')])
         finalized_new_model_state = finalized_new_model.state_dict()
         if None not in [first_model_state, second_model_state]:
             for i in range(cut_point):
                 add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)
-            for i in range(cut_point+1, globals.get('num_layers')):
+            for i in range(cut_point+1, global_vars.get('num_layers')):
                 add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
     else:
         finalized_new_model_state = None
     if check_legal_model(new_model):
         return new_model, finalized_new_model_state, cut_point
     else:
-        globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+        global_vars.set('failed_breedings', global_vars.get('failed_breedings') + 1)
         return None, None, None
 
 
 def breed_grid(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
-    globals.set('total_breedings', globals.get('total_breedings') + 1)
+    global_vars.set('total_breedings', global_vars.get('total_breedings') + 1)
     child_model = copy.deepcopy(first_model)
     child_model_state = None
 
-    if random.random() < globals.get('breed_rate'):
+    if random.random() < global_vars.get('breed_rate'):
         if cut_point is None:
             cut_point = random.randint(0, first_model.graph['width'] - 1)
         for i in range(first_model.graph['height']):
@@ -867,9 +867,9 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                 for edge in add_edges:
                     child_model.add_edge(edge[0], edge[1])
         if not check_legal_grid_model(child_model):
-            globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+            global_vars.set('failed_breedings', global_vars.get('failed_breedings') + 1)
             return None, None, None
-        if globals.get('inherit_weights_crossover') and first_model_state is not None and second_model_state is not None:
+        if global_vars.get('inherit_weights_crossover') and first_model_state is not None and second_model_state is not None:
             child_model_state = ModelFromGrid(child_model).state_dict()
             inherit_grid_states(first_model.graph['width'], cut_point, child_model_state,
                                 first_model_state, second_model_state)
@@ -879,23 +879,23 @@ def breed_grid(mutation_rate, first_model, second_model, first_model_state=None,
                      'remove_random_connection': remove_random_connection,
                      'add_parallel_connection': add_parallel_connection,
                      'swap_random_layer': swap_random_layer}
-        available_mutations = list(set(mutations.keys()).intersection(set(globals.get('mutations'))))
+        available_mutations = list(set(mutations.keys()).intersection(set(global_vars.get('mutations'))))
         chosen_mutation = mutations[random.choice(available_mutations)]
         chosen_mutation(child_model)
     if check_legal_grid_model(child_model):
         return child_model, child_model_state, cut_point
     else:
-        globals.set('failed_breedings', globals.get('failed_breedings') + 1)
+        global_vars.set('failed_breedings', global_vars.get('failed_breedings') + 1)
         return None, None, None
 
 
 def breed_two_ensembles(breeding_method, mutation_rate, first_ensemble, second_ensemble, first_ensemble_states=None,
                         second_ensemble_states=None, cut_point=None):
     if cut_point is None:
-        if globals.get('grid'):
-            cut_point = random.randint(0, globals.get('num_layers')[1] - 1)
+        if global_vars.get('grid'):
+            cut_point = random.randint(0, global_vars.get('num_layers')[1] - 1)
         else:
-            cut_point = random.randint(0, globals.get('num_layers') - 1)
+            cut_point = random.randint(0, global_vars.get('num_layers') - 1)
     models = []
     states = []
     for m1, m2, s1, s2 in zip(first_ensemble, second_ensemble, first_ensemble_states, second_ensemble_states):
@@ -907,9 +907,9 @@ def breed_two_ensembles(breeding_method, mutation_rate, first_ensemble, second_e
 
 
 def target_model(model_name):
-    input_time_len = globals.get('input_time_len')
-    n_classes = globals.get('n_classes')
-    eeg_chans = globals.get('eeg_chans')
+    input_time_len = global_vars.get('input_time_len')
+    n_classes = global_vars.get('n_classes')
+    eeg_chans = global_vars.get('eeg_chans')
     models = {'deep': deep4.Deep4Net(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
               'shallow': shallow_fbcsp.ShallowFBCSPNet(eeg_chans, n_classes, input_time_len, final_conv_length='auto'),
               'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_time_len, final_conv_length='auto'),
@@ -917,7 +917,7 @@ def target_model(model_name):
               'oh_parkinson': OhParkinson}
     final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2}
     final_conv_sizes = defaultdict(int, final_conv_sizes)
-    globals.set('final_conv_size', final_conv_sizes[model_name])
+    global_vars.set('final_conv_size', final_conv_sizes[model_name])
     if model_name == 'sleep_classifier':
         return models[model_name]
     else:
@@ -926,15 +926,15 @@ def target_model(model_name):
 
 
 def finalize_model(layer_collection):
-    if globals.get('grid'):
+    if global_vars.get('grid'):
         return ModelFromGrid(layer_collection)
     layer_collection = copy.deepcopy(layer_collection)
-    if globals.get('cropping'):
-        final_conv_time = globals.get('final_conv_size')
+    if global_vars.get('cropping'):
+        final_conv_time = global_vars.get('final_conv_size')
     else:
         final_conv_time = 'down_to_one'
     conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
-                           filter_num=globals.get('n_classes'))
+                           filter_num=global_vars.get('n_classes'))
     layer_collection.append(conv_layer)
     activation = ActivationLayer('softmax')
     layer_collection.append(activation)
@@ -947,14 +947,14 @@ def finalized_model_to_dilated(model):
     to_dense_prediction_model(model)
     conv_classifier = model.conv_classifier
     model.conv_classifier = nn.Conv2d(conv_classifier.in_channels, conv_classifier.out_channels,
-                                      (globals.get('final_conv_size'),
+                                      (global_vars.get('final_conv_size'),
                                        conv_classifier.kernel_size[1]), stride=conv_classifier.stride,
                                       dilation=conv_classifier.dilation)
 
 
 def get_n_preds_per_input(model):
     dummy_input = get_dummy_input()
-    if globals.get('cuda'):
+    if global_vars.get('cuda'):
         model.cuda()
         dummy_input = dummy_input.cuda()
     out = model(dummy_input)
@@ -963,14 +963,14 @@ def get_n_preds_per_input(model):
 
 
 def get_dummy_input():
-    input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
     return np_to_var(np.random.random(input_shape).astype(np.float32))
 
 
 class AveragingEnsemble(nn.Module):
     def __init__(self, models):
         super(AveragingEnsemble, self).__init__()
-        self.avg_layer = LinearWeightedAvg(globals.get('n_classes'), globals.get('ensemble_size'), true_avg=True)
+        self.avg_layer = LinearWeightedAvg(global_vars.get('n_classes'), global_vars.get('ensemble_size'), true_avg=True)
         self.models = models
         self.softmax = nn.Softmax()
         self.flatten = _squeeze_final_output()

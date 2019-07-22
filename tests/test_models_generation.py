@@ -8,11 +8,11 @@ from models_generation import uniform_model, breed_layers,\
     breed_grid
 import models_generation
 from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
-import globals
+import global_vars
 from NASUtils import equal_grid_models
 import networkx as nx
 import numpy as np
-from globals import init_config
+from global_vars import init_config
 import matplotlib.pyplot as plt
 from graphviz import Source
 import torch
@@ -24,7 +24,7 @@ class TestModelGeneration(unittest.TestCase):
         init_config(args.config)
         configs = get_configurations('tests')
         assert(len(configs) == 1)
-        globals.set_config(configs[0])
+        global_vars.set_config(configs[0])
         set_params_by_dataset('../configurations/dataset_params.ini')
 
     def test_breed(self):
@@ -60,9 +60,9 @@ class TestModelGeneration(unittest.TestCase):
         assert(len(check_list) == 0)
 
     def test_state_inheritance_breeding(self):
-        globals.set('inherit_breeding_weights', True)
-        globals.set('num_layers', 4)
-        globals.set('mutation_rate', 0)
+        global_vars.set('inherit_breeding_weights', True)
+        global_vars.set('num_layers', 4)
+        global_vars.set('mutation_rate', 0)
         model1 = uniform_model(4, ConvLayer)
         model1_state = finalize_model(model1).state_dict()
         model2 = uniform_model(4, ConvLayer)
@@ -93,7 +93,7 @@ class TestModelGeneration(unittest.TestCase):
             add_random_connection(model)
         model.add_edge('input', (0, 5))
         real_model = models_generation.ModelFromGrid(model)
-        input_shape = (2, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+        input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
         out = real_model.forward(np_to_var(np.ones(input_shape, dtype=np.float32)))
         print(list(nx.topological_sort(model)))
         nx.draw(model, with_labels=True)
@@ -135,13 +135,13 @@ class TestModelGeneration(unittest.TestCase):
 
         # for i in range(100):
         #     add_random_connection(model)
-        input_shape = (60, globals.get('eeg_chans'), globals.get('input_time_len'), 1)
+        input_shape = (60, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
         out = real_model(np_to_var(np.ones(input_shape, dtype=np.float32)))
         s = Source(make_dot(out), filename="test.gv", format="png")
         s.view()
 
     def test_breed_grid(self):
-        globals.set('grid', True)
+        global_vars.set('grid', True)
         layer_grid_1 = models_generation.random_grid_model([5, 5])
         layer_grid_2 = models_generation.random_grid_model([5, 5])
         for node in layer_grid_1.nodes.values():
@@ -212,7 +212,7 @@ class TestModelGeneration(unittest.TestCase):
                 assert child_state[key].equal(model_1_state[key])
 
     def test_grid_equality(self):
-        globals.set('grid', True)
+        global_vars.set('grid', True)
         layer_grid_1 = models_generation.random_grid_model([2, 2])
         layer_grid_2 = models_generation.random_grid_model([2, 2])
         layer_grid_3 = models_generation.random_grid_model([2, 2])
@@ -243,8 +243,8 @@ class TestModelGeneration(unittest.TestCase):
         assert (not equal_grid_models(layer_grid_1, layer_grid_2))
 
     def test_remove_all_edges_from_input(self):
-        globals.set('grid', True)
-        globals.set('parallel_paths_experiment', True)
+        global_vars.set('grid', True)
+        global_vars.set('parallel_paths_experiment', True)
         layer_grid_1 = models_generation.random_grid_model([5, 10])
         layer_grid_1.remove_edge('input', (0, 0))
         layer_grid_1.remove_edge('input', (1, 0))
@@ -262,7 +262,7 @@ class TestModelGeneration(unittest.TestCase):
         model_2_output = model_2_to_conv(training_example)
         regular_avg = (model_1_output + model_2_output) / 2
 
-        linear_avg_layer = models_generation.LinearWeightedAvg(globals.get('n_classes'))
+        linear_avg_layer = models_generation.LinearWeightedAvg(global_vars.get('n_classes'))
         linear_avg_layer.weight_inp1.data = torch.tensor([[0.5, 0.5, 0.5, 0.5]]).view((1,4,1,1))
         linear_avg_layer.weight_inp2.data = torch.tensor([[0.5, 0.5, 0.5, 0.5]]).view((1,4,1,1))
         pytorch_avg = linear_avg_layer.forward(model_1_output, model_2_output)

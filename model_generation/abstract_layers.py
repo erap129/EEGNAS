@@ -1,5 +1,5 @@
 import random
-import globals
+import global_vars
 
 
 class Layer():
@@ -50,13 +50,13 @@ class ConvLayer(Layer):
     def __init__(self, kernel_eeg_chan=None, kernel_time=None, filter_num=None, name=None):
         Layer.__init__(self, name)
         if kernel_eeg_chan is None:
-            kernel_eeg_chan = random.randint(1, globals.get('kernel_height_max'))
+            kernel_eeg_chan = random.randint(1, global_vars.get('kernel_height_max'))
             # kernel_eeg_chan = random.randint(1, globals.get('eeg_chans'))
         if kernel_time is None:
-            kernel_time = random.randint(1, globals.get('kernel_time_max'))
+            kernel_time = random.randint(1, global_vars.get('kernel_time_max'))
         if filter_num is None:
-            filter_num = random.randint(1, globals.get('filter_num_max'))
-        if globals.get('channel_dim') == 'channels':
+            filter_num = random.randint(1, global_vars.get('filter_num_max'))
+        if global_vars.get('channel_dim') == 'channels':
             kernel_eeg_chan = 1
         self.kernel_eeg_chan = kernel_eeg_chan
         self.kernel_time = kernel_time
@@ -68,9 +68,9 @@ class PoolingLayer(Layer):
     def __init__(self, pool_time=None, stride_time=None, mode='max', stride_eeg_chan=1, pool_eeg_chan=1):
         Layer.__init__(self)
         if pool_time is None:
-            pool_time = random.randint(1, globals.get('pool_time_max'))
+            pool_time = random.randint(1, global_vars.get('pool_time_max'))
         if stride_time is None:
-            stride_time = random.randint(1, globals.get('pool_time_max'))
+            stride_time = random.randint(1, global_vars.get('pool_time_max'))
         self.pool_time = pool_time
         self.stride_time = stride_time
         self.mode = mode

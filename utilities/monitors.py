@@ -1,5 +1,5 @@
 import operator
-
+import math
 import numpy as np
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score, mean_squared_error
@@ -7,8 +7,10 @@ from sklearn.preprocessing import LabelBinarizer
 
 
 def mse_func(all_preds, all_trials):
-    return mean_squared_error(all_trials, all_preds)
-
+    try:
+        return mean_squared_error(all_trials.astype(np.float64), all_preds.astype(np.float64))
+    except ValueError:
+        return math.inf
 
 def acc_func(all_pred_labels, all_trial_labels):
     accuracy = np.mean(all_pred_labels == all_trial_labels)
@@ -68,46 +70,49 @@ class GenericMonitor(object):
 
     def monitor_set(self, setname, all_preds, all_losses,
                     all_batch_sizes, all_targets, dataset):
-        all_pred_labels = []
-        all_target_labels = []
-        for i_batch in range(len(all_batch_sizes)):
-            preds = all_preds[i_batch]
-            # preds could be examples x classes x time
-            # or just
-            # examples x classes
-            # make sure not to remove first dimension if it only has size one
-            if preds.ndim > 1:
-                only_one_row = preds.shape[0] == 1
+        if self.measure_func == mse_func:
+            measure = self.measure_func(np.concatenate(all_preds, axis=0), np.concatenate(all_targets, axis=0))
+        else:
+            all_pred_labels = []
+            all_target_labels = []
+            for i_batch in range(len(all_batch_sizes)):
+                preds = all_preds[i_batch]
+                # preds could be examples x classes x time
+                # or just
+                # examples x classes
+                # make sure not to remove first dimension if it only has size one
+                if preds.ndim > 1:
+                    only_one_row = preds.shape[0] == 1
 
-                pred_labels = np.argmax(preds, axis=1).squeeze()
-                # add first dimension again if needed
-                if only_one_row:
-                    pred_labels = pred_labels[None]
-            else:
-                assert self.threshold_for_binary_case is not None, (
-                    "In case of only one output, please supply the "
-                    "threshold_for_binary_case parameter")
-                # binary classification case... assume logits
-                pred_labels = np.int32(preds > self.threshold_for_binary_case)
-            # now examples x time or examples
-            all_pred_labels.extend(pred_labels)
-            targets = all_targets[i_batch]
-            if targets.ndim > pred_labels.ndim:
-                # targets may be one-hot-encoded
-                targets = np.argmax(targets, axis=1)
-            elif targets.ndim < pred_labels.ndim:
-                # targets may not have time dimension,
-                # in that case just repeat targets on time dimension
-                extra_dim = pred_labels.ndim - 1
-                targets = np.repeat(np.expand_dims(targets, extra_dim),
-                                    pred_labels.shape[extra_dim],
-                                    extra_dim)
-            assert targets.shape == pred_labels.shape
-            all_target_labels.extend(targets)
-        all_pred_labels = np.array(all_pred_labels)
-        all_target_labels = np.array(all_target_labels)
-        assert all_pred_labels.shape == all_target_labels.shape
-        measure = self.measure_func(all_pred_labels, all_target_labels)
+                    pred_labels = np.argmax(preds, axis=1).squeeze()
+                    # add first dimension again if needed
+                    if only_one_row:
+                        pred_labels = pred_labels[None]
+                else:
+                    assert self.threshold_for_binary_case is not None, (
+                        "In case of only one output, please supply the "
+                        "threshold_for_binary_case parameter")
+                    # binary classification case... assume logits
+                    pred_labels = np.int32(preds > self.threshold_for_binary_case)
+                # now examples x time or examples
+                all_pred_labels.extend(pred_labels)
+                targets = all_targets[i_batch]
+                if targets.ndim > pred_labels.ndim:
+                    # targets may be one-hot-encoded
+                    targets = np.argmax(targets, axis=1)
+                elif targets.ndim < pred_labels.ndim:
+                    # targets may not have time dimension,
+                    # in that case just repeat targets on time dimension
+                    extra_dim = pred_labels.ndim - 1
+                    targets = np.repeat(np.expand_dims(targets, extra_dim),
+                                        pred_labels.shape[extra_dim],
+                                        extra_dim)
+                assert targets.shape == pred_labels.shape
+                all_target_labels.extend(targets)
+            all_pred_labels = np.array(all_pred_labels)
+            all_target_labels = np.array(all_target_labels)
+            assert all_pred_labels.shape == all_target_labels.shape
+            measure = self.measure_func(all_pred_labels, all_target_labels)
         column_name = "{:s}_{:s}".format(setname, self.measure_name)
         return {column_name: float(measure)}
 

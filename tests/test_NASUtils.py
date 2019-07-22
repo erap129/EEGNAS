@@ -1,7 +1,7 @@
 import unittest
 from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
-import globals
-from globals import init_config
+import global_vars
+from global_vars import init_config
 import NASUtils
 
 
@@ -11,14 +11,14 @@ class TestModelGeneration(unittest.TestCase):
         init_config(args.config)
         configs = get_configurations('tests')
         assert(len(configs) == 1)
-        globals.set_config(configs[0])
+        global_vars.set_config(configs[0])
         set_params_by_dataset()
 
     def test_perm_ensemble_fitness(self):
-        globals.set('pop_size', 10)
-        globals.set('ensemble_size', 2)
-        globals.set('ga_objective', 'accuracy')
-        globals.set('permanent_ensembles', True)
+        global_vars.set('pop_size', 10)
+        global_vars.set('ensemble_size', 2)
+        global_vars.set('ga_objective', 'accuracy')
+        global_vars.set('permanent_ensembles', True)
         dummy_weighted_pop = [{'val_raw': [[1-(1/i), 0, 0, 1/i]], 'val_target': [3]} for i in range(1, 11)]
         old_len = len(dummy_weighted_pop)
         NASUtils.permanent_ensemble_fitness(dummy_weighted_pop)
