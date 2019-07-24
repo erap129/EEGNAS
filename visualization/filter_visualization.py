@@ -5,9 +5,9 @@ from copy import deepcopy
 from braindecode.datautil.splitters import concatenate_sets
 
 from evolution.nn_training import NN_Trainer
-from utilities.config_utils import set_default_config
+from utilities.config_utils import set_default_config, update_global_vars_from_config_dict
 from utilities.misc import concat_train_val_sets
-
+import logging
 sys.path.append("..")
 from NASUtils import evaluate_single_model
 import torch
@@ -24,7 +24,7 @@ from utilities.misc import createFolder
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from visualization.tf_plot import tf_plot, get_tf_data_efficient, subtract_frequency, plot_performance_frequency
+from visualization.wavelet_functions import tf_plot, get_tf_data_efficient, subtract_frequency, plot_performance_frequency
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
 import models_generation
@@ -34,7 +34,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 from EEGNAS_experiment import config_to_dict
 styles = getSampleStyleSheet()
 from collections import OrderedDict, defaultdict
-
+logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
+                    level=logging.DEBUG, stream=sys.stdout)
 matplotlib.use("TkAgg")
 plt.interactive(False)
 img_name_counter = 1
@@ -262,52 +263,54 @@ def frequency_correlation_single_example(pretrained_model, data, discriminating_
     pass
 
 
-def performance_frequency_correlation(pretrained_model, subjects, low_freq,
-                                      high_freq, eval_func, retrain=False):
+def performance_frequency_correlation(pretrained_model, subjects, low_freq, high_freq):
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
-    performances = OrderedDict()
     baselines = OrderedDict()
     if global_vars.get('pure_cross_subject'):
         pure_cross_subj_dataset = {}
-        pure_cross_subj_dataset['train']['pretrain'], pure_cross_subj_dataset['valid']['pretrain'],\
-            pure_cross_subj_dataset['test']['pretrain'] = get_pure_cross_subject(global_vars.get('data_folder'),
+        pure_cross_subj_dataset['train'], pure_cross_subj_dataset['valid'],\
+            pure_cross_subj_dataset['test'] = get_pure_cross_subject(global_vars.get('data_folder'),
                                                                                  global_vars.get('low_cut_hz'))
-        concat_train_val_sets(pure_cross_subj_dataset)
         freq_models = {}
         pure_cross_subj_dataset_copy = deepcopy(pure_cross_subj_dataset)
         for freq in range(low_freq, high_freq + 1):
             pretrained_model_copy = deepcopy(pretrained_model)
-            pure_cross_subj_dataset_copy['train']['pretrain'].X = subtract_frequency(pure_cross_subj_dataset_copy['train']['pretrain'].X,
-                                                                          freq, global_vars.get('frequency'))
-            pure_cross_subj_dataset_copy['test']['pretrain'].X = subtract_frequency(pure_cross_subj_dataset['test']['pretrain'].X, freq,
-                                                                         global_vars.get('frequency'))
+            for section in ['train', 'valid', 'test']:
+                pure_cross_subj_dataset_copy[section].X = subtract_frequency(pure_cross_subj_dataset[section].X,
+                                                                              freq, global_vars.get('frequency'))
             nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-            _, _, model, _, _ = nn_trainer.evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy,
-                                                                     final_evaluation=True)
+            _, _, model, _, _ = nn_trainer.evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy)
             freq_models[freq] = model
+    all_performances = []
+    all_performances_freq = []
     for subject in subjects:
         single_subj_performances = []
+        single_subj_performances_freq = []
         single_subj_dataset = get_dataset(subject)
         baselines[subject] = evaluate_single_model(pretrained_model, single_subj_dataset['test'].X,
                                                      single_subj_dataset['test'].y,
-                                                     eval_func=eval_func)
+                                                     eval_func=get_eval_function())
         for freq in range(low_freq, high_freq+1):
-            single_subj_dataset_copy = deepcopy(single_subj_dataset)
-            perturbed_data = subtract_frequency(single_subj_dataset_copy['test'].X, freq, global_vars.get('frequency'))
-            single_subj_dataset_copy['test'].X = perturbed_data
-            if retrain:
-                pretrained_model_copy = deepcopy(freq_models[freq])
-            else:
-                pretrained_model_copy = deepcopy(pretrained_model)
-            nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-            _, _, pretrained_model_copy, _, _ = nn_trainer.evaluate_model(pretrained_model_copy, single_subj_dataset_copy,
-                                                          final_evaluation=True)
-            single_subj_performances.append(evaluate_single_model(pretrained_model_copy, single_subj_dataset['test'].X,
+            single_subj_dataset_freq = deepcopy(single_subj_dataset)
+            for section in ['train', 'valid', 'test']:
+                single_subj_dataset_freq[section].X = subtract_frequency(single_subj_dataset[section].X,
+                                                                              freq, global_vars.get('frequency'))
+            pretrained_model_copy_freq = deepcopy(freq_models[freq])
+            if global_vars.get('retrain_per_subject'):
+                nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
+                _, _, pretrained_model_copy_freq, _, _ = nn_trainer.evaluate_model(pretrained_model_copy_freq,
+                                                                single_subj_dataset_freq, final_evaluation=True)
+            single_subj_performances.append(evaluate_single_model(pretrained_model, single_subj_dataset_freq['test'].X,
                                                                   single_subj_dataset['test'].y, get_eval_function()))
-        performances[f'subject {subject} performance-frequency'] = single_subj_performances
+            single_subj_performances_freq.append(evaluate_single_model(pretrained_model_copy_freq, single_subj_dataset_freq['test'].X,
+                                                                  single_subj_dataset['test'].y, get_eval_function()))
+        all_performances.append(single_subj_performances)
+        all_performances_freq.append(single_subj_performances_freq)
     baselines['average'] = np.average(list(baselines.values()))
-    performances['average performance-frequency'] = np.average(np.array(list(performances.values())), axis=0)
-    performance_plot_imgs = plot_performance_frequency(performances, baselines)
+    all_performances.append(np.average(all_performances, axis=0))
+    all_performances_freq.append(np.average(all_performances_freq, axis=0))
+    performance_plot_imgs = plot_performance_frequency([all_performances, all_performances_freq], baselines,
+                                                       legend=['no retraining', 'with retraining', 'unperturbed'])
     story = [get_image(tf) for tf in performance_plot_imgs]
     create_pdf_from_story(f'results/{date_time}_{global_vars.get("dataset")}/step6_performance_frequency.pdf', story)
     for tf in performance_plot_imgs:
@@ -335,19 +338,17 @@ def plot_perturbations(naiveNAS, subjects, low_freq, high_freq):
 
 if __name__ == '__main__':
     set_default_config('../configurations/config.ini')
-    global_vars.set('final_max_epochs', 1)
-    global_vars.set('final_max_increase_epochs', 1)
+    global_vars.set('cuda', True)
+    # global_vars.set('final_max_epochs', 1)
+    # global_vars.set('final_max_increase_epochs', 1)
+    # global_vars.set('max_epochs', 1)
+    # global_vars.set('max_increase_epochs', 1)
     config_dict = config_to_dict('visualization_configurations/viz_config.ini')
-    global_vars.set('dataset', config_dict['DEFAULT']['dataset'])
-    global_vars.set('models_dir', config_dict['DEFAULT']['models_dir'])
-    global_vars.set('model_name', config_dict['DEFAULT']['model_name'])
-    global_vars.set('data_folder', config_dict['DEFAULT']['data_folder'])
+    update_global_vars_from_config_dict(config_dict)
     set_params_by_dataset('../configurations/dataset_params.ini')
-    model_selection = 'evolution'
-    cnn_layer = {'evolution': 10, 'deep4': 25}
-    filter_pos = {'evolution': 0, 'deep4': 0}
-    model = {'evolution': torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}'),
-                        'deep4': target_model('deep')}
+    global_vars.set('subjects_to_check', [1])
+    global_vars.set('retrain_per_subject', True)
+    model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
     subject_id = config_dict['DEFAULT']['subject_id']
     train_set = {}
     val_set = {}
@@ -361,7 +362,8 @@ if __name__ == '__main__':
     dataset['train'], dataset['valid'], dataset['test'] = get_train_val_test('../data/', subject_id=subject_id,
                                                                         low_cut_hz=global_vars.get('low_cut_hz'))
     dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
-    _, _, pretrained_model, _, _ = nn_trainer.evaluate_model(model[model_selection], dataset, final_evaluation=True)
+    _, _, pretrained_model, _, _ = nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
+
     now = datetime.now()
     date_time = now.strftime("%m.%d.%Y-%H:%M:%S")
     createFolder(f'results/{date_time}_{global_vars.get("dataset")}')
@@ -372,6 +374,5 @@ if __name__ == '__main__':
     # frequency_correlation_single_example(pretrained_model, test_set[1].X, 10, 1, 40)
     # get_avg_class_tf(train_set, date_time)
     # plot_perturbations(naiveNAS, [1], 1, 40)
-    performance_frequency_correlation(pretrained_model, range(1, global_vars.get('num_subjects') + 1),
-                                      1, 40, acc_func, retrain=True)
+    performance_frequency_correlation(pretrained_model, range(1, global_vars.get('num_subjects') + 1), 1, 40)
 

@@ -1,22 +1,23 @@
 import random
 from collections import defaultdict
+
+from Bio.pairwise2 import format_alignment
+
 from model_generation.abstract_layers import *
 from Bio import pairwise2
 
-from model_generation.abstract_layers import ConvLayer, PoolingLayer
-
 
 def string_representation(layer_collection):
-    translation = {FlattenLayer: 'f',
-                   DropoutLayer: 'd',
-                   BatchNormLayer: 'b',
-                   ConvLayer: 'c',
-                   PoolingLayer: 'p',
-                   ActivationLayer: 'a',
-                   IdentityLayer: 'i'}
+    translation = {'FlattenLayer': 'f',
+                   'DropoutLayer': 'd',
+                   'BatchNormLayer': 'b',
+                   'ConvLayer': 'c',
+                   'PoolingLayer': 'p',
+                   'ActivationLayer': 'a',
+                   'IdentityLayer': 'i'}
     rep = ''
     for layer in layer_collection:
-        rep += translation[type(layer)]
+        rep += translation[type(layer).__name__]
     return rep
 
 
@@ -45,32 +46,29 @@ def layer_comparison(layer_type, layer1_order, layer2_order, layer_collection1, 
     return score
 
 
-def network_similarity(layer_collection1, layer_collection2, return_output=False):
+def network_similarity(layer_collection1, layer_collection2):
     str1 = string_representation(layer_collection1)
     str2 = string_representation(layer_collection2)
     alignment = pairwise2.align.globalms(str1, str2, 2, -1, -.5, -.1)[0]
     output = ['-' * 50]
     output.append(format_alignment(*alignment))
     score = alignment[2]
-    str1_orders = defaultdict(lambda:0)
-    str2_orders = defaultdict(lambda:0)
-    for x,y in (zip(alignment[0], alignment[1])):
-        str1_orders[x] += 1
-        str2_orders[y] += 1
-        if x == y == 'c':
-            score += layer_comparison(ConvLayer, str1_orders['c'], str2_orders['c'],
-                                      layer_collection1, layer_collection2,
-                                      ['kernel_eeg_chan', 'filter_num', 'kernel_time'], output)
-        if x == y == 'p':
-            score += layer_comparison(PoolingLayer, str1_orders['p'], str2_orders['p'],
-                                      layer_collection1, layer_collection2,
-                                      ['pool_time', 'stride_time'], output)
-    output.append(f"final similarity: {score:.3f}")
-    output.append('-' * 50)
-    if return_output:
-        return score, '\n'.join(output)
-    else:
-        return score
+    # str1_orders = defaultdict(lambda:0)
+    # str2_orders = defaultdict(lambda:0)
+    # for x,y in (zip(alignment[0], alignment[1])):
+    #     str1_orders[x] += 1
+    #     str2_orders[y] += 1
+    #     if x == y == 'c':
+    #         score += layer_comparison(ConvLayer, str1_orders['c'], str2_orders['c'],
+    #                                   layer_collection1, layer_collection2,
+    #                                   ['kernel_eeg_chan', 'filter_num', 'kernel_time'], output)
+    #     if x == y == 'p':
+    #         score += layer_comparison(PoolingLayer, str1_orders['p'], str2_orders['p'],
+    #                                   layer_collection1, layer_collection2,
+    #                                   ['pool_time', 'stride_time'], output)
+    # output.append(f"final similarity: {score:.3f}")
+    # output.append('-' * 50)
+    return score
 
 
 def calculate_population_similarity(layer_collections, evolution_file, sim_count):

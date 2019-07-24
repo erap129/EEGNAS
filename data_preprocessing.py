@@ -393,6 +393,19 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     return train_set, valid_set, test_set
 
 
+def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
+    X = np.load(f"{data_folder}netflow/asflow/X_asflow_{global_vars.get('input_time_len')}_steps_"
+                f"{global_vars.get('steps_ahead')}_ahead.npy")
+    y = np.load(f"{data_folder}netflow/asflow/y_asflow_{global_vars.get('input_time_len')}_steps_"
+                f"{global_vars.get('steps_ahead')}_ahead.npy")
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
+
+
 def get_tuh_train_val_test(data_folder):
     preproc_functions = create_preproc_functions(
         sec_to_cut_at_start=global_vars.get('sec_to_cut_at_start'),
@@ -482,10 +495,12 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
         return get_tuh_train_val_test(data_folder)
     elif global_vars.get('dataset') == 'netflow':
         return get_netflow_train_val_test(data_folder, n_sequences=global_vars.get('n_classes'))
+    elif global_vars.get('dataset') == 'netflow_asflow':
+        return get_netflow_asflow_train_val_test(data_folder)
 
 
 def get_dataset(subject_id):
     dataset = {}
-    dataset['train'][subject_id], dataset['valid'][subject_id], dataset['test'][subject_id] =\
+    dataset['train'], dataset['valid'], dataset['test'] =\
         get_train_val_test(global_vars.get('data_folder'), subject_id, global_vars.get('low_cut_hz'))
     return dataset

@@ -76,8 +76,8 @@ def set_params_by_dataset(params_config_path):
     global_vars.set('num_subjects', config_dict['num_subjects'][global_vars.get('dataset')])
     global_vars.set('cross_subject_sampling_rate', config_dict['num_subjects'][global_vars.get('dataset')])
     global_vars.set('eeg_chans', config_dict['eeg_chans'][global_vars.get('dataset')])
-    global_vars.set('input_time_len', config_dict['input_time_len'][global_vars.get('dataset')])
-    global_vars.set('n_classes', config_dict['n_classes'][global_vars.get('dataset')])
+    global_vars.set_if_not_exists('input_time_len', config_dict['input_time_len'][global_vars.get('dataset')])
+    global_vars.set_if_not_exists('n_classes', config_dict['n_classes'][global_vars.get('dataset')])
     global_vars.set_if_not_exists('subjects_to_check', config_dict['subjects_to_check'][global_vars.get('dataset')])
     global_vars.set('evaluation_metrics', config_dict['evaluation_metrics'][global_vars.get('dataset')])
     global_vars.set('ga_objective', config_dict['ga_objective'][global_vars.get('dataset')])
@@ -113,3 +113,9 @@ def set_gpu():
             print(f'set active GPU to {global_vars.get("gpu_select")}')
     except AssertionError as e:
         print('no cuda available, using CPU')
+
+
+def update_global_vars_from_config_dict(config_dict):
+    for key, inner_dict in config_dict.items():
+        for inner_key, inner_value in inner_dict.items():
+            global_vars.set(inner_key, inner_value)
