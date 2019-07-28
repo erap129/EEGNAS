@@ -2,36 +2,39 @@ import os
 import sys
 from copy import deepcopy
 
-from braindecode.datautil.splitters import concatenate_sets
+from utilities.data_utils import prepare_data_for_NN
+from visualization.deconvolution import DeconvNet, ConvDeconvNet
 
-from evolution.nn_training import NN_Trainer
-from utilities.config_utils import set_default_config, update_global_vars_from_config_dict
-from utilities.misc import concat_train_val_sets
-import logging
 sys.path.append("..")
+from evolution.nn_training import NN_Trainer
+from braindecode.datautil.splitters import concatenate_sets
+from utilities.config_utils import set_default_config, update_global_vars_from_config_dict
+from utilities.misc import concat_train_val_sets, unify_dataset
+import logging
+from visualization.dsp_functions import butter_bandstop_filter, butter_bandpass_filter
+from visualization.signal_plotting import plot_performance_frequency, tf_plot
 from NASUtils import evaluate_single_model
 import torch
 from braindecode.torch_ext.util import np_to_var
-from models_generation import target_model
 import global_vars
 from torch import nn
 from data_preprocessing import get_train_val_test, get_pure_cross_subject, get_dataset
 from EEGNAS_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
 import matplotlib
-from utilities.monitors import kappa_func, acc_func, get_eval_function
+from utilities.monitors import get_eval_function
 from utilities.misc import createFolder
 from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
-from visualization.wavelet_functions import tf_plot, get_tf_data_efficient, subtract_frequency, plot_performance_frequency
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+from visualization.wavelet_functions import get_tf_data_efficient, subtract_frequency
 from datetime import datetime
 import models_generation
 from reportlab.platypus import Paragraph
 from visualization.pdf_utils import get_image
 from reportlab.lib.styles import getSampleStyleSheet
 from EEGNAS_experiment import config_to_dict
+from utilities.misc import label_by_idx
 styles = getSampleStyleSheet()
 from collections import OrderedDict, defaultdict
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
@@ -82,61 +85,27 @@ def get_intermediate_act_map(data, select_layer, model):
     return act_map_avg
 
 
-def plot_tensors(tensor, title, num_cols=8):
-    global img_name_counter
-    tensor = np.swapaxes(tensor, 1, 2)
-    if not tensor.ndim==4:
-        raise Exception("assumes a 4D tensor")
-    num_kernels = tensor.shape[0]
-    num_rows = 1 + num_kernels // num_cols
-    fig = plt.figure(figsize=(num_cols, num_rows))
-    for i in range(tensor.shape[0]):
-        ax1 = fig.add_subplot(num_rows, num_cols, i+1)
-        im = ax1.imshow(tensor[i].squeeze(axis=2), cmap='gray')
-        ax1.axis('off')
-        ax1.set_xticklabels([])
-        ax1.set_yticklabels([])
-    fig.suptitle(f'{title}, Tensor shape: {tensor.shape}')
-    fig.subplots_adjust(right=0.8)
-    cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    fig.colorbar(im, cax=cbar_ax)
-    plt.subplots_adjust(wspace=0.1, hspace=0.1)
-    img_name = f'temp/{img_name_counter}.png'
-    plt.savefig(f'{img_name}')
-    plt.close('all')
-    img_name_counter += 1
-    return img_name
-
-
-def plot_one_tensor(tensor, title):
-    global img_name_counter
-    if not tensor.ndim == 2:
-        raise Exception("assumes a 2D tensor")
-    plt.figure()
-    ax = plt.gca()
-    im = ax.imshow(tensor.swapaxes(0,1), cmap='gray')
-    ax.axis('off')
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(im, cax=cax)
-    ax.set_title(f'{title}, Tensor shape: {tensor.shape}')
-    img_name = f'temp/{img_name_counter}.png'
-    plt.savefig(img_name, bbox_inches='tight')
-    plt.close('all')
-    img_name_counter += 1
-    return img_name
-
-
-def plot_all_kernels_to_pdf(pretrained_model, date_time):
-    img_paths = []
-    for index, layer in enumerate(list(pretrained_model.children())):
+def plot_all_kernel_deconvolutions(model, conv_deconv, dataset, date_time, eeg_chans=None):
+    if eeg_chans is None:
+        eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
+    tf_plots = []
+    class_examples = []
+    for class_idx in range(global_vars.get('n_classes')):
+        class_examples.append(dataset['train'].X[np.where(dataset['train'].y == class_idx)])
+    for layer_idx, layer in enumerate(model.children()):
         if type(layer) == nn.Conv2d:
-            im = plot_tensors(layer.weight.detach().cpu().numpy(), f'Layer {index}')
-            img_paths.append(im)
-    create_pdf(f'results/{date_time}_{global_vars.get("dataset")}/step1_all_kernels.pdf', img_paths)
-    for im in img_paths:
+            for filter_idx in range(layer.out_channels):
+                for class_idx, examples in enumerate(class_examples):
+                    X = prepare_data_for_NN(examples)
+                    reconstruction = conv_deconv.forward(X, layer_idx, filter_idx)
+                    subj_tfs = []
+                    for eeg_chan in eeg_chans:
+                        subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),
+                                                              eeg_chan, global_vars.get('frequency')))
+                    tf_plots.append(tf_plot(subj_tfs, f'kernel deconvolution for layer {layer_idx},'
+                                            f' filter {filter_idx}, class {label_by_idx(class_idx)}'))
+    create_pdf(f'results/{date_time}_{global_vars.get("dataset")}/step1_all_kernels.pdf', tf_plots)
+    for im in tf_plots:
         os.remove(im)
 
 
@@ -263,24 +232,27 @@ def frequency_correlation_single_example(pretrained_model, data, discriminating_
     pass
 
 
+def pretrain_model_on_filtered_data(low_freq, high_freq):
+    pure_cross_subj_dataset = {}
+    pure_cross_subj_dataset['train'], pure_cross_subj_dataset['valid'], \
+    pure_cross_subj_dataset['test'] = get_pure_cross_subject(global_vars.get('data_folder'))
+    freq_models = {}
+    pure_cross_subj_dataset_copy = deepcopy(pure_cross_subj_dataset)
+    for freq in range(low_freq, high_freq + 1):
+        pretrained_model_copy = deepcopy(pretrained_model)
+        for section in ['train', 'valid', 'test']:
+            global_vars.get('band_filter')(pure_cross_subj_dataset_copy[section].X, max(1, freq - 1), freq + 1,
+                                           global_vars.get('frequency'))
+        nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
+        _, _, model, _, _ = nn_trainer.evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy)
+        freq_models[freq] = model
+    return freq_models
+
+
 def performance_frequency_correlation(pretrained_model, subjects, low_freq, high_freq):
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     baselines = OrderedDict()
-    if global_vars.get('pure_cross_subject'):
-        pure_cross_subj_dataset = {}
-        pure_cross_subj_dataset['train'], pure_cross_subj_dataset['valid'],\
-            pure_cross_subj_dataset['test'] = get_pure_cross_subject(global_vars.get('data_folder'),
-                                                                                 global_vars.get('low_cut_hz'))
-        freq_models = {}
-        pure_cross_subj_dataset_copy = deepcopy(pure_cross_subj_dataset)
-        for freq in range(low_freq, high_freq + 1):
-            pretrained_model_copy = deepcopy(pretrained_model)
-            for section in ['train', 'valid', 'test']:
-                pure_cross_subj_dataset_copy[section].X = subtract_frequency(pure_cross_subj_dataset[section].X,
-                                                                              freq, global_vars.get('frequency'))
-            nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-            _, _, model, _, _ = nn_trainer.evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy)
-            freq_models[freq] = model
+    freq_models = pretrain_model_on_filtered_data(low_freq, high_freq)
     all_performances = []
     all_performances_freq = []
     for subject in subjects:
@@ -293,8 +265,8 @@ def performance_frequency_correlation(pretrained_model, subjects, low_freq, high
         for freq in range(low_freq, high_freq+1):
             single_subj_dataset_freq = deepcopy(single_subj_dataset)
             for section in ['train', 'valid', 'test']:
-                single_subj_dataset_freq[section].X = subtract_frequency(single_subj_dataset[section].X,
-                                                                              freq, global_vars.get('frequency'))
+                global_vars.get('band_filter')(single_subj_dataset_freq[section].X, max(1, freq - 1), freq + 1,
+                                                                             global_vars.get('frequency'))
             pretrained_model_copy_freq = deepcopy(freq_models[freq])
             if global_vars.get('retrain_per_subject'):
                 nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
@@ -317,18 +289,19 @@ def performance_frequency_correlation(pretrained_model, subjects, low_freq, high
         os.remove(tf)
 
 
-def plot_perturbations(naiveNAS, subjects, low_freq, high_freq):
+def plot_perturbations(subjects, low_freq, high_freq):
     eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     tf_plots = []
     for subject in subjects:
-        single_subj_dataset_orig = naiveNAS.get_single_subj_dataset(subject, final_evaluation=True)
+        single_subj_dataset_orig = unify_dataset(get_dataset(subject))
         for frequency in range(low_freq, high_freq+1):
             single_subj_dataset = deepcopy(single_subj_dataset_orig)
-            perturbed_data = subtract_frequency(single_subj_dataset['test'].X, frequency, global_vars.get('frequency'))
-            single_subj_dataset['test'].X = perturbed_data
+            perturbed_data = global_vars.get('band_filter')(single_subj_dataset.X,
+                               max(1, frequency - 1), frequency + 1, global_vars.get('frequency'))
+            single_subj_dataset.X = perturbed_data
             subj_tfs = []
             for eeg_chan in eeg_chans:
-                subj_tfs.append(get_tf_data_efficient(single_subj_dataset['test'].X, eeg_chan, global_vars.get('frequency')))
+                subj_tfs.append(get_tf_data_efficient(single_subj_dataset.X, eeg_chan, global_vars.get('frequency')))
             tf_plots.append(tf_plot(subj_tfs, f'average TF for subject {subject}, frequency {frequency} removed'))
     story = [get_image(tf) for tf in tf_plots]
     create_pdf_from_story(f'results/{date_time}_{global_vars.get("dataset")}/step7_frequency_removal_plot.pdf', story)
@@ -339,40 +312,42 @@ def plot_perturbations(naiveNAS, subjects, low_freq, high_freq):
 if __name__ == '__main__':
     set_default_config('../configurations/config.ini')
     global_vars.set('cuda', True)
-    # global_vars.set('final_max_epochs', 1)
-    # global_vars.set('final_max_increase_epochs', 1)
-    # global_vars.set('max_epochs', 1)
-    # global_vars.set('max_increase_epochs', 1)
     config_dict = config_to_dict('visualization_configurations/viz_config.ini')
     update_global_vars_from_config_dict(config_dict)
+    global_vars.set('band_filter', {'pass': butter_bandpass_filter,
+                                    'stop': butter_bandstop_filter}[global_vars.get('band_filter')])
     set_params_by_dataset('../configurations/dataset_params.ini')
     global_vars.set('subjects_to_check', [1])
     global_vars.set('retrain_per_subject', True)
     model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
+
     subject_id = config_dict['DEFAULT']['subject_id']
-    train_set = {}
-    val_set = {}
-    test_set = {}
-    train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
-        get_train_val_test(global_vars.get('data_folder'), subject_id, global_vars.get('low_cut_hz'))
+    dataset = get_dataset(subject_id)
+    concat_train_val_sets(dataset)
+    model.cuda()
+    # print(model)
+    conv_deconv = ConvDeconvNet(model)
+    # X = prepare_data_for_NN(train_set[1].X)
+    # reconstruction = conv_deconv.forward(X, layer_idx=8, filter_idx=20)
+    # subj_tf = get_tf_data_efficient(reconstruction.cpu().detach().numpy(), 1, global_vars.get('frequency'))
+    # tf_plot([subj_tf], 'test')
 
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-    dataset = {}
-    dataset['train'], dataset['valid'], dataset['test'] = get_train_val_test('../data/', subject_id=subject_id,
-                                                                        low_cut_hz=global_vars.get('low_cut_hz'))
-    dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
-    _, _, pretrained_model, _, _ = nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
+    # dataset = {}
+    # dataset['train'], dataset['valid'], dataset['test'] = get_train_val_test('../data/', subject_id=subject_id)
+    # dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
+    # _, _, pretrained_model, _, _ = nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
 
     now = datetime.now()
     date_time = now.strftime("%m.%d.%Y-%H:%M:%S")
     createFolder(f'results/{date_time}_{global_vars.get("dataset")}')
-    # plot_all_kernels_to_pdf(pretrained_model, date_time)
+    plot_all_kernel_deconvolutions(model, conv_deconv, dataset, date_time)
     # plot_avg_activation_maps(pretrained_model, train_set, date_time)
     # find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
     # create_optimal_samples_per_filter(pretrained_model, date_time, steps=500, layer_idx_cutoff=10)
     # frequency_correlation_single_example(pretrained_model, test_set[1].X, 10, 1, 40)
     # get_avg_class_tf(train_set, date_time)
-    # plot_perturbations(naiveNAS, [1], 1, 40)
-    performance_frequency_correlation(pretrained_model, range(1, global_vars.get('num_subjects') + 1), 1, 40)
+    # plot_perturbations([1], 1, 40)
+    # performance_frequency_correlation(pretrained_model, range(1, global_vars.get('num_subjects') + 1), 1, 40)
 

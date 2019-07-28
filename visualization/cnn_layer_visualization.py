@@ -122,7 +122,7 @@ if __name__ == '__main__':
     val_set = {}
     test_set = {}
     train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
-        get_train_val_test(global_vars.get('data_folder'), subject_id, global_vars.get('low_cut_hz'))
+        get_train_val_test(global_vars.get('data_folder'), subject_id)
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
                         train_set=train_set, val_set=val_set, test_set=test_set,

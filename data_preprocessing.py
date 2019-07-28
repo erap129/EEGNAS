@@ -323,20 +323,20 @@ def get_human_activity_train_val_test(data_folder, subject_id):
     return train_set, valid_set, test_set
 
 
-def get_mental_imagery_long_words(data_folder, subject_id):
-    long_word_files = [f for f in os.listdir(f'{data_folder}MentalImagery/LongWords') if
-                       os.path.isfile(f'{data_folder}MentalImagery/LongWords/{f}')]
+def get_mental_imagery(data_folder, sub_dataset, subject_id):
+    dataset_files = [f for f in os.listdir(f'{data_folder}MentalImagery/{sub_dataset}') if
+                       os.path.isfile(f'{data_folder}MentalImagery/{sub_dataset}/{f}')]
     selected_file = ''
-    for subj_file in long_word_files:
+    for subj_file in dataset_files:
         if f'sub_{subject_id}' in subj_file:
-            selected_file = f'{data_folder}MentalImagery/LongWords/{subj_file}'
+            selected_file = f'{data_folder}MentalImagery/{sub_dataset}/{subj_file}'
     data = scipy.io.loadmat(selected_file)['eeg_data_wrt_task_rep_no_eog_256Hz_last_beep']
     X = []
     y = []
     cls_idx = 0
     for cls_examples in data:
         for example in cls_examples:
-            X.append(example)
+            X.append(example[:64])
             y.append(cls_idx)
         cls_idx += 1
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.1)
@@ -394,10 +394,13 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
 
 
 def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
+    if global_vars.get('no_shuffle'):
+        shuffle = False
     X = np.load(f"{data_folder}netflow/asflow/X_asflow_{global_vars.get('input_time_len')}_steps_"
                 f"{global_vars.get('steps_ahead')}_ahead.npy")
     y = np.load(f"{data_folder}netflow/asflow/y_asflow_{global_vars.get('input_time_len')}_steps_"
                 f"{global_vars.get('steps_ahead')}_ahead.npy")
+    global_vars.set('n_classes', global_vars.get('steps_ahead'))
     X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     train_set = DummySignalTarget(X_train, y_train)
@@ -447,7 +450,7 @@ def get_tuh_train_val_test(data_folder):
     return train_set, valid_set, test_set
 
 
-def get_pure_cross_subject(data_folder, low_cut_hz):
+def get_pure_cross_subject(data_folder):
     train_x = []
     val_x = []
     test_x = []
@@ -455,7 +458,7 @@ def get_pure_cross_subject(data_folder, low_cut_hz):
     val_y = []
     test_y = []
     for subject_id in global_vars.get('subjects_to_check'):
-        train_set, valid_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
+        train_set, valid_set, test_set = get_train_val_test(data_folder, subject_id)
         train_x.append(train_set.X)
         val_x.append(valid_set.X)
         test_x.append(test_set.X)
@@ -468,11 +471,11 @@ def get_pure_cross_subject(data_folder, low_cut_hz):
     return train_set, valid_set, test_set
 
 
-def get_train_val_test(data_folder, subject_id, low_cut_hz):
+def get_train_val_test(data_folder, subject_id):
     if global_vars.get('dataset') == 'BCI_IV_2a':
-        return get_bci_iv_2a_train_val_test(f"{data_folder}BCI_IV/", subject_id, low_cut_hz)
+        return get_bci_iv_2a_train_val_test(f"{data_folder}BCI_IV/", subject_id, global_vars.get('low_cut_hz'))
     elif global_vars.get('dataset') == 'HG':
-        return get_hg_train_val_test(f"{data_folder}HG/", subject_id, low_cut_hz)
+        return get_hg_train_val_test(f"{data_folder}HG/", subject_id, global_vars.get('low_cut_hz'))
     elif global_vars.get('dataset') == 'NER15':
         return get_ner_train_val_test(data_folder)
     elif global_vars.get('dataset') == 'Cho':
@@ -490,7 +493,9 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
     elif global_vars.get('dataset') == 'SonarSub':
         return get_sonarsub_train_val_test(data_folder)
     elif global_vars.get('dataset') == 'MentalImageryLongWords':
-        return get_mental_imagery_long_words(data_folder, subject_id)
+        return get_mental_imagery(data_folder, "LongWords", subject_id)
+    elif global_vars.get('dataset') == 'MentalImageryVowels':
+        return get_mental_imagery(data_folder, "Vowels", subject_id)
     elif global_vars.get('dataset') == 'TUH':
         return get_tuh_train_val_test(data_folder)
     elif global_vars.get('dataset') == 'netflow':
@@ -501,6 +506,11 @@ def get_train_val_test(data_folder, subject_id, low_cut_hz):
 
 def get_dataset(subject_id):
     dataset = {}
-    dataset['train'], dataset['valid'], dataset['test'] =\
-        get_train_val_test(global_vars.get('data_folder'), subject_id, global_vars.get('low_cut_hz'))
+    if subject_id == 'all':
+        dataset['train'], dataset['valid'], dataset['test'] = \
+            get_pure_cross_subject(global_vars.get('data_folder'))
+    else:
+        dataset['train'], dataset['valid'], dataset['test'] =\
+            get_train_val_test(global_vars.get('data_folder'), subject_id)
+
     return dataset

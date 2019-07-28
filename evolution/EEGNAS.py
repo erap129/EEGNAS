@@ -55,7 +55,7 @@ class EEGNAS:
     def get_single_subj_dataset(self, subject=None, final_evaluation=False):
         if subject not in self.datasets['train'].keys():
             self.datasets['train'][subject], self.datasets['valid'][subject], self.datasets['test'][subject] = \
-                get_train_val_test(global_vars.get('data_folder'), subject, global_vars.get('low_cut_hz'))
+                get_train_val_test(global_vars.get('data_folder'), subject)
         single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
                                            ('valid', self.datasets['valid'][subject]),
                                            ('test', self.datasets['test'][subject])))

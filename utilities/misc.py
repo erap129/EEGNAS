@@ -1,8 +1,12 @@
+import datetime
 import os
 from copy import deepcopy
 import logging
-
+import numpy as np
 from braindecode.datautil.splitters import concatenate_sets
+
+import global_vars
+from data_preprocessing import get_train_val_test, get_dataset
 
 log = logging.getLogger(__name__)
 import math
@@ -94,7 +98,7 @@ class RememberBest(object):
 def label_by_idx(idx):
     labels = {'BCI_IV_2a': ['Left Hand', 'Right Hand', 'Foot', 'Tongue'],
               'BCI_IV_2b': ['Left Hand', 'Right Hand']}
-    return labels[globals.get('dataset')][idx]
+    return labels[global_vars.get('dataset')][idx]
 
 
 def chunks(l, n):
@@ -121,3 +125,29 @@ def get_oper_by_loss_function(loss_func, equals=False):
 
 def concat_train_val_sets(dataset):
     dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
+
+
+def unify_dataset(dataset):
+    return concatenate_sets([dataset['train'], dataset['valid'], dataset['test']])
+
+
+def export_dataset_to_file(data_folder, dataset_name, subject_id, channel_pos='first'):
+    global_vars.set('dataset', dataset_name)
+    dataset = get_dataset(subject_id=subject_id)
+    concat_train_val_sets(dataset)
+    if dataset['train'].X.ndim == 3:
+        dataset['train'].X = dataset['train'].X[:, :, :, None]
+        dataset['test'].X = dataset['test'].X[:, :, :, None]
+    now = datetime.datetime.now()
+    date_time = now.strftime("%m.%d.%Y-%H:%M")
+    folder_name = f'{data_folder}/exported_data/{dataset_name}_{date_time}'
+    createFolder(folder_name)
+    if channel_pos == 'last':
+        dataset['train'].X = dataset['train'].X.swapaxes(1, 3).swapaxes(1, 2)
+        dataset['test'].X = dataset['test'].X.swapaxes(1, 3).swapaxes(1, 2)
+    np.save(f'{folder_name}/{dataset_name}_X_train', dataset['train'].X)
+    np.save(f'{folder_name}/{dataset_name}_X_test', dataset['test'].X)
+    np.save(f'{folder_name}/{dataset_name}_y_train', dataset['train'].y)
+    np.save(f'{folder_name}/{dataset_name}_y_test', dataset['test'].y)
+
+

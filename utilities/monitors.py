@@ -14,6 +14,7 @@ def mse_func(all_preds, all_trials):
     except ValueError:
         return math.inf
 
+
 def acc_func(all_pred_labels, all_trial_labels):
     accuracy = np.mean(all_pred_labels == all_trial_labels)
     return accuracy

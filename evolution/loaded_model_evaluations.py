@@ -28,7 +28,7 @@ class EEGNAS_from_file(EEGNAS):
             model = target_model(global_vars.get('model_name'))
         if global_vars.get('target_pretrain'):
             self.datasets['train']['pretrain'], self.datasets['valid']['pretrain'], self.datasets['test']['pretrain'] = \
-                get_pure_cross_subject(global_vars.get('data_folder'), global_vars.get('low_cut_hz'))
+                get_pure_cross_subject(global_vars.get('data_folder'))
             nn_trainer = NN_Trainer(self.iterator, self.loss_function, self.stop_criterion, self.monitors)
             dataset = self.get_single_subj_dataset('pretrain', final_evaluation=False)
             _, _, model, _, _ = nn_trainer.evaluate_model(model, dataset)

@@ -114,7 +114,7 @@ def garbage_time():
     val_set = {}
     test_set = {}
     train_set[1], val_set[1], test_set[1] = \
-        get_train_val_test(data_folder, 1, 0)
+        get_train_val_test(data_folder, 1)
     garbageNAS = NaiveNAS(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                           train_set=train_set, val_set=val_set, test_set=test_set,
                           stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
@@ -145,7 +145,7 @@ def target_exp(stop_criterion, iterator, loss_function, model_from_file=None, wr
                 not_exclusively_in(subject_id, model_from_file):
             continue
         train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
-            get_train_val_test(data_folder, subject_id, low_cut_hz)
+            get_train_val_test(data_folder, subject_id)
         eegnas_from_file = EEGNAS_from_file(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
@@ -167,10 +167,10 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
         test_set = {}
         if global_vars.get('pure_cross_subject'):
             train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
-                get_pure_cross_subject(data_folder, low_cut_hz)
+                get_pure_cross_subject(data_folder)
         else:
             train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
-                get_train_val_test(data_folder, subject_id, low_cut_hz)
+                get_train_val_test(data_folder, subject_id)
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
         eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
@@ -190,7 +190,7 @@ def cross_subject_exp(stop_criterion, iterator, loss_function):
     val_set_all = {}
     test_set_all = {}
     for subject_id in range(1, global_vars.get('num_subjects') + 1):
-        train_set, val_set, test_set = get_train_val_test(data_folder, subject_id, low_cut_hz)
+        train_set, val_set, test_set = get_train_val_test(data_folder, subject_id)
         train_set_all[subject_id] = train_set
         val_set_all[subject_id] = val_set
         test_set_all[subject_id] = test_set

@@ -48,7 +48,7 @@ train_set = {}
 val_set = {}
 test_set = {}
 train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
-            get_train_val_test(data_folder, subject_id, low_cut_hz)
+            get_train_val_test(data_folder, subject_id)
 
 # Set if you want to use GPU
 # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
