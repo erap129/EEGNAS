@@ -1,18 +1,16 @@
 import os
 import sys
 from copy import deepcopy
-
+sys.path.append("..")
 from utilities.data_utils import prepare_data_for_NN
 from visualization.deconvolution import DeconvNet, ConvDeconvNet
-
-sys.path.append("..")
 from evolution.nn_training import NN_Trainer
 from braindecode.datautil.splitters import concatenate_sets
 from utilities.config_utils import set_default_config, update_global_vars_from_config_dict
 from utilities.misc import concat_train_val_sets, unify_dataset
 import logging
 from visualization.dsp_functions import butter_bandstop_filter, butter_bandpass_filter
-from visualization.signal_plotting import plot_performance_frequency, tf_plot
+from visualization.signal_plotting import plot_performance_frequency, tf_plot, plot_one_tensor
 from NASUtils import evaluate_single_model
 import torch
 from braindecode.torch_ext.util import np_to_var
@@ -39,7 +37,7 @@ styles = getSampleStyleSheet()
 from collections import OrderedDict, defaultdict
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
-matplotlib.use("TkAgg")
+# matplotlib.use("TkAgg")
 plt.interactive(False)
 img_name_counter = 1
 
@@ -109,11 +107,11 @@ def plot_all_kernel_deconvolutions(model, conv_deconv, dataset, date_time, eeg_c
         os.remove(im)
 
 
-def plot_avg_activation_maps(pretrained_model, train_set, date_time):
+def plot_avg_activation_maps(pretrained_model, dataset, date_time):
     img_paths = []
     class_examples = []
     for class_idx in range(global_vars.get('n_classes')):
-        class_examples.append(train_set[subject_id].X[np.where(train_set[subject_id].y == class_idx)])
+        class_examples.append(dataset.X[np.where(dataset.y == class_idx)])
     for index, layer in enumerate(list(pretrained_model.children())[:-1]):
         act_maps = []
         for class_idx in range(global_vars.get('n_classes')):
@@ -126,16 +124,16 @@ def plot_avg_activation_maps(pretrained_model, train_set, date_time):
         os.remove(im)
 
 
-def find_optimal_samples_per_filter(pretrained_model, train_set, date_time, eeg_chans=None):
+def find_optimal_samples_per_filter(pretrained_model, dataset, date_time, eeg_chans=None):
     if eeg_chans is None:
         eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     plot_dict = OrderedDict()
     for layer_idx, layer in enumerate(list(pretrained_model.children())):
-        max_examples = get_max_examples_per_channel(train_set[subject_id].X, layer_idx, pretrained_model)
+        max_examples = get_max_examples_per_channel(dataset.X, layer_idx, pretrained_model)
         for chan_idx, example_idx in enumerate(max_examples):
             tf_data = []
             for eeg_chan in eeg_chans:
-                tf_data.append(get_tf_data_efficient(train_set[subject_id].X[example_idx][None, :, :], eeg_chan, 250))
+                tf_data.append(get_tf_data_efficient(dataset.X[example_idx][None, :, :], eeg_chan, 250))
             max_value = np.max(np.array(tf_data))
             class_str = ''
             if layer_idx >= len(list(pretrained_model.children())) - 3:
@@ -187,12 +185,12 @@ def create_optimal_samples_per_filter(pretrained_model, date_time, eeg_chans=Non
         os.remove(im)
 
 
-def get_avg_class_tf(train_set, date_time, eeg_chans=None):
+def get_avg_class_tf(dataset, date_time, eeg_chans=None):
     if eeg_chans is None:
         eeg_chans = list(range(models_generation.get_dummy_input().shape[1]))
     class_examples = []
     for class_idx in range(global_vars.get('n_classes')):
-        class_examples.append(train_set[subject_id].X[np.where(train_set[subject_id].y == class_idx)])
+        class_examples.append(dataset.X[np.where(dataset.y == class_idx)])
     chan_data = []
     for class_idx in range(global_vars.get('n_classes')):
         chan_data.append(defaultdict(list))
@@ -325,29 +323,19 @@ if __name__ == '__main__':
     dataset = get_dataset(subject_id)
     concat_train_val_sets(dataset)
     model.cuda()
-    # print(model)
     conv_deconv = ConvDeconvNet(model)
-    # X = prepare_data_for_NN(train_set[1].X)
-    # reconstruction = conv_deconv.forward(X, layer_idx=8, filter_idx=20)
-    # subj_tf = get_tf_data_efficient(reconstruction.cpu().detach().numpy(), 1, global_vars.get('frequency'))
-    # tf_plot([subj_tf], 'test')
-
     stop_criterion, iterator, loss_function, monitors = get_normal_settings()
     nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-    # dataset = {}
-    # dataset['train'], dataset['valid'], dataset['test'] = get_train_val_test('../data/', subject_id=subject_id)
-    # dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
-    # _, _, pretrained_model, _, _ = nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
-
     now = datetime.now()
-    date_time = now.strftime("%m.%d.%Y-%H:%M:%S")
+    date_time = now.strftime("%m.%d.%Y")
     createFolder(f'results/{date_time}_{global_vars.get("dataset")}')
+
     plot_all_kernel_deconvolutions(model, conv_deconv, dataset, date_time)
-    # plot_avg_activation_maps(pretrained_model, train_set, date_time)
-    # find_optimal_samples_per_filter(pretrained_model, train_set, date_time)
-    # create_optimal_samples_per_filter(pretrained_model, date_time, steps=500, layer_idx_cutoff=10)
-    # frequency_correlation_single_example(pretrained_model, test_set[1].X, 10, 1, 40)
-    # get_avg_class_tf(train_set, date_time)
-    # plot_perturbations([1], 1, 40)
-    # performance_frequency_correlation(pretrained_model, range(1, global_vars.get('num_subjects') + 1), 1, 40)
+    plot_avg_activation_maps(model, dataset['train'], date_time)
+    find_optimal_samples_per_filter(model, dataset['train'], date_time)
+    create_optimal_samples_per_filter(model, date_time, steps=500, layer_idx_cutoff=10)
+    # frequency_correlation_single_example(model, test_set[1].X, 10, 1, 40)
+    get_avg_class_tf(dataset['train'], date_time)
+    plot_perturbations([1], 1, 40)
+    performance_frequency_correlation(model, range(1, global_vars.get('num_subjects') + 1), 1, 40)
 

@@ -10,8 +10,10 @@ import global_vars
 import numpy as np
 from copy import deepcopy
 from scipy.stats import spearmanr
+
+from model_generation.abstract_layers import ConvLayer, PoolingLayer
 from model_generation.grid_model_generation import random_grid_model
-from model_generation.simple_model_generation import random_model
+from model_generation.simple_model_generation import random_model, finalize_model
 
 
 def get_metric_strs():
@@ -256,10 +258,17 @@ def add_model_to_stats(pop, model_index, model_stats):
         assert pop['perm_ensemble_role'] == model_stats['ensemble_role']
         model_stats['perm_ensemble_id'] = pop['perm_ensemble_id']
     if global_vars.get('delete_finalized_models'):
-        finalized_model = models_generation.finalize_model(pop['model'])
+        finalized_model = finalize_model(pop['model'])
     else:
         finalized_model = pop['finalized_model']
     model_stats['trainable_params'] = pytorch_count_params(finalized_model)
+    layer_stats = {'average_conv_width': (ConvLayer, 'kernel_eeg_chan'),
+                   'average_conv_height': (ConvLayer, 'kernel_time'),
+                   'average_conv_filters': (ConvLayer, 'filter_num'),
+                   'average_pool_width': (PoolingLayer, 'pool_time'),
+                   'average_pool_stride': (PoolingLayer, 'stride_time')}
+    for stat in layer_stats.keys():
+        model_stats[stat] = get_average_param([pop['model']], layer_stats[stat][0], layer_stats[stat][1])
 
 
 def train_time_penalty(weighted_population):

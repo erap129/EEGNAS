@@ -4,7 +4,6 @@ from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
 
 from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
-
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import matplotlib
 matplotlib.use('Agg')
@@ -440,6 +439,7 @@ def get_tuh_train_val_test(data_folder):
                             train_or_eval='eval',
                             sensor_types=global_vars.get('sensor_types'))
     X, y = training_set.load()
+    global_vars.set('input_time_len', X[0].shape[1])
     splitter = TrainValidSplitter(10, i_valid_fold=0, shuffle=global_vars.get('shuffle'))
     train_set, valid_set = splitter.split(X, y)
     test_X, test_y = test_set.load()

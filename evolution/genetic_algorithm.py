@@ -203,18 +203,11 @@ class EEGNAS_evolution:
             self.write_to_csv(model_stats, self.current_generation+1, model=i)
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
-        layer_stats = {'average_conv_width': (ConvLayer, 'kernel_eeg_chan'),
-                       'average_conv_height': (ConvLayer, 'kernel_time'),
-                       'average_conv_filters': (ConvLayer, 'filter_num'),
-                       'average_pool_width': (PoolingLayer, 'pool_time'),
-                       'average_pool_stride': (PoolingLayer, 'stride_time')}
-        for stat in layer_stats.keys():
-            stats[stat] = NASUtils.get_average_param([pop['model'] for pop in weighted_population],
-                                                                 layer_stats[stat][0], layer_stats[stat][1])
-            if global_vars.get('add_top_20_stats'):
-                stats[f'top20_{stat}'] = NASUtils.get_average_param([pop['model'] for pop in
-                                                                     weighted_population[:int(len(weighted_population)/5)]],
-                                                         layer_stats[stat][0], layer_stats[stat][1])
+
+            # if global_vars.get('add_top_20_stats'):
+            #     stats[f'top20_{stat}'] = NASUtils.get_average_param([pop['model'] for pop in
+            #                                                          weighted_population[:int(len(weighted_population)/5)]],
+            #                                              layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [DropoutLayer, ActivationLayer, ConvLayer, IdentityLayer, BatchNormLayer, PoolingLayer]:
