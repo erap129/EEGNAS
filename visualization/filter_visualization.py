@@ -311,15 +311,14 @@ if __name__ == '__main__':
     set_default_config('../configurations/config.ini')
     global_vars.set('cuda', True)
     config_dict = config_to_dict('visualization_configurations/viz_config.ini')
-    update_global_vars_from_config_dict(config_dict)
+    exp_name = config_dict['DEFAULT']['experiment']
+    update_global_vars_from_config_dict(config_dict, exp_name)
     global_vars.set('band_filter', {'pass': butter_bandpass_filter,
                                     'stop': butter_bandstop_filter}[global_vars.get('band_filter')])
     set_params_by_dataset('../configurations/dataset_params.ini')
-    global_vars.set('subjects_to_check', [1])
     global_vars.set('retrain_per_subject', True)
     model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
-
-    subject_id = config_dict['DEFAULT']['subject_id']
+    subject_id = global_vars.get('subject_id')
     dataset = get_dataset(subject_id)
     concat_train_val_sets(dataset)
     model.cuda()

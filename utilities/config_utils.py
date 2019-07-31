@@ -110,7 +110,8 @@ def set_gpu():
         print('no cuda available, using CPU')
 
 
-def update_global_vars_from_config_dict(config_dict):
+def update_global_vars_from_config_dict(config_dict, exp_name):
     for key, inner_dict in config_dict.items():
-        for inner_key, inner_value in inner_dict.items():
-            global_vars.set(inner_key, inner_value)
+        if key in ['DEFAULT', exp_name]:
+            for inner_key, inner_value in inner_dict.items():
+                global_vars.set(inner_key, inner_value)
