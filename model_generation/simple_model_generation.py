@@ -49,8 +49,13 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                                                                       stride=(int(layer.stride_time), 1)))
 
         elif isinstance(layer, ConvLayer):
+            layer_class = nn.Conv2d
             if layer.kernel_time == 'down_to_one' or i >= global_vars.get('num_layers'):
-                layer.kernel_time = prev_time
+                if global_vars.get('autoencoder'):
+                    layer.kernel_time = global_vars.get('input_time_len') - prev_time + 1
+                    layer_class = nn.ConvTranspose2d
+                else:
+                    layer.kernel_time = prev_time
                 layer.kernel_eeg_chan = prev_eeg_channels
                 conv_name = 'conv_classifier'
             else:
@@ -61,7 +66,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.kernel_time = prev_time
             if global_vars.get('channel_dim') == 'channels':
                 layer.kernel_eeg_chan = 1
-            model.add_module(conv_name, nn.Conv2d(prev_channels, layer.filter_num,
+            model.add_module(conv_name, layer_class(prev_channels, layer.filter_num,
                                                 (layer.kernel_time, layer.kernel_eeg_chan),
                                                 stride=1))
 
@@ -87,7 +92,10 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
         return layer_collection
     if check_model:
         return
-    last_conv_idx = get_index_of_last_layertype(model, nn.Conv2d)
+    if global_vars.get('autoencoder'):
+        last_conv_idx = get_index_of_last_layertype(model, nn.ConvTranspose2d)
+    else:
+        last_conv_idx = get_index_of_last_layertype(model, nn.Conv2d)
     init.xavier_uniform_(list(model._modules.items())[last_conv_idx][1].weight, gain=1)
     init.constant_(list(model._modules.items())[last_conv_idx][1].bias, 0)
     return model

@@ -10,7 +10,10 @@ import global_vars
 
 def mse_func(all_preds, all_trials):
     try:
-        return mean_squared_error(all_trials.astype(np.float64), all_preds.astype(np.float64))
+        if global_vars.get('autoencoder'):
+            return np.square(np.subtract(all_preds, all_trials)).mean()
+        else:
+            return mean_squared_error(all_trials.astype(np.float64), all_preds.astype(np.float64))
     except ValueError:
         return math.inf
 

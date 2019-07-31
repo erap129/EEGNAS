@@ -1,9 +1,14 @@
 import os
+from copy import deepcopy
+
 from braindecode.datasets.bbci import BBCIDataset
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
+from sklearn.preprocessing import MinMaxScaler
 
 from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
+from utilities.data_utils import split_sequence, noise_input
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import matplotlib
 matplotlib.use('Agg')
@@ -29,6 +34,13 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
+
+
+def makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test):
+    train_set = DummySignalTarget(X_train, y_train)
+    valid_set = DummySignalTarget(X_val, y_val)
+    test_set = DummySignalTarget(X_test, y_test)
+    return train_set, valid_set, test_set
 
 
 def get_ch_names():
@@ -204,6 +216,8 @@ def get_hg_train_val_test(data_folder, subject_id, low_cut_hz):
 class DummySignalTarget:
     def __init__(self, X, y, y_type=np.longlong):
         self.X = np.array(X, dtype=np.float32)
+        if global_vars.get('autoencoder'):
+            y_type = np.float32
         self.y = np.array(y, dtype=y_type)
 
 
@@ -213,9 +227,7 @@ def get_ner_train_val_test(data_folder):
     X_test = np.load(f"{data_folder}NER15/preproc/test_epochs.npy")
     y_test = pd.read_csv(f"{data_folder}NER15/preproc/true_labels.csv").values.reshape(-1)
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'))
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -229,9 +241,7 @@ def get_cho_train_val_test(subject_id):
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.3) # test = 30%, same as paper
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=global_vars.get('valid_set_fraction'))
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -253,9 +263,7 @@ def get_bci_iv_2b_train_val_test(subject_id):
     y_test = y[test_indexes]
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=global_vars.get('valid_set_fraction'))
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -263,9 +271,7 @@ def get_bloomberg_train_val_test(data_folder):
     X_train_val, y_train_val, X_test, y_test = get_bloomberg(f'{data_folder}/Bloomberg')
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=global_vars.get('valid_set_fraction'))
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -306,9 +312,7 @@ def get_nyse_train_val_test(data_folder):
     X_test = np.reshape(X_test, (X_test.shape[0], amount_of_features, X_test.shape[1]))
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=0.2)
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -316,9 +320,7 @@ def get_human_activity_train_val_test(data_folder, subject_id):
     X_train_val, y_train_val, X_test, y_test = get_human_activity(f'{data_folder}/HumanActivity', subject_id)
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=global_vars.get('valid_set_fraction'))
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -341,9 +343,7 @@ def get_mental_imagery(data_folder, sub_dataset, subject_id):
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.1)
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=
                                                       global_vars.get('valid_set_fraction'))
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -364,9 +364,7 @@ def get_opportunity_train_val_test(data_folder):
         X_train_val = np.swapaxes(X_train_val, 1, 2)
         X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                           test_size=global_vars.get('valid_set_fraction'))
-        train_set = DummySignalTarget(X_train, y_train)
-        valid_set = DummySignalTarget(X_val, y_val)
-        test_set = DummySignalTarget(X_test, y_test)
+        train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
         return train_set, valid_set, test_set
 
 
@@ -375,9 +373,7 @@ def get_sonarsub_train_val_test(data_folder):
     y = np.load(f"{data_folder}SonarSub/labels_file_aug.npy")
     X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'))
     X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'))
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -386,9 +382,7 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     y = np.load(f"{data_folder}netflow/y.npy")[:, :n_sequences]
     X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -402,9 +396,27 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
     global_vars.set('n_classes', global_vars.get('steps_ahead'))
     X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
-    train_set = DummySignalTarget(X_train, y_train)
-    valid_set = DummySignalTarget(X_val, y_val)
-    test_set = DummySignalTarget(X_test, y_test)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
+    return train_set, valid_set, test_set
+
+
+def get_netflow_asflow_AE(data_folder, shuffle=True):
+    dataset_netflow_path_pr = f'{data_folder}netflow/asflowAE/as_flow_vol_final.csv'
+    pd_df = pd.read_csv(dataset_netflow_path_pr, index_col=0).fillna(0)
+    time_steps = pd_df.columns
+    devs_id = pd_df.index
+    my_data = pd_df.values.transpose()
+    scaler = MinMaxScaler()
+    my_data_scaled = scaler.fit_transform(my_data)
+    X = split_sequence(my_data_scaled, global_vars.get('steps'))[0]
+    X = X.swapaxes(1, 2)
+    y = deepcopy(X)
+    X = noise_input(X, devs_id)
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'),
+                                                                shuffle=shuffle)
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test,
+                                                    test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
 
@@ -465,9 +477,9 @@ def get_pure_cross_subject(data_folder):
         train_y.append(train_set.y)
         val_y.append(valid_set.y)
         test_y.append(test_set.y)
-    train_set = DummySignalTarget(np.concatenate(train_x), np.concatenate(train_y))
-    valid_set = DummySignalTarget(np.concatenate(val_x), np.concatenate(val_y))
-    test_set = DummySignalTarget(np.concatenate(test_x), np.concatenate(test_y))
+    train_set, valid_set, test_set = makeDummySignalTargets(np.concatenate(train_x), np.concatenate(train_y),
+                                                            np.concatenate(val_x), np.concatenate(val_y),
+                                                            np.concatenate(test_x), np.concatenate(test_y))
     return train_set, valid_set, test_set
 
 
@@ -502,6 +514,9 @@ def get_train_val_test(data_folder, subject_id):
         return get_netflow_train_val_test(data_folder, n_sequences=global_vars.get('n_classes'))
     elif global_vars.get('dataset') == 'netflow_asflow':
         return get_netflow_asflow_train_val_test(data_folder)
+    elif global_vars.get('dataset') == 'netflow_asflowAE':
+        return get_netflow_asflow_AE(data_folder)
+
 
 
 def get_dataset(subject_id):

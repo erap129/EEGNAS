@@ -73,23 +73,18 @@ def get_multiple_values(configurations):
 
 def set_params_by_dataset(params_config_path):
     config_dict = config_to_dict(params_config_path)
-    global_vars.set('num_subjects', config_dict['num_subjects'][global_vars.get('dataset')])
-    global_vars.set('cross_subject_sampling_rate', config_dict['num_subjects'][global_vars.get('dataset')])
-    global_vars.set('eeg_chans', config_dict['eeg_chans'][global_vars.get('dataset')])
-    global_vars.set_if_not_exists('input_time_len', config_dict['input_time_len'][global_vars.get('dataset')])
-    global_vars.set_if_not_exists('n_classes', config_dict['n_classes'][global_vars.get('dataset')])
-    global_vars.set_if_not_exists('subjects_to_check', config_dict['subjects_to_check'][global_vars.get('dataset')])
-    global_vars.set('evaluation_metrics', config_dict['evaluation_metrics'][global_vars.get('dataset')])
-    global_vars.set('ga_objective', config_dict['ga_objective'][global_vars.get('dataset')])
-    global_vars.set('nn_objective', config_dict['nn_objective'][global_vars.get('dataset')])
-    global_vars.set('frequency', config_dict['frequency'][global_vars.get('dataset')])
-    global_vars.set('problem', config_dict['problem'][global_vars.get('dataset')])
-    if global_vars.get('dataset') == 'Cho':
-        global_vars.set('exclude_subjects', [32, 46, 49])
+    for param in ['num_subjects', 'num_subjects', 'eeg_chans', 'input_time_len', 'n_classes', 'subjects_to_check',
+                  'evaluation_metrics', 'ga_objective', 'nn_objective', 'frequency', 'problem', 'exclude_subjects']:
+        set_param_for_dataset(param, config_dict)
     if global_vars.get('ensemble_iterations'):
         global_vars.set('evaluation_metrics', global_vars.get('evaluation_metrics') + ['raw', 'target'])
         if not global_vars.get('ensemble_size'):
             global_vars.set('ensemble_size', int(global_vars.get('pop_size') / 100))
+
+
+def set_param_for_dataset(param_name, config_dict):
+    if param_name in config_dict[global_vars.get('dataset')]:
+        global_vars.set_if_not_exists(param_name, config_dict[global_vars.get('dataset')][param_name])
 
 
 def set_seeds():
