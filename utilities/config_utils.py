@@ -23,13 +23,14 @@ def config_to_dict(path):
     return dictionary
 
 
-def get_configurations(experiment):
+def get_configurations(experiment, config, set_exp_name=True):
     configurations = []
-    default_config = global_vars.configs._defaults
-    exp_config = global_vars.configs._sections[experiment]
+    default_config = config._defaults
+    exp_config = config._sections[experiment]
     for key in default_config.keys():
         default_config[key] = json.loads(default_config[key])
-    default_config['exp_name'] = [experiment]
+    if set_exp_name:
+        default_config['exp_name'] = [experiment]
     for key in exp_config.keys():
         exp_config[key] = json.loads(exp_config[key])
     both_configs = list(default_config.values())
@@ -51,7 +52,7 @@ def get_configurations(experiment):
 
 def set_default_config(path):
     global_vars.init_config(path)
-    configurations = get_configurations('default_exp')
+    configurations = get_configurations('default_exp', global_vars.configs)
     global_vars.set_config(configurations[0])
 
 
@@ -110,8 +111,10 @@ def set_gpu():
         print('no cuda available, using CPU')
 
 
-def update_global_vars_from_config_dict(config_dict, exp_name):
+def update_global_vars_from_config_dict(config_dict):
+    for inner_key, inner_value in config_dict['DEFAULT'].items():
+        global_vars.set(inner_key, inner_value)
     for key, inner_dict in config_dict.items():
-        if key in ['DEFAULT', exp_name]:
+        if inner_key != 'DEFAULT':
             for inner_key, inner_value in inner_dict.items():
                 global_vars.set(inner_key, inner_value)

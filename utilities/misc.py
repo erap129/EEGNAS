@@ -125,10 +125,11 @@ def get_oper_by_loss_function(loss_func, equals=False):
 
 def concat_train_val_sets(dataset):
     dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
+    del dataset['valid']
 
 
 def unify_dataset(dataset):
-    return concatenate_sets([dataset['train'], dataset['valid'], dataset['test']])
+    return concatenate_sets([data for data in dataset.values()])
 
 
 def export_dataset_to_file(data_folder, dataset_name, subject_id, channel_pos='first'):

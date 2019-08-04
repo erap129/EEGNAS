@@ -6,6 +6,11 @@ import global_vars
 import numpy as np
 
 
+def get_dummy_input():
+    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
+    return np_to_var(np.random.random(input_shape).astype(np.float32))
+
+
 def prepare_data_for_NN(X):
     if X.ndim == 3:
         X = X[:, :, :, None]

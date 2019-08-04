@@ -242,7 +242,7 @@ if __name__ == '__main__':
         folder_names = []
         first_run = True
         for experiment in experiments:
-            configurations = get_configurations(experiment)
+            configurations = get_configurations(experiment, global_vars.configs)
             multiple_values = get_multiple_values(configurations)
             for index, configuration in enumerate(configurations):
                 try:

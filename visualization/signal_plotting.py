@@ -2,8 +2,10 @@ import os
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
+import numpy as np
 from utilities.monitors import get_eval_function
+
+img_name_counter = 1
 
 
 def get_next_im_filename():

@@ -17,7 +17,7 @@ matplotlib.use('TkAgg')
 CHOSEN_EXPERIMENT = 'netflow_plotting'
 STACK_RESULTS_BY_TIME = True
 global_vars.init_config('configurations/config.ini')
-configurations = get_configurations(CHOSEN_EXPERIMENT)
+configurations = get_configurations(CHOSEN_EXPERIMENT, global_vars.configs)
 
 
 for configuration in configurations:
