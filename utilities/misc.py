@@ -3,6 +3,7 @@ import os
 from copy import deepcopy
 import logging
 import numpy as np
+import torch
 from braindecode.datautil.splitters import concatenate_sets
 
 import global_vars
@@ -101,6 +102,11 @@ def label_by_idx(idx):
     return labels[global_vars.get('dataset')][idx]
 
 
+def eeg_label_by_idx(idx):
+    labels = {'BCI_IV_2b': ['C3', 'Cz', 'C4']}
+    return labels[global_vars.get('dataset')][idx]
+
+
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
@@ -150,5 +156,10 @@ def export_dataset_to_file(data_folder, dataset_name, subject_id, channel_pos='f
     np.save(f'{folder_name}/{dataset_name}_X_test', dataset['test'].X)
     np.save(f'{folder_name}/{dataset_name}_y_train', dataset['train'].y)
     np.save(f'{folder_name}/{dataset_name}_y_test', dataset['test'].y)
+
+
+def reset_model_weights(model):
+    if isinstance(model, torch.nn.Conv2d):
+        torch.nn.init.xavier_uniform(model.weight.data)
 
 

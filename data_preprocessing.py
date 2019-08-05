@@ -380,8 +380,10 @@ def get_sonarsub_train_val_test(data_folder):
 def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     X = np.load(f"{data_folder}netflow/X.npy")[:, :n_sequences]
     y = np.load(f"{data_folder}netflow/y.npy")[:, :n_sequences]
-    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
-    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'),
+                                                        shuffle=shuffle)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
+                                                      shuffle=shuffle)
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
@@ -394,8 +396,8 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
     y = np.load(f"{data_folder}netflow/asflow/y_asflow_{global_vars.get('input_time_len')}_steps_"
                 f"{global_vars.get('steps_ahead')}_ahead.npy")
     global_vars.set('n_classes', global_vars.get('steps_ahead'))
-    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
-    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
@@ -412,10 +414,10 @@ def get_netflow_asflow_AE(data_folder, shuffle=True):
     X = X.swapaxes(1, 2)
     y = deepcopy(X)
     X = noise_input(X, devs_id)
-    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'),
-                                                                shuffle=shuffle)
-    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test,
-                                                    test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'),
+                                                        shuffle=shuffle)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
+                                                      shuffle=shuffle)
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
@@ -527,5 +529,4 @@ def get_dataset(subject_id):
     else:
         dataset['train'], dataset['valid'], dataset['test'] =\
             get_train_val_test(global_vars.get('data_folder'), subject_id)
-
     return dataset

@@ -1,8 +1,11 @@
+import matplotlib
 import os
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
+
+from utilities.misc import eeg_label_by_idx
 from utilities.monitors import get_eval_function
 
 img_name_counter = 1
@@ -20,7 +23,8 @@ def get_next_im_filename():
 
 
 def tf_plot(tf_trial_avgs, title, vmax=None, yscale='linear'):
-    plt.figure(num=None, figsize=(6 * len(tf_trial_avgs), 6), dpi=80, facecolor='w', edgecolor='k')
+    matplotlib.rcParams.update({'font.size': 16})
+    plt.figure(num=None, figsize=(6 * len(tf_trial_avgs), 7), dpi=80, facecolor='w', edgecolor='k')
     for index, tf in enumerate(tf_trial_avgs):
         ax = plt.subplot(1, len(tf_trial_avgs), index+1)
         ax.set_xlabel('time points')
@@ -28,7 +32,10 @@ def tf_plot(tf_trial_avgs, title, vmax=None, yscale='linear'):
             ax.set_ylabel('frequency (Hz)')
         ax.set_yscale(yscale)
         cf = ax.contourf(tf, 40, vmin=0, vmax=vmax)
-        ax.set_title(f'EEG channel {index + 1}')
+        try:
+            ax.set_title(eeg_label_by_idx(index))
+        except KeyError:
+            ax.set_title(f'EEG channel {index + 1}')
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.05)
     plt.colorbar(cf, cax=cax, orientation='vertical')

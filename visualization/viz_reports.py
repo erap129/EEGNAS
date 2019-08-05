@@ -3,6 +3,7 @@ from collections import OrderedDict, defaultdict
 from copy import deepcopy
 
 from braindecode.torch_ext.util import np_to_var
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph
 
 import global_vars
@@ -17,7 +18,7 @@ from visualization.signal_plotting import tf_plot, plot_performance_frequency
 import numpy as np
 from torch import nn
 from visualization.viz_utils import pretrain_model_on_filtered_data, create_max_examples_per_channel, \
-    get_max_examples_per_channel
+    get_max_examples_per_channel, export_performance_frequency_to_csv
 from visualization.wavelet_functions import get_tf_data_efficient
 
 
@@ -75,6 +76,8 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
     baselines['average'] = np.average(list(baselines.values()))
     all_performances.append(np.average(all_performances, axis=0))
     all_performances_freq.append(np.average(all_performances_freq, axis=0))
+    if global_vars.get('to_csv'):
+        export_performance_frequency_to_csv(all_performances, all_performances_freq, baselines, folder_name)
     performance_plot_imgs = plot_performance_frequency([all_performances, all_performances_freq], baselines,
                                                        legend=['no retraining', 'with retraining', 'unperturbed'])
     story = [get_image(tf) for tf in performance_plot_imgs]
@@ -176,6 +179,7 @@ def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cut
 
     story = []
     img_paths = list(plot_imgs.values())
+    styles = getSampleStyleSheet()
     story.append(
         Paragraph('<br />\n'.join([f'{x}:{y}' for x, y in pretrained_model._modules.items()]), style=styles["Normal"]))
     for im in img_paths:

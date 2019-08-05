@@ -1,7 +1,7 @@
 from copy import deepcopy
 import numpy as np
 from braindecode.torch_ext.util import np_to_var
-
+import pandas as pd
 import global_vars
 from EEGNAS_experiment import get_normal_settings
 from data_preprocessing import get_pure_cross_subject
@@ -57,3 +57,21 @@ def get_max_examples_per_channel(data, select_layer, model):
         selected_examples[c]\
             = int(np.array([act_map.squeeze()[c].sum() for act_map in act_maps.values()]).argmax())
     return [int(x) for x in selected_examples]
+
+
+def export_performance_frequency_to_csv(performances, retrained_performances, baselines, folder_name):
+    df = pd.DataFrame()
+    for subj_id, (performance, retrained_performance) in enumerate(zip(performances, retrained_performances)):
+        for freq, (perf_freq, retrained_perf_freq) in enumerate(zip(performance, retrained_performance)):
+            example_df = pd.DataFrame()
+            if subj_id == len(performances) - 1:
+                example_df['subject'] = ['average']
+                example_df['baseline'] = [baselines['average']]
+            else:
+                example_df['subject'] = [subj_id + 1]
+                example_df['baseline'] = [baselines[subj_id+1]]
+            example_df['frequency'] = [freq + 1]
+            example_df['performance'] = [perf_freq]
+            example_df['retrained_performance'] = [retrained_perf_freq]
+            df = df.append(example_df)
+    df.to_csv(f'{folder_name}/performance_frequency_{global_vars.get("band_filter").__name__}.csv')
