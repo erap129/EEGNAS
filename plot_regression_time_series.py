@@ -56,9 +56,8 @@ def kfold_exp(data, model, folder_name):
         dataset = {}
         dataset['train'], dataset['valid'], dataset['test'] = \
             makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
-        nn_trainer.evaluate_model(model, dataset)
-        concat_train_val_sets(dataset)
-        for segment in ['train', 'test']:
+        nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
+        for segment in ['train', 'valid', 'test']:
             df = pd.DataFrame()
             globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], segment,
                                                                       model, folder_name, fold_num)

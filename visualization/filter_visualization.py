@@ -2,10 +2,8 @@ import configparser
 import os
 import sys
 from copy import deepcopy
-
-from visualization import viz_reports
-
 sys.path.append("..")
+from visualization import viz_reports
 from utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations
 from utilities.misc import concat_train_val_sets, unify_dataset
 import logging
@@ -15,26 +13,17 @@ from visualization.signal_plotting import plot_performance_frequency, tf_plot, p
 import torch
 from braindecode.torch_ext.util import np_to_var
 import global_vars
-from torch import nn
 from data_preprocessing import get_train_val_test, get_pure_cross_subject, get_dataset
 from EEGNAS_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
-import matplotlib
-from utilities.monitors import get_eval_function
 from utilities.misc import createFolder
-from visualization.cnn_layer_visualization import CNNLayerVisualization
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
 from visualization.wavelet_functions import get_tf_data_efficient, subtract_frequency
 from datetime import datetime
-import models_generation
-from reportlab.platypus import Paragraph
-from visualization.pdf_utils import get_image
 from reportlab.lib.styles import getSampleStyleSheet
-from EEGNAS_experiment import config_to_dict
 from utilities.misc import label_by_idx
 styles = getSampleStyleSheet()
-from collections import OrderedDict, defaultdict
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
 # matplotlib.use("TkAgg")
@@ -112,5 +101,6 @@ if __name__ == '__main__':
         date_time = now.strftime("%m.%d.%Y")
         folder_name = f'results/{date_time}_{global_vars.get("dataset")}'
         createFolder(folder_name)
+        print(f'generating {global_vars.get("report")} report...')
         getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
 

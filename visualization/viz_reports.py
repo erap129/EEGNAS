@@ -1,11 +1,9 @@
 import os
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
-
 from braindecode.torch_ext.util import np_to_var
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph
-
 import global_vars
 from NASUtils import evaluate_single_model
 from data_preprocessing import get_dataset
@@ -17,13 +15,19 @@ from visualization.pdf_utils import get_image, create_pdf_from_story, create_pdf
 from visualization.signal_plotting import tf_plot, plot_performance_frequency
 import numpy as np
 from torch import nn
+from reportlab.lib.styles import getSampleStyleSheet
+from utilities.misc import label_by_idx
+styles = getSampleStyleSheet()
 from visualization.viz_utils import pretrain_model_on_filtered_data, create_max_examples_per_channel, \
     get_max_examples_per_channel, export_performance_frequency_to_csv
 from visualization.wavelet_functions import get_tf_data_efficient
 
-
+'''
+Iterates through frequencies from 'low_freq' to 'high_freq' and plots perturbed data for each frequency,
+for a specific subject as defined in the configuration file. Exact perturbation defined in configuration file.
+'''
 def perturbation_report(model, dataset, folder_name):
-    report_file_name = f'{folder_name}/perturbation_{global_vars.get("band_filter").__name__}.pdf'
+    report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("band_filter").__name__}.pdf'
     if os.path.isfile(report_file_name):
         return
     eeg_chans = list(range(get_dummy_input().shape[1]))
@@ -45,8 +49,13 @@ def perturbation_report(model, dataset, folder_name):
         os.remove(tf)
 
 
+'''
+For each subject (usually done on combined dataset) and for each frequency, perturb the dataset and check the performance
+after perturbation. Compare performance after perturbation to the baseline performance (without perturbation).
+Has option to export results to csv.
+'''
 def performance_frequency_report(pretrained_model, dataset, folder_name):
-    report_file_name = f'{folder_name}/performance_frequency_{global_vars.get("band_filter").__name__}.pdf'
+    report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("band_filter").__name__}.pdf'
     if os.path.isfile(report_file_name):
         return
     baselines = OrderedDict()
@@ -86,11 +95,15 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
         os.remove(tf)
 
 
+'''
+for each filter in each convolutional layer perform a reconstruction of an EEG example, using deconvolution with the
+learned weights. Do this either for all the examples together or per class.
+'''
 def kernel_deconvolution_report(model, dataset, folder_name):
     by_class_str = ''
     if global_vars.get('deconvolution_by_class'):
         by_class_str = '_by_class'
-    report_file_name = f'{folder_name}/step1_all_kernels{by_class_str}.pdf'
+    report_file_name = f'{folder_name}/{global_vars.get("report")}{by_class_str}.pdf'
     if os.path.isfile(report_file_name):
         return
     conv_deconv = ConvDeconvNet(model)
@@ -102,7 +115,7 @@ def kernel_deconvolution_report(model, dataset, folder_name):
             class_examples.append(dataset['train'].X[np.where(dataset['train'].y == class_idx)])
     else:
         class_examples.append(dataset['train'].X)
-    for layer_idx, layer in enumerate(model.children()):
+    for layer_idx, layer in list(enumerate(model.children()))[global_vars.get('layer_idx_cutoff'):]:
         if type(layer) == nn.Conv2d:
             for filter_idx in range(layer.out_channels):
                 for class_idx, examples in enumerate(class_examples):
@@ -123,12 +136,15 @@ def kernel_deconvolution_report(model, dataset, folder_name):
         os.remove(im)
 
 
+'''
+plot the average time-frequency of each class in the dataset.
+'''
 def avg_class_tf_report(model, dataset, folder_name):
-    report_file_name = f'{folder_name}/avg_class_tf.pdf'
+    report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
     if os.path.isfile(report_file_name):
         return
     eeg_chans = list(range(global_vars.get('eeg_chans')))
-    unify_dataset(dataset)
+    dataset = unify_dataset(dataset)
     class_examples = []
     for class_idx in range(global_vars.get('n_classes')):
         class_examples.append(dataset.X[np.where(dataset.y == class_idx)])
@@ -154,14 +170,20 @@ def avg_class_tf_report(model, dataset, folder_name):
         os.remove(tf)
 
 
+'''
+for each filter in each convolutional layer perform a reconstruction of an EEG example, using gradient ascent to
+maximize the response of that filter. Plot the result for each filter in each conv layer. Steps for gradient ascent
+defined in configuration file. layer_idx_cutoff defines the starting index for the layers (defined in the 
+global variables).
+'''
 def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cutoff=0):
-    report_file_name = f'{folder_name}/gradient_ascent_{global_vars.get("steps")}_steps.pdf'
+    report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("gradient_ascent_steps")}_steps.pdf'
     if os.path.isfile(report_file_name):
         return
     eeg_chans = list(range(global_vars.get('eeg_chans')))
     plot_dict = OrderedDict()
     plot_imgs = OrderedDict()
-    for layer_idx, layer in list(enumerate(list(pretrained_model.children())))[layer_idx_cutoff:]:
+    for layer_idx, layer in list(enumerate(list(pretrained_model.children())))[global_vars.get('layer_idx_cutoff'):]:
         max_examples = create_max_examples_per_channel(layer_idx, pretrained_model, steps=global_vars.get('steps'))
         max_value = 0
         for chan_idx, example in enumerate(max_examples):
@@ -189,13 +211,18 @@ def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cut
         os.remove(im)
 
 
+'''
+For each filter in each convolutional layer, plot the EEG example that maximizes its output. Start at
+layer_idx_cutoff.
+'''
 def find_optimal_samples_report(pretrained_model, dataset, folder_name):
-    report_file_name = f'{folder_name}/step3_tf_plots_real.pdf'
+    report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
     if os.path.isfile(report_file_name):
         return
     eeg_chans = list(range(global_vars.get('eeg_chans')))
     plot_dict = OrderedDict()
-    for layer_idx, layer in enumerate(list(pretrained_model.children())):
+    dataset = unify_dataset(dataset)
+    for layer_idx, layer in list(enumerate(pretrained_model.children()))[global_vars.get('layer_idx_cutoff'):]:
         max_examples = get_max_examples_per_channel(dataset.X, layer_idx, pretrained_model)
         for chan_idx, example_idx in enumerate(max_examples):
             tf_data = []
@@ -220,6 +247,9 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
         os.remove(im)
 
 
+'''
+TODO - use shap to visualize model & data
+'''
 def shap_report(model, dataset, folder_name):
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
     test_data = np_to_var(dataset['test'].X[:, :, :, None])

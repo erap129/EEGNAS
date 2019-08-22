@@ -159,7 +159,11 @@ def export_dataset_to_file(data_folder, dataset_name, subject_id, channel_pos='f
 
 
 def reset_model_weights(model):
-    if isinstance(model, torch.nn.Conv2d):
-        torch.nn.init.xavier_uniform(model.weight.data)
+    for layer in model.children():
+        if isinstance(layer, torch.nn.Conv2d):
+            torch.nn.init.xavier_uniform(layer.weight.data)
+        elif isinstance(layer, torch.nn.BatchNorm2d):
+            layer.reset_parameters()
+
 
 

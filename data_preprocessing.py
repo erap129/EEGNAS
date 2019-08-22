@@ -1,3 +1,4 @@
+import json
 import os
 from copy import deepcopy
 
@@ -7,7 +8,7 @@ from braindecode.datautil.signal_target import SignalAndTarget
 from sklearn.preprocessing import MinMaxScaler
 
 from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
-from utilities.data_utils import split_sequence, noise_input
+from utilities.data_utils import split_sequence, noise_input, split_parallel_sequences
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import matplotlib
@@ -388,13 +389,36 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     return train_set, valid_set, test_set
 
 
+def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps):
+    df = pd.read_csv(file)
+    vols = {}
+    data_sample = []
+    for index, row in df.iterrows():
+        vols[row['id']] = [row['ts'], row['vol']]
+    for key, value in vols.items():
+        df = pd.DataFrame([json.loads(value[0]), json.loads(value[1])], index=['ts', 'vol']).T
+        df = df.sort_values(by='ts')
+        data_sample.append(np.array(df['vol']))
+    sum_arr = [sum(x) for x in zip(*data_sample)]
+    data_sample.append(np.array(sum_arr))
+    data_sample = list(map(lambda x: x.reshape((len(x), 1)), data_sample))
+    dataset = np.hstack(data_sample)
+    sample_list, y = split_parallel_sequences(dataset, n_before, n_ahead, start_point, jumps)
+    X = sample_list.swapaxes(1, 2)[:, :10]
+    y = y.swapaxes(1, 2)[:, 10]
+    return X, y
+
+
 def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
     if global_vars.get('no_shuffle'):
         shuffle = False
-    X = np.load(f"{data_folder}netflow/asflow/X_asflow_{global_vars.get('input_time_len')}_steps_"
-                f"{global_vars.get('steps_ahead')}_ahead.npy")
-    y = np.load(f"{data_folder}netflow/asflow/y_asflow_{global_vars.get('input_time_len')}_steps_"
-                f"{global_vars.get('steps_ahead')}_ahead.npy")
+    file_path = f"{data_folder}netflow/akamai-dt-handovers_1.7.17-1.8.19.csv"
+    X, y = preprocess_netflow_data(file_path, global_vars.get('input_time_len'), global_vars.get('steps_ahead'),
+                                   global_vars.get('start_point'), global_vars.get('jumps'))
+    # X = np.load(f"{data_folder}netflow/asflow/X_asflow_{global_vars.get('input_time_len')}_steps_"
+    #             f"{global_vars.get('steps_ahead')}_ahead.npy")
+    # y = np.load(f"{data_folder}netflow/asflow/y_asflow_{global_vars.get('input_time_len')}_steps_"
+    #             f"{global_vars.get('steps_ahead')}_ahead.npy")
     global_vars.set('n_classes', global_vars.get('steps_ahead'))
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)

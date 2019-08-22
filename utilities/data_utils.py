@@ -36,6 +36,21 @@ def split_sequence(sequence, n_steps):
     return np.array(X), np.array(y)
 
 
+def split_parallel_sequences(sequences, n_steps, n_steps_ahead, start_point, jumps):
+    X, y = list(), list()
+    sequences = sequences[start_point:]
+    for i in range(len(sequences)):
+        end_ix = i + n_steps
+        if end_ix % jumps != 0:
+            continue
+        if end_ix + n_steps_ahead - 1 > len(sequences) - 1:
+            break
+        seq_x, seq_y = sequences[i:end_ix, :], sequences[end_ix:end_ix+n_steps_ahead, :]
+        X.append(seq_x)
+        y.append(seq_y)
+    return np.array(X), np.array(y)
+
+
 def noise_input(data, devs_id):
     noise_data = deepcopy(data)
     for id_in_batch in range(data.shape[0]):
