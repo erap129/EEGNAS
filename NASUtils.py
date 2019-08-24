@@ -262,11 +262,11 @@ def add_model_to_stats(pop, model_index, model_stats):
     else:
         finalized_model = pop['finalized_model']
     model_stats['trainable_params'] = pytorch_count_params(finalized_model)
-    layer_stats = {'average_conv_width': (ConvLayer, 'kernel_eeg_chan'),
-                   'average_conv_height': (ConvLayer, 'kernel_time'),
+    layer_stats = {'average_conv_width': (ConvLayer, 'kernel_width'),
+                   'average_conv_height': (ConvLayer, 'kernel_height'),
                    'average_conv_filters': (ConvLayer, 'filter_num'),
-                   'average_pool_width': (PoolingLayer, 'pool_time'),
-                   'average_pool_stride': (PoolingLayer, 'stride_time')}
+                   'average_pool_width': (PoolingLayer, 'pool_height'),
+                   'average_pool_stride': (PoolingLayer, 'stride_height')}
     for stat in layer_stats.keys():
         model_stats[stat] = get_average_param([pop['model']], layer_stats[stat][0], layer_stats[stat][1])
 

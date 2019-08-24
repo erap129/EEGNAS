@@ -434,7 +434,8 @@ class EEGNAS_evolution:
                     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
                     finalized_model = finalize_model(model['model'])
                     print_model = finalized_model.to(device)
-                    summary(print_model, (global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1), file=text_file)
+                    summary(print_model, (global_vars.get('eeg_chans'), global_vars.get('input_height'),
+                            global_vars.get('input_width')), file=text_file)
 
 
 

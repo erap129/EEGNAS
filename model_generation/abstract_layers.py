@@ -47,35 +47,39 @@ class ActivationLayer(Layer):
 
 class ConvLayer(Layer):
     # @initializer
-    def __init__(self, kernel_eeg_chan=None, kernel_time=None, filter_num=None, name=None):
+    def __init__(self, kernel_height=None, kernel_width=None, filter_num=None, stride=None, name=None):
         Layer.__init__(self, name)
-        if kernel_eeg_chan is None:
-            kernel_eeg_chan = random.randint(1, global_vars.get('kernel_height_max'))
-            # kernel_eeg_chan = random.randint(1, globals.get('eeg_chans'))
-        if kernel_time is None:
-            kernel_time = random.randint(1, global_vars.get('kernel_time_max'))
+        if kernel_height is None:
+            kernel_height = random.randint(1, global_vars.get('kernel_height_max'))
+        if kernel_width is None:
+            kernel_width = random.randint(1, global_vars.get('kernel_width_max'))
         if filter_num is None:
             filter_num = random.randint(1, global_vars.get('filter_num_max'))
-        if global_vars.get('channel_dim') == 'channels':
-            kernel_eeg_chan = 1
-        self.kernel_eeg_chan = kernel_eeg_chan
-        self.kernel_time = kernel_time
+        if stride is None:
+            stride = random.randint(1, global_vars.get('conv_stride_max'))
+        self.kernel_height = kernel_height
+        self.kernel_width = kernel_width
         self.filter_num = filter_num
+        self.stride = stride
 
 
 class PoolingLayer(Layer):
     # @initializer
-    def __init__(self, pool_time=None, stride_time=None, mode='max', stride_eeg_chan=1, pool_eeg_chan=1):
+    def __init__(self, pool_height=None, pool_width=None, stride_height=None, stride_width=None, mode='max'):
         Layer.__init__(self)
-        if pool_time is None:
-            pool_time = random.randint(1, global_vars.get('pool_time_max'))
-        if stride_time is None:
-            stride_time = random.randint(1, global_vars.get('pool_time_max'))
-        self.pool_time = pool_time
-        self.stride_time = stride_time
+        if pool_height is None:
+            pool_height = random.randint(1, global_vars.get('pool_height_max'))
+        if pool_width is None:
+            pool_width = random.randint(1, global_vars.get('pool_width_max'))
+        if stride_height is None:
+            stride_height = random.randint(1, global_vars.get('pool_stride_height_max'))
+        if stride_width is None:
+            stride_width = random.randint(1, global_vars.get('pool_stride_width_max'))
+        self.pool_height = pool_height
+        self.pool_width = pool_width
+        self.stride_height = stride_height
+        self.stride_width = stride_width
         self.mode = mode
-        self.stride_eeg_chan = stride_eeg_chan
-        self.pool_eeg_chan = pool_eeg_chan
 
 
 class IdentityLayer(Layer):

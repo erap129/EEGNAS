@@ -18,7 +18,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
     if global_vars.get('time_factor') != -1:
         model.add_module('stack_by_time', Expression(_stack_input_by_time))
     activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
-    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
+    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_height'), global_vars.get('input_width'))
     for i in range(len(layer_collection)):
         layer = layer_collection[i]
         if i > 0:
@@ -26,48 +26,49 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                 input_shape,
                 dtype=np.float32)))
             prev_channels = out.cpu().data.numpy().shape[1]
-            prev_time = out.cpu().data.numpy().shape[2]
-            prev_eeg_channels = out.cpu().data.numpy().shape[3]
+            prev_height = out.cpu().data.numpy().shape[2]
+            prev_width = out.cpu().data.numpy().shape[3]
         else:
-            prev_eeg_channels = global_vars.get('eeg_chans')
-            prev_time = global_vars.get('input_time_len')
-            prev_channels = 1
-            if global_vars.get('channel_dim') == 'channels':
-                prev_channels = global_vars.get('eeg_chans')
-                prev_eeg_channels = 1
+            prev_channels = global_vars.get('eeg_chans')
+            prev_height = global_vars.get('input_height')
+            prev_width = global_vars.get('input_width')
+            # if global_vars.get('channel_dim') == 'channels':
+            #     prev_channels = global_vars.get('eeg_chans')
+            #     prev_eeg_channels = 1
         if isinstance(layer, PoolingLayer):
-            while applyFix and (prev_time-layer.pool_time) / layer.stride_time < 1:
-                if random.uniform(0,1) < 0.5 and layer.pool_time > 1:
-                    layer.pool_time -= 1
-                elif layer.stride_time > 1:
-                    layer.stride_time -= 1
-                if layer.pool_time == 1 and layer.stride_time == 1:
+            while applyFix and (prev_height-layer.pool_height) / layer.stride_height < 1:
+                if random.uniform(0,1) < 0.5 and layer.pool_height > 1:
+                    layer.pool_height -= 1
+                elif layer.stride_height > 1:
+                    layer.stride_height -= 1
+                if layer.pool_height == 1 and layer.stride_height == 1:
                     break
-            if global_vars.get('channel_dim') == 'channels':
-                layer.pool_eeg_chan = 1
-            model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(int(layer.pool_time), int(layer.pool_eeg_chan)),
-                                                                      stride=(int(layer.stride_time), 1)))
+            # if global_vars.get('channel_dim') == 'channels':
+            #     layer.pool_eeg_chan = 1
+            model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(int(layer.pool_height), int(layer.pool_width)),
+                                                                      stride=(int(layer.stride_height), 1)))
 
         elif isinstance(layer, ConvLayer):
             layer_class = nn.Conv2d
-            if layer.kernel_time == 'down_to_one' or i >= global_vars.get('num_layers'):
+            if layer.kernel_height == 'down_to_one' or i >= global_vars.get('num_layers'):
                 if global_vars.get('autoencoder'):
-                    layer.kernel_time = global_vars.get('input_time_len') - prev_time + 1
+                    layer.kernel_height = global_vars.get('input_height') - prev_height + 1
+                    layer.kernel_width = global_vars.get('input_width') - prev_width + 1
                     layer_class = nn.ConvTranspose2d
                 else:
-                    layer.kernel_time = prev_time
-                layer.kernel_eeg_chan = prev_eeg_channels
+                    layer.kernel_height = prev_height
+                    layer.kernel_width = prev_width
                 conv_name = 'conv_classifier'
             else:
                 conv_name = '%s_%d' % (type(layer).__name__, i)
-                if applyFix and layer.kernel_eeg_chan > prev_eeg_channels:
-                    layer.kernel_eeg_chan = prev_eeg_channels
-                if applyFix and layer.kernel_time > prev_time:
-                    layer.kernel_time = prev_time
-            if global_vars.get('channel_dim') == 'channels':
-                layer.kernel_eeg_chan = 1
+                if applyFix and layer.kernel_height > prev_height:
+                    layer.kernel_height = prev_height
+                if applyFix and layer.kernel_width > prev_width:
+                    layer.kernel_width = prev_width
+            # if global_vars.get('channel_dim') == 'channels':
+            #     layer.kernel_eeg_chan = 1
             model.add_module(conv_name, layer_class(prev_channels, layer.filter_num,
-                                                (layer.kernel_time, layer.kernel_eeg_chan),
+                                                (layer.kernel_height, layer.kernel_width),
                                                 stride=1))
 
         elif isinstance(layer, BatchNormLayer):
@@ -102,23 +103,24 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
 
 def check_legal_model(layer_collection):
-    if global_vars.get('channel_dim') == 'channels':
-        input_chans = 1
-    else:
-        input_chans = global_vars.get('eeg_chans')
-    input_time = global_vars.get('input_time_len')
+    # if global_vars.get('channel_dim') == 'channels':
+    #     input_chans = 1
+    # else:
+    #     input_chans = global_vars.get('eeg_chans')
+    height = global_vars.get('input_height')
+    width = global_vars.get('input_width')
     for layer in layer_collection:
         if type(layer) == ConvLayer:
-            input_time = (input_time - layer.kernel_time) + 1
-            input_chans = (input_chans - layer.kernel_eeg_chan) + 1
+            height = (height - layer.kernel_height) + 1
+            width = (width - layer.kernel_width) + 1
         elif type(layer) == PoolingLayer:
-            input_time = (input_time - layer.pool_time) / layer.stride_time + 1
-            input_chans = (input_chans - layer.pool_eeg_chan) / layer.stride_eeg_chan + 1
-        if input_time < 1 or input_chans < 1:
-            print(f"illegal model, input_time={input_time}, input_chans={input_chans}")
+            height = (height - layer.pool_height) / layer.stride_height + 1
+            width = (width - layer.pool_width) / layer.stride_width + 1
+        if height < 1 or width < 1:
+            print(f"illegal model, height={height}, width={width}")
             return False
-    if global_vars.get('cropping'):
-        return check_legal_cropping_model(layer_collection)
+    # if global_vars.get('cropping'):
+    #     return check_legal_cropping_model(layer_collection)
     return True
 
 
@@ -177,7 +179,7 @@ def finalize_model(layer_collection):
         final_conv_time = global_vars.get('final_conv_size')
     else:
         final_conv_time = 'down_to_one'
-    conv_layer = ConvLayer(kernel_time=final_conv_time, kernel_eeg_chan=1,
+    conv_layer = ConvLayer(kernel_height=final_conv_time, kernel_width=1,
                            filter_num=global_vars.get('n_classes'))
     layer_collection.append(conv_layer)
     if global_vars.get('problem') == 'classification':

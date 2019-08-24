@@ -37,8 +37,8 @@ class _squeeze_final_output(nn.Module):
         super(_squeeze_final_output, self).__init__()
 
     def forward(self, x):
-        assert x.size()[3] == 1
-        x = x[:, :, :, 0]
+        if x.size()[3] == 1:
+            x = x[:, :, :, 0]
         if x.size()[2] == 1:
             x = x[:, :, 0]
         return x

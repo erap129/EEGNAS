@@ -65,11 +65,18 @@ def kfold_exp(data, model, folder_name):
 
 def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_num=None):
     y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
-    if STACK_RESULTS_BY_TIME:
-        y_pred = y_pred[::global_vars.get("steps_ahead")]
+    if global_vars.get('steps_ahead') < global_vars.get('jumps'):
+        y_pred = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
+                        global_vars.get('steps_ahead')))])], axis=0) for y in y_pred])
+        y_real = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
+                        global_vars.get('steps_ahead')))])], axis=0) for y in data.y])
         y_pred = np.concatenate([yi for yi in y_pred], axis=0)
-        y_real = data.y[::global_vars.get("steps_ahead")]
         y_real = np.concatenate([yi for yi in y_real], axis=0)
+    # if STACK_RESULTS_BY_TIME:
+    #     y_pred = y_pred[::global_vars.get("steps_ahead")]
+    #     y_pred = np.concatenate([yi for yi in y_pred], axis=0)
+    #     y_real = data.y[::global_vars.get("steps_ahead")]
+    #     y_real = np.concatenate([yi for yi in y_real], axis=0)
         df['time_step'] = range(len(y_pred))
         df[f'{global_vars.get("steps_ahead")}_steps_ahead_real'] = y_real
         df[f'{global_vars.get("steps_ahead")}_steps_ahead_pred'] = y_pred
@@ -102,7 +109,7 @@ for configuration in configurations:
     try:
         # model = torch.load(f'models/1032_netflow_asflow/{global_vars.get("input_time_len")}_'
         #                    f'{global_vars.get("steps_ahead")}_ahead.th').cuda()
-        model = torch.load('models/61_netflow_asflow/best_model_1.th').cuda()
+        model = torch.load('models/4_netflow_asflow/best_model_1.th').cuda()
     except Exception as e:
         print(f'experiment failed: {str(e)}')
         continue

@@ -22,6 +22,8 @@ from sklearn.model_selection import train_test_split
 from moabb.datasets import Cho2017, BNCI2014004
 from moabb.paradigms import (LeftRightImagery, MotorImagery,
                              FilterBankMotorImagery)
+import torchvision
+import torchvision.transforms as transforms
 import scipy.io
 from data.Bloomberg.bloomberg_preproc import get_bloomberg
 from data.HumanActivity.human_activity_preproc import get_human_activity
@@ -413,12 +415,8 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
     if global_vars.get('no_shuffle'):
         shuffle = False
     file_path = f"{data_folder}netflow/akamai-dt-handovers_1.7.17-1.8.19.csv"
-    X, y = preprocess_netflow_data(file_path, global_vars.get('input_time_len'), global_vars.get('steps_ahead'),
+    X, y = preprocess_netflow_data(file_path, global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                    global_vars.get('start_point'), global_vars.get('jumps'))
-    # X = np.load(f"{data_folder}netflow/asflow/X_asflow_{global_vars.get('input_time_len')}_steps_"
-    #             f"{global_vars.get('steps_ahead')}_ahead.npy")
-    # y = np.load(f"{data_folder}netflow/asflow/y_asflow_{global_vars.get('input_time_len')}_steps_"
-    #             f"{global_vars.get('steps_ahead')}_ahead.npy")
     global_vars.set('n_classes', global_vars.get('steps_ahead'))
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
@@ -442,6 +440,21 @@ def get_netflow_asflow_AE(data_folder, shuffle=True):
                                                         shuffle=shuffle)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
                                                       shuffle=shuffle)
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
+    return train_set, valid_set, test_set
+
+
+def get_cifar10(data_folder):
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    trainset = torchvision.datasets.CIFAR10(root='data_cifar', train=True, download=True, transform=transform)
+    testset = torchvision.datasets.CIFAR10(root='data_cifar', train=False, download=True, transform=transform)
+    X_train = trainset.train_data
+    y_train = trainset.train_labels
+    X_test = testset.test_data
+    y_test = testset.test_labels
+    X_train = X_train.reshape(-1, 3, 32, 32)
+    X_test = X_test.reshape(-1, 3, 32, 32)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'))
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
@@ -542,6 +555,8 @@ def get_train_val_test(data_folder, subject_id):
         return get_netflow_asflow_train_val_test(data_folder)
     elif global_vars.get('dataset') == 'netflow_asflowAE':
         return get_netflow_asflow_AE(data_folder)
+    elif global_vars.get('dataset') == 'cifar10':
+        return get_cifar10(data_folder)
 
 
 
