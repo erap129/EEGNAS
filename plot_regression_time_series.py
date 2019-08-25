@@ -1,8 +1,7 @@
 from datetime import datetime
-
 import torch
 from sklearn.model_selection import KFold, train_test_split
-
+from torch import nn
 import global_vars
 from EEGNAS_experiment import get_normal_settings
 from data_preprocessing import get_dataset, makeDummySignalTargets
@@ -13,16 +12,7 @@ import numpy as np
 import logging
 import sys
 import pandas as pd
-
 from utilities.misc import concat_train_val_sets, createFolder, unify_dataset, reset_model_weights
-
-log = logging.getLogger(__name__)
-logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                    level=logging.DEBUG, stream=sys.stdout)
-CHOSEN_EXPERIMENT = sys.argv[1]
-STACK_RESULTS_BY_TIME = False
-global_vars.init_config('configurations/config.ini')
-configurations = get_configurations(CHOSEN_EXPERIMENT, global_vars.configs)
 
 
 def export_netflow_asflowAE_results(df, data, model, folder_name):
@@ -72,11 +62,6 @@ def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_nu
                         global_vars.get('steps_ahead')))])], axis=0) for y in data.y])
         y_pred = np.concatenate([yi for yi in y_pred], axis=0)
         y_real = np.concatenate([yi for yi in y_real], axis=0)
-    # if STACK_RESULTS_BY_TIME:
-    #     y_pred = y_pred[::global_vars.get("steps_ahead")]
-    #     y_pred = np.concatenate([yi for yi in y_pred], axis=0)
-    #     y_real = data.y[::global_vars.get("steps_ahead")]
-    #     y_real = np.concatenate([yi for yi in y_real], axis=0)
         df['time_step'] = range(len(y_pred))
         df[f'{global_vars.get("steps_ahead")}_steps_ahead_real'] = y_real
         df[f'{global_vars.get("steps_ahead")}_steps_ahead_pred'] = y_pred
@@ -96,26 +81,34 @@ def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_nu
               f'{global_vars.get("steps_ahead")}_ahead_{segment}_stack_{STACK_RESULTS_BY_TIME}{fold_str}.csv')
 
 
-now = datetime.now()
-date_time = now.strftime("%m.%d.%Y")
-for configuration in configurations:
-    global_vars.set_config(configuration)
-    set_params_by_dataset('configurations/dataset_params.ini')
-    folder_name = f'regression_results/{date_time}_{global_vars.get("dataset")}'
-    createFolder(folder_name)
-    dataset = get_dataset('all')
-    concat_train_val_sets(dataset)
-    set_gpu()
-    try:
-        # model = torch.load(f'models/1032_netflow_asflow/{global_vars.get("input_time_len")}_'
-        #                    f'{global_vars.get("steps_ahead")}_ahead.th').cuda()
-        model = torch.load('models/4_netflow_asflow/best_model_1.th').cuda()
-    except Exception as e:
-        print(f'experiment failed: {str(e)}')
-        continue
-    if global_vars.get('k_fold'):
-        kfold_exp(dataset, model, folder_name)
-    else:
-        for segment in ['train', 'test']:
-            df = pd.DataFrame()
-            globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], model, folder_name)
+if __name__ == '__main__':
+    log = logging.getLogger(__name__)
+    logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
+                        level=logging.DEBUG, stream=sys.stdout)
+    CHOSEN_EXPERIMENT = sys.argv[1]
+    STACK_RESULTS_BY_TIME = False
+    global_vars.init_config('configurations/config.ini')
+    configurations = get_configurations(CHOSEN_EXPERIMENT, global_vars.configs)
+
+    now = datetime.now()
+    date_time = now.strftime("%m.%d.%Y")
+    for configuration in configurations:
+        global_vars.set_config(configuration)
+        set_params_by_dataset('configurations/dataset_params.ini')
+        dataset = get_dataset('all')
+        concat_train_val_sets(dataset)
+        set_gpu()
+        try:
+            model = torch.load(f'models/{global_vars.get("models_dir")}/{global_vars.get("model_file_name")}').cuda()
+        except Exception as e:
+            print(f'experiment failed: {str(e)}')
+            continue
+        folder_name = f'regression_results/{date_time}_{global_vars.get("dataset")}' \
+                      f'_{global_vars.get("model_file_name")}'
+        createFolder(folder_name)
+        if global_vars.get('k_fold'):
+            kfold_exp(dataset, model, folder_name)
+        else:
+            for segment in ['train', 'test']:
+                df = pd.DataFrame()
+                globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], model, folder_name)

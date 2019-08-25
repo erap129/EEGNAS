@@ -6,13 +6,11 @@ from braindecode.datasets.bbci import BBCIDataset
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
 from sklearn.preprocessing import MinMaxScaler
-
 from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
+from data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification
 from utilities.data_utils import split_sequence, noise_input, split_parallel_sequences
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-import matplotlib
-matplotlib.use('Agg')
 from collections import OrderedDict
 from braindecode.mne_ext.signalproc import mne_apply, resample_cnt
 from braindecode.datautil.splitters import split_into_two_sets
@@ -34,7 +32,7 @@ import global_vars
 import logging
 import numpy as np
 import pandas as pd
-
+import matplotlib.pyplot as plt
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
 
@@ -391,35 +389,22 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     return train_set, valid_set, test_set
 
 
-def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps):
-    df = pd.read_csv(file)
-    vols = {}
-    data_sample = []
-    for index, row in df.iterrows():
-        vols[row['id']] = [row['ts'], row['vol']]
-    for key, value in vols.items():
-        df = pd.DataFrame([json.loads(value[0]), json.loads(value[1])], index=['ts', 'vol']).T
-        df = df.sort_values(by='ts')
-        data_sample.append(np.array(df['vol']))
-    sum_arr = [sum(x) for x in zip(*data_sample)]
-    data_sample.append(np.array(sum_arr))
-    data_sample = list(map(lambda x: x.reshape((len(x), 1)), data_sample))
-    dataset = np.hstack(data_sample)
-    sample_list, y = split_parallel_sequences(dataset, n_before, n_ahead, start_point, jumps)
-    X = sample_list.swapaxes(1, 2)[:, :10]
-    y = y.swapaxes(1, 2)[:, 10]
-    return X, y
-
-
 def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
     if global_vars.get('no_shuffle'):
         shuffle = False
     file_path = f"{data_folder}netflow/akamai-dt-handovers_1.7.17-1.8.19.csv"
     X, y = preprocess_netflow_data(file_path, global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                    global_vars.get('start_point'), global_vars.get('jumps'))
-    global_vars.set('n_classes', global_vars.get('steps_ahead'))
+    if global_vars.get('problem') != 'classification':
+        global_vars.set('n_classes', global_vars.get('steps_ahead'))
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    if global_vars.get('problem') == 'classification':
+        X_train, y_train = turn_netflow_into_classification(X_train, y_train, global_vars.get('netflow_threshold'),
+                                                            oversampling=True)
+        X_test, y_test = turn_netflow_into_classification(X_test, y_test, global_vars.get('netflow_threshold'),
+                                                          oversampling=False)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
+                                                      shuffle=shuffle)
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
 
@@ -446,8 +431,8 @@ def get_netflow_asflow_AE(data_folder, shuffle=True):
 
 def get_cifar10(data_folder):
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    trainset = torchvision.datasets.CIFAR10(root='data_cifar', train=True, download=True, transform=transform)
-    testset = torchvision.datasets.CIFAR10(root='data_cifar', train=False, download=True, transform=transform)
+    trainset = torchvision.datasets.CIFAR10(root='data', train=True, download=True, transform=transform)
+    testset = torchvision.datasets.CIFAR10(root='data', train=False, download=True, transform=transform)
     X_train = trainset.train_data
     y_train = trainset.train_labels
     X_test = testset.test_data

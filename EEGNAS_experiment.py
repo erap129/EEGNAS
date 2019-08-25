@@ -1,4 +1,5 @@
 import os
+import shutil
 
 from evolution.loaded_model_evaluations import EEGNAS_from_file
 from utilities.gdrive import upload_exp_to_gdrive
@@ -23,9 +24,15 @@ import sys
 import csv
 import time
 import code, traceback, signal
-import numpy as np
 global data_folder, valid_set_fraction
+import atexit
 
+def exit_handler():
+    if 'exp_folder' in globals().keys() and args.debug_mode:
+        print(f'deleting folder {exp_folder}')
+        shutil.rmtree(exp_folder)
+
+atexit.register(exit_handler)
 
 def debug(sig, frame):
     """Interrupt running process, and provide a python prompt for
@@ -52,6 +59,7 @@ def parse_args(args):
     parser.add_argument("-m", "--model", help="path to Pytorch model file")
     parser.add_argument("-g", "--garbage", help="Use garbage time", default='f')
     parser.add_argument("-d", "--drive", help="Save results to google drive", default='f')
+    parser.add_argument("-dm", "--debug_mode", action='store_true', help="debug mode, don't save results to disk")
     return parser.parse_args(args)
 
 
@@ -75,8 +83,8 @@ def get_normal_settings():
                                             oper=get_oper_by_loss_function(loss_function))])
     iterator = BalancedBatchSizeIterator(batch_size=global_vars.get('batch_size'))
     monitors = [LossMonitor(), GenericMonitor('accuracy'), RuntimeMonitor()]
-    monitors.append(GenericMonitor(global_vars.get('nn_objective')))
-    monitors.append(GenericMonitor(global_vars.get('ga_objective')))
+    for metric in global_vars.get('evaluation_metrics'):
+        monitors.append(GenericMonitor(metric))
     return stop_criterion, iterator, loss_function, monitors
 
 
@@ -291,14 +299,13 @@ if __name__ == '__main__':
                     write_dict(global_vars.config, f"{exp_folder}/final_config_{exp_name}.ini")
                     generate_report(csv_file, report_file)
                 except Exception as e:
-                    with open(f"{exp_folder}/error_log_{exp_name}.txt", "w") as err_file:
+                    with open(f"error_logs/error_log_{exp_name}.txt", "w") as err_file:
                         print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
                         print(traceback.format_exc(), file=err_file)
                     print('experiment failed. Exception message: %s' % (str(e)))
                     print(traceback.format_exc())
-                    new_exp_folder = exp_folder + '_fail'
-                    os.rename(exp_folder, new_exp_folder)
-                    write_dict(global_vars.config, f"{new_exp_folder}/final_config_{exp_name}.ini")
+                    shutil.rmtree(exp_folder)
+                    write_dict(global_vars.config, f"error_logs/final_config_{exp_name}.ini")
                     folder_names.remove(exp_name)
     finally:
         if args.drive == 't':

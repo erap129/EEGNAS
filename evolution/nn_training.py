@@ -156,6 +156,8 @@ class NN_Trainer:
         model.train()
         batch_generator = self.iterator.get_batches(datasets['train'], shuffle=True)
         for inputs, targets in batch_generator:
+            if global_vars.get('lstm'):
+                inputs = np.squeeze(inputs)
             input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
             target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
             if self.cuda:
@@ -193,11 +195,15 @@ class NN_Trainer:
             all_batch_sizes = []
             all_targets = []
             for batch in self.iterator.get_batches(dataset, shuffle=False):
-                preds, loss = self.eval_on_batch(batch[0], batch[1], model)
+                input_vars = batch[0]
+                target_vars = batch[1]
+                if global_vars.get('lstm'):
+                    input_vars = np.squeeze(input_vars)
+                preds, loss = self.eval_on_batch(input_vars, target_vars, model)
                 all_preds.append(preds)
                 all_losses.append(loss)
-                all_batch_sizes.append(len(batch[0]))
-                all_targets.append(batch[1])
+                all_batch_sizes.append(len(input_vars))
+                all_targets.append(target_vars)
             for m in self.monitors:
                 result_dict = m.monitor_set(setname, all_preds, all_losses,
                                             all_batch_sizes, all_targets,
