@@ -1,6 +1,5 @@
 import os
 import shutil
-
 from evolution.loaded_model_evaluations import EEGNAS_from_file
 from utilities.gdrive import upload_exp_to_gdrive
 from utilities.config_utils import config_to_dict, get_configurations, get_multiple_values, set_params_by_dataset, \

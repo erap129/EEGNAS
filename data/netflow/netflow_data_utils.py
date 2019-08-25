@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import numpy as np
 from imblearn.over_sampling import RandomOverSampler
@@ -11,12 +12,14 @@ def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps):
     df = pd.read_csv(file)
     vols = {}
     data_sample = []
+    data_time = []
     for index, row in df.iterrows():
         vols[row['id']] = [row['ts'], row['vol']]
     for key, value in vols.items():
         df = pd.DataFrame([json.loads(value[0]), json.loads(value[1])], index=['ts', 'vol']).T
         df = df.sort_values(by='ts')
         data_sample.append(np.array(df['vol']))
+        data_time.append([datetime.utcfromtimestamp(int(tm)).strftime('%Y-%m-%d %H:%M:%S') for tm in df['ts']])
     sum_arr = [sum(x) for x in zip(*data_sample)]
     data_sample.append(np.array(sum_arr))
     data_sample = list(map(lambda x: x.reshape((len(x), 1)), data_sample))

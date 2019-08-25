@@ -15,6 +15,28 @@ import pandas as pd
 from utilities.misc import concat_train_val_sets, createFolder, unify_dataset, reset_model_weights
 
 
+# Recurrent neural network (many-to-one)
+class RNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
+        super(RNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        # Set initial hidden and cell states
+        x = x.view(-1, 32, 10)
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+        h0, c0 = h0.cuda(), c0.cuda()
+        # Forward propagate LSTM
+        out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
+        # Decode the hidden state of the last time step
+        out = self.fc(out[:, -1, :])
+        return out
+
+
 def export_netflow_asflowAE_results(df, data, model, folder_name):
     y_real = data.y
     y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
@@ -30,6 +52,21 @@ def export_netflow_asflowAE_results(df, data, model, folder_name):
             df = df.append(example_df)
             print(f'finished channel {channel_idx} in example {example_idx} in {segment} segment')
     df.to_csv(f'{folder_name}/netflow_asflowAE_{segment}_results.csv', index=False)
+
+
+def get_netflow_test_data_by_indices(train_index, test_index, problem):
+    prev_problem = global_vars.get('problem')
+    global_vars.set('problem', problem)
+    dataset = get_dataset('all')
+    if train_index != -1:
+        data = unify_dataset(dataset)
+        X_test = data.X[test_index]
+        y_test = data.y[test_index]
+    else:
+        X_test = dataset['test'].X
+        y_test = dataset['test'].y
+    global_vars.set('problem', prev_problem)
+    return X_test, y_test
 
 
 def kfold_exp(data, model, folder_name):
@@ -49,11 +86,33 @@ def kfold_exp(data, model, folder_name):
         nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
         for segment in ['train', 'valid', 'test']:
             df = pd.DataFrame()
-            globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], segment,
+            if global_vars.get('problem') == 'classification':
+                if segment != 'test':
+                    continue
+                globals()[f'export_{global_vars.get("dataset")}_results_classification'](df, dataset[segment], segment,
+                                                                          model, folder_name, fold_num,
+                                                                          train_index, test_index)
+            else:
+                globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], segment,
                                                                       model, folder_name, fold_num)
 
 
+def no_kfold_exp(dataset, model, folder_name):
+    for segment in ['train', 'valid', 'test']:
+        df = pd.DataFrame()
+        if global_vars.get('problem') == 'classification':
+            if segment != 'test':
+                continue
+            globals()[f'export_{global_vars.get("dataset")}_results_classification'](df, dataset[segment], segment,
+                                                                                     model, folder_name, fold_num=-1,
+                                                                                     train_index=-1, test_index=-1)
+        else:
+            globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], segment,
+                                                                      model, folder_name)
+
+
 def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_num=None):
+    model.eval()
     y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
     if global_vars.get('steps_ahead') < global_vars.get('jumps'):
         y_pred = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
@@ -77,8 +136,29 @@ def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_nu
     fold_str = ''
     if fold_num is not None:
         fold_str = f'_fold_{fold_num}'
-    df.to_csv(f'{folder_name}/{global_vars.get("input_time_len")}_'
+    df.to_csv(f'{folder_name}/{global_vars.get("input_height")}_'
               f'{global_vars.get("steps_ahead")}_ahead_{segment}_stack_{STACK_RESULTS_BY_TIME}{fold_str}.csv')
+
+
+def export_netflow_asflow_results_classification(df, data, segment, model, folder_name, fold_num, train_index, test_index):
+    model.eval()
+    y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
+    day = np.concatenate([[day for j in range(global_vars.get('jumps'))] for day in range(len(y_pred))], axis=0)
+    y_pred = np.concatenate([[np.argmax(y) for i in range(global_vars.get('jumps'))] for y in y_pred], axis=0)
+    y_real = np.concatenate([[y for i in range(global_vars.get('jumps'))] for y in data.y], axis=0)
+    global_vars.set('problem', 'regression')
+    _, y_test_reg = get_netflow_test_data_by_indices(train_index, test_index, 'regression')
+    y_regression = np.concatenate([yi for yi in y_test_reg], axis=0)
+    df['day'] = day
+    df['predicted_decision'] = y_pred
+    df['real_decision'] = y_real
+    df['regression_data'] = y_regression
+    fold_str = ''
+    if fold_num is not None:
+        fold_str = f'_fold_{fold_num}'
+    df.to_csv(f'{folder_name}/{global_vars.get("input_height")}_'
+              f'{global_vars.get("steps_ahead")}_ahead_{segment}_stack_{STACK_RESULTS_BY_TIME}{fold_str}_'
+              f'classification.csv')
 
 
 if __name__ == '__main__':
@@ -109,6 +189,4 @@ if __name__ == '__main__':
         if global_vars.get('k_fold'):
             kfold_exp(dataset, model, folder_name)
         else:
-            for segment in ['train', 'test']:
-                df = pd.DataFrame()
-                globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], model, folder_name)
+            no_kfold_exp(dataset, model, folder_name)

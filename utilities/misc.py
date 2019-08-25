@@ -160,8 +160,10 @@ def export_dataset_to_file(data_folder, dataset_name, subject_id, channel_pos='f
 
 def reset_model_weights(model):
     for layer in model.children():
-        if isinstance(layer, torch.nn.Conv2d):
+        if isinstance(layer, torch.nn.Conv2d) or isinstance(layer, torch.nn.Linear):
             torch.nn.init.xavier_uniform(layer.weight.data)
+            if layer.bias is not None:
+                torch.nn.init.zeros_(layer.bias)
         elif isinstance(layer, torch.nn.BatchNorm2d):
             layer.reset_parameters()
 
