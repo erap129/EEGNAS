@@ -1,6 +1,6 @@
+from utilities.config_utils import set_default_config
 
 if __name__ == '__main__':
-    global_vars.init_config('configurations/config.ini')
     set_default_config('../../configurations/config.ini')
     global_vars.set('dataset', 'netflow_asflow')
     set_params_by_dataset('../../configurations/dataset_params.ini')

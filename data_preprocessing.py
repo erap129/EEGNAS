@@ -475,7 +475,7 @@ def get_tuh_train_val_test(data_folder):
                             train_or_eval='eval',
                             sensor_types=global_vars.get('sensor_types'))
     X, y = training_set.load()
-    global_vars.set('input_time_len', X[0].shape[1])
+    global_vars.set('input_height', X[0].shape[1])
     splitter = TrainValidSplitter(10, i_valid_fold=0, shuffle=global_vars.get('shuffle'))
     train_set, valid_set = splitter.split(X, y)
     test_X, test_y = test_set.load()

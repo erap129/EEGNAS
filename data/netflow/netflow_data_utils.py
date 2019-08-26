@@ -19,12 +19,15 @@ def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps):
         df = pd.DataFrame([json.loads(value[0]), json.loads(value[1])], index=['ts', 'vol']).T
         df = df.sort_values(by='ts')
         data_sample.append(np.array(df['vol']))
-        data_time.append([datetime.utcfromtimestamp(int(tm)).strftime('%Y-%m-%d %H:%M:%S') for tm in df['ts']])
     sum_arr = [sum(x) for x in zip(*data_sample)]
     data_sample.append(np.array(sum_arr))
+    data_time.append(np.array([datetime.utcfromtimestamp(int(tm)).strftime('%Y-%m-%d %H:%M:%S') for tm in df['ts']], dtype='str'))
     data_sample = list(map(lambda x: x.reshape((len(x), 1)), data_sample))
+    data_time = list(map(lambda x: x.reshape((len(x), 1)), data_time))
     dataset = np.hstack(data_sample)
+    timestamps = np.hstack(data_time)
     sample_list, y = split_parallel_sequences(dataset, n_before, n_ahead, start_point, jumps)
+    times_x, time_y = split_parallel_sequences(timestamps, n_before, n_ahead, start_point, jumps)
     X = sample_list.swapaxes(1, 2)[:, :10]
     y = y.swapaxes(1, 2)[:, 10]
     return X, y

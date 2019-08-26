@@ -63,11 +63,11 @@ class DeconvNet(nn.Module):
                     self.conv2deconv[len(model) - 2 - idx] = idx
         self.deconv_nn.cuda()
 
-    def forward(self, x, start_idx, pool_locs):
+    def forward(self, x, start_idx, pool_locs, pool_sizes):
         start_idx = len(self.deconv_nn) - start_idx - 1
         for idx in range(start_idx, len(self.deconv_nn)):
             if isinstance(self.deconv_nn[idx], nn.MaxUnpool2d):
-                x = self.deconv_nn[idx](x, pool_locs[self.conv2deconv[idx]])
+                x = self.deconv_nn[idx](x, pool_locs[self.conv2deconv[idx]], output_size=pool_sizes[self.conv2deconv[idx]])
             else:
                 x = self.deconv_nn[idx](x)
         return x
@@ -93,15 +93,17 @@ class ConvDeconvNet(nn.Module):
         self.model = deepcopy(model)
         return_indices_for_maxpool(self.model)
         self.pool_locs = {}
+        self.pool_sizes = {}
 
     def forward(self, x, layer_idx, filter_idx):
         for idx, layer in enumerate(list(self.model.children())[:layer_idx+1]):
             if isinstance(layer, nn.MaxPool2d):
+                self.pool_sizes[idx] = x.shape
                 x, self.pool_locs[idx] = layer(x)
             else:
                 x = layer(x)
         x = erase_all_filters_but_one(x, filter_idx)
-        reconstruction = self.deconv_net.forward(x, layer_idx, self.pool_locs)
+        reconstruction = self.deconv_net.forward(x, layer_idx, self.pool_locs, self.pool_sizes)
         return reconstruction
 
 
