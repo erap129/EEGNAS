@@ -10,13 +10,13 @@ matplotlib.use('TkAgg')
 
 
 def generate_sine_wave(length, samplerate, frequencies):
-    wave = np.zeros(length * samplerate)
+    wave = np.zeros(int(length * samplerate))
     for frequency in frequencies:
         wave += sine_wave(frequency=frequency, samplerate=samplerate, length=length)
     return wave
 
 
-wave = generate_sine_wave(5, 250, [7,11])[None, None, :]
+wave = generate_sine_wave(5, 250, [3])[None, None, :]
 subtracted_wave = subtract_frequency(wave, 7, 250)
 filtered_wave = butter_bandstop_filter(wave[0, 0], 6, 8, 250)
 plt.plot(wave[0, 0])

@@ -184,7 +184,7 @@ def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cut
     plot_dict = OrderedDict()
     plot_imgs = OrderedDict()
     for layer_idx, layer in list(enumerate(list(pretrained_model.children())))[global_vars.get('layer_idx_cutoff'):]:
-        max_examples = create_max_examples_per_channel(layer_idx, pretrained_model, steps=global_vars.get('steps'))
+        max_examples = create_max_examples_per_channel(layer_idx, pretrained_model, steps=global_vars.get('gradient_ascent_steps'))
         max_value = 0
         for chan_idx, example in enumerate(max_examples):
             for eeg_chan in eeg_chans:

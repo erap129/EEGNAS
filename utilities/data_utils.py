@@ -7,7 +7,7 @@ import numpy as np
 
 
 def get_dummy_input():
-    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_time_len'), 1)
+    input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_height'), global_vars.get('input_width'))
     return np_to_var(np.random.random(input_shape).astype(np.float32))
 
 

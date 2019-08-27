@@ -41,7 +41,7 @@ class CNNLayerVisualization():
         self.hook_layer()
         # Generate a random image
         random_image = np.float32(np.random.uniform(-1, 1, (1, global_vars.get('eeg_chans'),
-                                                            global_vars.get('input_time_len'), 1)))
+                                            global_vars.get('input_height'), global_vars.get('input_width'))))
         # Process image and return variable
         processed_image = torch.tensor(np_to_var(random_image), requires_grad=True, device='cuda')
         # Define optimizer for the image
