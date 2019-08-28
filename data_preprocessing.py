@@ -389,7 +389,7 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     return train_set, valid_set, test_set
 
 
-def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
+def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
     if global_vars.get('no_shuffle'):
         shuffle = False
     file_path = f"{data_folder}netflow/akamai-dt-handovers_1.7.17-1.8.19.csv"

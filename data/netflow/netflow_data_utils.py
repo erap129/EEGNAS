@@ -8,11 +8,21 @@ plt.interactive(False)
 import pandas as pd
 
 
-def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps):
+def fix_netflow_days(times, measurements):
+    prev_time = times[0]
+    for idx, time in enumerate(times[1:]):
+        if time.hour != (prev_time.hour + 1) % 24:
+            time_diff = (time.hour - prev_time.hour) % 24
+            for m_idx, measurement_series in enumerate(measurements):
+                measurements[m_idx] = np.insert(measurement_series, idx+1, [0 for i in range(time_diff)], axis=0)
+        prev_time = time
+    return measurements
+
+
+def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps, fix_days=True):
     df = pd.read_csv(file)
     vols = {}
     data_sample = []
-    data_time = []
     for index, row in df.iterrows():
         vols[row['id']] = [row['ts'], row['vol']]
     for key, value in vols.items():
@@ -21,13 +31,12 @@ def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps):
         data_sample.append(np.array(df['vol']))
     sum_arr = [sum(x) for x in zip(*data_sample)]
     data_sample.append(np.array(sum_arr))
-    data_time.append(np.array([datetime.utcfromtimestamp(int(tm)).strftime('%Y-%m-%d %H:%M:%S') for tm in df['ts']], dtype='str'))
+    data_time = [datetime.utcfromtimestamp(int(tm)) for tm in df['ts']]
+    if fix_days:
+        data_sample = fix_netflow_days(data_time, data_sample)
     data_sample = list(map(lambda x: x.reshape((len(x), 1)), data_sample))
-    data_time = list(map(lambda x: x.reshape((len(x), 1)), data_time))
     dataset = np.hstack(data_sample)
-    timestamps = np.hstack(data_time)
     sample_list, y = split_parallel_sequences(dataset, n_before, n_ahead, start_point, jumps)
-    times_x, time_y = split_parallel_sequences(timestamps, n_before, n_ahead, start_point, jumps)
     X = sample_list.swapaxes(1, 2)[:, :10]
     y = y.swapaxes(1, 2)[:, 10]
     return X, y

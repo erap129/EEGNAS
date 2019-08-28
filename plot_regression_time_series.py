@@ -1,5 +1,6 @@
 from datetime import datetime
 import torch
+from braindecode.datautil.splitters import concatenate_sets
 from sklearn.model_selection import KFold, train_test_split
 from torch import nn
 import global_vars
@@ -58,7 +59,7 @@ def get_netflow_test_data_by_indices(train_index, test_index, problem):
     prev_problem = global_vars.get('problem')
     global_vars.set('problem', problem)
     dataset = get_dataset('all')
-    if train_index != -1:
+    if train_index is not None:
         data = unify_dataset(dataset)
         X_test = data.X[test_index]
         y_test = data.y[test_index]
@@ -83,6 +84,7 @@ def kfold_exp(data, model, folder_name):
         dataset = {}
         dataset['train'], dataset['valid'], dataset['test'] = \
             makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
+        # dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
         nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
         for segment in ['train', 'valid', 'test']:
             df = pd.DataFrame()
@@ -97,7 +99,12 @@ def kfold_exp(data, model, folder_name):
                                                                       model, folder_name, fold_num)
 
 
-def no_kfold_exp(dataset, model, folder_name):
+def no_kfold_exp(dataset, model, folder_name, reset_weights=False):
+    if reset_weights:
+        reset_model_weights(model)
+        stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+        nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
+        nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
     for segment in ['train', 'valid', 'test']:
         df = pd.DataFrame()
         if global_vars.get('problem') == 'classification':
@@ -105,7 +112,7 @@ def no_kfold_exp(dataset, model, folder_name):
                 continue
             globals()[f'export_{global_vars.get("dataset")}_results_classification'](df, dataset[segment], segment,
                                                                                      model, folder_name, fold_num=-1,
-                                                                                     train_index=-1, test_index=-1)
+                                                                                     train_index=None, test_index=None)
         else:
             globals()[f'export_{global_vars.get("dataset")}_results'](df, dataset[segment], segment,
                                                                       model, folder_name)
@@ -153,6 +160,7 @@ def export_netflow_asflow_results_classification(df, data, segment, model, folde
     df['predicted_decision'] = y_pred
     df['real_decision'] = y_real
     df['regression_data'] = y_regression
+    global_vars.set('problem', 'classification')
     fold_str = ''
     if fold_num is not None:
         fold_str = f'_fold_{fold_num}'
