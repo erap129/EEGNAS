@@ -3,7 +3,8 @@ import json
 import numpy as np
 from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
-from utilities.data_utils import split_parallel_sequences
+from utilities.data_utils import split_parallel_sequences, unison_shuffled_copies
+
 plt.interactive(False)
 import pandas as pd
 
@@ -59,7 +60,7 @@ def turn_netflow_into_classification(X, y, threshold, oversampling=True):
         X_reshaped = X.reshape(X.shape[0], -1)
         X_oversample, res_oversample = ros.fit_sample(X_reshaped, res)
         X_oversample = X_oversample.reshape(-1, X.shape[1], X.shape[2])
-        return X_oversample, res_oversample
+        return unison_shuffled_copies(X_oversample, res_oversample)
     return np.array(X), np.array(res)
 
 

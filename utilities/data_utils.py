@@ -61,3 +61,9 @@ def noise_input(data, devs_id):
         for dev_id in range(len(devs_id)):
             noise_data[id_in_batch][dev_id][noise_steps] = np.random.normal(b_mean, b_std)
     return noise_data
+
+
+def unison_shuffled_copies(a, b):
+    assert len(a) == len(b)
+    p = np.random.permutation(len(a))
+    return a[p], b[p]
