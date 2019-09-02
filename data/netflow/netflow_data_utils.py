@@ -4,27 +4,24 @@ import numpy as np
 from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
 from utilities.data_utils import split_parallel_sequences, unison_shuffled_copies
-
+from copy import deepcopy
 plt.interactive(False)
 import pandas as pd
 
 
-def fix_netflow_days(times, measurements):
-    prev_time = times[0]
-    for idx, time in enumerate(times[1:]):
-        if time.hour != (prev_time.hour + 1) % 24:
-            time_diff = (time.hour - prev_time.hour) % 24
-            for m_idx, measurement_series in enumerate(measurements):
-                measurements[m_idx] = np.insert(measurement_series, idx+1, [0 for i in range(time_diff)], axis=0)
-        prev_time = time
-    return measurements
-
-
 def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps, fix_days=True):
-    df = pd.read_csv(file)
+    all_data = get_whole_netflow_data(file, fix_days)
+    sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, start_point, jumps)
+    X = sample_list.swapaxes(1, 2)[:, :10]
+    y = y.swapaxes(1, 2)[:, 10]
+    return X, y
+
+
+def get_whole_netflow_data(file, fix_days=True):
+    orig_df = pd.read_csv(file)
     vols = {}
     data_sample = []
-    for index, row in df.iterrows():
+    for index, row in orig_df.iterrows():
         vols[row['id']] = [row['ts'], row['vol']]
     for key, value in vols.items():
         df = pd.DataFrame([json.loads(value[0]), json.loads(value[1])], index=['ts', 'vol']).T
@@ -33,14 +30,13 @@ def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps, fix_day
     sum_arr = [sum(x) for x in zip(*data_sample)]
     data_sample.append(np.array(sum_arr))
     data_time = [datetime.utcfromtimestamp(int(tm)) for tm in df['ts']]
+    all_data = pd.DataFrame(list(zip(*([data_time] + data_sample))), columns=['time'] + list(orig_df['id'].
+                            values.astype('str')) + ['sum'])
+    all_data.index = pd.to_datetime(all_data['time'])
+    all_data = all_data.drop(columns=['time'])
     if fix_days:
-        data_sample = fix_netflow_days(data_time, data_sample)
-    data_sample = list(map(lambda x: x.reshape((len(x), 1)), data_sample))
-    dataset = np.hstack(data_sample)
-    sample_list, y = split_parallel_sequences(dataset, n_before, n_ahead, start_point, jumps)
-    X = sample_list.swapaxes(1, 2)[:, :10]
-    y = y.swapaxes(1, 2)[:, 10]
-    return X, y
+        all_data = all_data.resample('H').pad()
+    return all_data
 
 
 def turn_netflow_into_classification(X, y, threshold, oversampling=True):

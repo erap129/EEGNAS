@@ -67,3 +67,22 @@ def unison_shuffled_copies(a, b):
     assert len(a) == len(b)
     p = np.random.permutation(len(a))
     return a[p], b[p]
+
+
+def calc_regression_accuracy(y_pred, y_real, threshold):
+    actual = []
+    predicted = []
+    for yp, yr in zip(y_pred, y_real):
+        predicted.append((yp > threshold).astype('int'))
+        actual.append((yr > threshold).astype('int'))
+    return actual, predicted
+
+
+def write_dict(dict, filename):
+    with open(filename, 'w') as f:
+        all_keys = []
+        for _, inner_dict in sorted(dict.items()):
+            for K, _ in sorted(inner_dict.items()):
+                all_keys.append(K)
+        for K in all_keys:
+            f.write(f"{K}\t{global_vars.get(K)}\n")

@@ -1,13 +1,14 @@
 import datetime
 import os
+import shutil
+import sys
 from copy import deepcopy
 import logging
 import numpy as np
 import torch
 from braindecode.datautil.splitters import concatenate_sets
-
+import code, traceback, signal
 import global_vars
-from data_preprocessing import get_train_val_test, get_dataset
 
 log = logging.getLogger(__name__)
 import math
@@ -139,26 +140,6 @@ def unify_dataset(dataset):
     return concatenate_sets([data for data in dataset.values()])
 
 
-def export_dataset_to_file(data_folder, dataset_name, subject_id, channel_pos='first'):
-    global_vars.set('dataset', dataset_name)
-    dataset = get_dataset(subject_id=subject_id)
-    concat_train_val_sets(dataset)
-    if dataset['train'].X.ndim == 3:
-        dataset['train'].X = dataset['train'].X[:, :, :, None]
-        dataset['test'].X = dataset['test'].X[:, :, :, None]
-    now = datetime.datetime.now()
-    date_time = now.strftime("%m.%d.%Y-%H:%M")
-    folder_name = f'{data_folder}/exported_data/{dataset_name}_{date_time}'
-    createFolder(folder_name)
-    if channel_pos == 'last':
-        dataset['train'].X = dataset['train'].X.swapaxes(1, 3).swapaxes(1, 2)
-        dataset['test'].X = dataset['test'].X.swapaxes(1, 3).swapaxes(1, 2)
-    np.save(f'{folder_name}/{dataset_name}_X_train', dataset['train'].X)
-    np.save(f'{folder_name}/{dataset_name}_X_test', dataset['test'].X)
-    np.save(f'{folder_name}/{dataset_name}_y_train', dataset['train'].y)
-    np.save(f'{folder_name}/{dataset_name}_y_test', dataset['test'].y)
-
-
 def reset_model_weights(model):
     for layer in model.children():
         if isinstance(layer, torch.nn.Conv2d) or isinstance(layer, torch.nn.Linear):
@@ -169,4 +150,34 @@ def reset_model_weights(model):
             layer.reset_parameters()
 
 
+def debug(sig, frame):
+    """Interrupt running process, and provide a python prompt for
+    interactive debugging."""
+    d={'_frame':frame}         # Allow access to frame object.
+    d.update(frame.f_globals)  # Unless shadowed by global
+    d.update(frame.f_locals)
 
+    i = code.InteractiveConsole(d)
+    message  = "Signal received : entering python shell.\nTraceback:\n"
+    message += ''.join(traceback.format_stack(frame))
+    i.interact(message)
+
+
+def listen():
+    if sys.platform == "linux" or sys.platform == "linux2":
+        signal.signal(signal.SIGUSR1, debug)  # Register handler
+
+
+def exit_handler(exp_folder):
+    if 'exp_folder' in globals().keys() and args.debug_mode:
+        print(f'deleting folder {exp_folder}')
+        shutil.rmtree(exp_folder)
+
+
+def not_exclusively_in(subj, model_from_file):
+    all_subjs = [int(s) for s in model_from_file.split() if s.isdigit()]
+    if len(all_subjs) > 1:
+        return False
+    if subj in all_subjs:
+        return False
+    return True

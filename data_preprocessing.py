@@ -8,7 +8,9 @@ from braindecode.datautil.signal_target import SignalAndTarget
 from sklearn.preprocessing import MinMaxScaler
 from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
 from data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification
+from utilities.config_utils import set_default_config, set_params_by_dataset
 from utilities.data_utils import split_sequence, noise_input, split_parallel_sequences
+from utilities.misc import concat_train_val_sets
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from collections import OrderedDict
@@ -389,8 +391,8 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     return train_set, valid_set, test_set
 
 
-def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
-    if global_vars.get('no_shuffle'):
+def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
+    if not global_vars.get('shuffle'):
         shuffle = False
     file_path = f"{data_folder}netflow/akamai-dt-handovers_1.7.17-1.8.19.csv"
     X, y = preprocess_netflow_data(file_path, global_vars.get('input_height'), global_vars.get('steps_ahead'),
@@ -486,7 +488,7 @@ def get_tuh_train_val_test(data_folder):
     return train_set, valid_set, test_set
 
 
-def get_pure_cross_subject(data_folder):
+def get_pure_cross_subject(data_folder, exclude=[]):
     train_x = []
     val_x = []
     test_x = []
@@ -494,13 +496,14 @@ def get_pure_cross_subject(data_folder):
     val_y = []
     test_y = []
     for subject_id in global_vars.get('subjects_to_check'):
-        train_set, valid_set, test_set = get_train_val_test(data_folder, subject_id)
-        train_x.append(train_set.X)
-        val_x.append(valid_set.X)
-        test_x.append(test_set.X)
-        train_y.append(train_set.y)
-        val_y.append(valid_set.y)
-        test_y.append(test_set.y)
+        if subject_id not in exclude:
+            train_set, valid_set, test_set = get_train_val_test(data_folder, subject_id)
+            train_x.append(train_set.X)
+            val_x.append(valid_set.X)
+            test_x.append(test_set.X)
+            train_y.append(train_set.y)
+            val_y.append(valid_set.y)
+            test_y.append(test_set.y)
     train_set, valid_set, test_set = makeDummySignalTargets(np.concatenate(train_x), np.concatenate(train_y),
                                                             np.concatenate(val_x), np.concatenate(val_y),
                                                             np.concatenate(test_x), np.concatenate(test_y))
@@ -554,3 +557,17 @@ def get_dataset(subject_id):
         dataset['train'], dataset['valid'], dataset['test'] =\
             get_train_val_test(global_vars.get('data_folder'), subject_id)
     return dataset
+
+
+if __name__ == '__main__':
+    set_default_config('configurations/config.ini')
+    global_vars.set('dataset', 'netflow_asflow')
+    set_params_by_dataset('configurations/dataset_params.ini')
+    global_vars.set('input_height', 240)
+    global_vars.set('steps_ahead', 4)
+    dataset = get_dataset(1)
+    concat_train_val_sets(dataset)
+    np.save('data/export_data/X_train_netflow', dataset['train'].X)
+    np.save('data/export_data/y_train_netflow', dataset['train'].y)
+    np.save('data/export_data/X_test_netflow', dataset['test'].X)
+    np.save('data/export_data/y_test_netflow', dataset['test'].y)

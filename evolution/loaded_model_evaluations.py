@@ -1,3 +1,5 @@
+import re
+
 from evolution.EEGNAS import EEGNAS
 from data_preprocessing import get_pure_cross_subject
 import NASUtils
@@ -39,4 +41,4 @@ class EEGNAS_from_file(EEGNAS):
                     nn_trainer.evaluate_model(model, dataset)
         stats['final_train_time'] = str(final_time)
         NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
-        self.write_to_csv(stats, generation=1)
+        self.write_to_csv(stats, generation=1, model=re.findall(r'\d+', self.model_from_file)[-1])

@@ -1,12 +1,15 @@
 import os
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
+
+import torch
 from braindecode.torch_ext.util import np_to_var
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph
 import global_vars
 from NASUtils import evaluate_single_model
 from data_preprocessing import get_dataset
+from utilities.NN_utils import get_intermediate_layer_value, get_class_distribution
 from utilities.data_utils import get_dummy_input, prepare_data_for_NN
 from utilities.misc import unify_dataset, label_by_idx
 from utilities.monitors import get_eval_function
@@ -106,6 +109,8 @@ def kernel_deconvolution_report(model, dataset, folder_name):
     report_file_name = f'{folder_name}/{global_vars.get("report")}{by_class_str}.pdf'
     if os.path.isfile(report_file_name):
         return
+    if os.path.exists(f'{report_file_name[:-4]}.txt'):
+        os.remove(f'{report_file_name[:-4]}.txt')
     conv_deconv = ConvDeconvNet(model)
     eeg_chans = list(range(global_vars.get('eeg_chans')))
     tf_plots = []
@@ -120,7 +125,15 @@ def kernel_deconvolution_report(model, dataset, folder_name):
             for filter_idx in range(layer.out_channels):
                 for class_idx, examples in enumerate(class_examples):
                     X = prepare_data_for_NN(examples)
+                    prev_filter_val = torch.mean(get_intermediate_layer_value(model, X, layer_idx), axis=[0,2,3])
                     reconstruction = conv_deconv.forward(X, layer_idx, filter_idx)
+                    after_filter_val = torch.mean(get_intermediate_layer_value(model, reconstruction, layer_idx), axis=[0,2,3])
+                    with open(f'{report_file_name[:-4]}.txt', 'a+') as f:
+                        print(f'filter values for layer {layer_idx}, filter {filter_idx}:\nPrevious:{prev_filter_val}'
+                              f'\nAfter:{after_filter_val}\nThe relevant comparison is Prev:{prev_filter_val[filter_idx]}'
+                              f' against After:{after_filter_val[filter_idx]}\n'
+                              f'Class distribution before:{get_class_distribution(model, X)}\n'
+                              f'Class distribution after:{get_class_distribution(model, reconstruction)}\n', file=f)
                     subj_tfs = []
                     for eeg_chan in eeg_chans:
                         subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),
