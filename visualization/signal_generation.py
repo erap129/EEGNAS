@@ -6,8 +6,6 @@ import matplotlib
 from visualization.dsp_functions import butter_bandpass_filter, butter_bandstop_filter
 from visualization.wavelet_functions import subtract_frequency
 
-matplotlib.use('TkAgg')
-
 
 def generate_sine_wave(length, samplerate, frequencies):
     wave = np.zeros(int(length * samplerate))

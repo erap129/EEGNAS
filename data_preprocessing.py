@@ -7,10 +7,11 @@ from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
 from sklearn.preprocessing import MinMaxScaler
 from data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
-from data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification
+from data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification, get_time_freq, \
+    turn_dataset_to_timefreq
 from utilities.config_utils import set_default_config, set_params_by_dataset
-from utilities.data_utils import split_sequence, noise_input, split_parallel_sequences
-from utilities.misc import concat_train_val_sets
+from utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file
+from utilities.misc import concat_train_val_sets, unify_dataset
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from collections import OrderedDict
@@ -395,11 +396,18 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
     if not global_vars.get('shuffle'):
         shuffle = False
     file_path = f"{data_folder}netflow/akamai-dt-handovers_1.7.17-1.8.19.csv"
-    X, y = preprocess_netflow_data(file_path, global_vars.get('input_height'), global_vars.get('steps_ahead'),
+    X, y, _, _ = preprocess_netflow_data(file_path, global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                    global_vars.get('start_point'), global_vars.get('jumps'))
+
+    if global_vars.get('time_frequency'):
+        global_vars.set('input_height', 63)
+        global_vars.set('input_width', 63)
+        X = turn_dataset_to_timefreq(X)
+
     if global_vars.get('problem') != 'classification':
         global_vars.set('n_classes', global_vars.get('steps_ahead'))
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     if global_vars.get('problem') == 'classification':
         X_train, y_train = turn_netflow_into_classification(X_train, y_train, global_vars.get('netflow_threshold'),
                                                             oversampling=global_vars.get('oversampling'))
@@ -561,13 +569,10 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    global_vars.set('dataset', 'netflow_asflow')
+    global_vars.set('dataset', 'BCI_IV_2b')
     set_params_by_dataset('configurations/dataset_params.ini')
-    global_vars.set('input_height', 240)
-    global_vars.set('steps_ahead', 4)
-    dataset = get_dataset(1)
-    concat_train_val_sets(dataset)
-    np.save('data/export_data/X_train_netflow', dataset['train'].X)
-    np.save('data/export_data/y_train_netflow', dataset['train'].y)
-    np.save('data/export_data/X_test_netflow', dataset['test'].X)
-    np.save('data/export_data/y_test_netflow', dataset['test'].y)
+    dataset = get_dataset('all')
+    dataset = unify_dataset(dataset)
+    export_data_to_file(dataset, format='matlab', classes=[0])
+    export_data_to_file(dataset, format='matlab', classes=[1])
+

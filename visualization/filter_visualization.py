@@ -16,7 +16,7 @@ import global_vars
 from data_preprocessing import get_train_val_test, get_pure_cross_subject, get_dataset
 from EEGNAS_experiment import get_normal_settings, set_params_by_dataset
 import matplotlib.pyplot as plt
-from utilities.misc import createFolder
+from utilities.misc import create_folder
 from visualization.pdf_utils import create_pdf, create_pdf_from_story
 import numpy as np
 from visualization.wavelet_functions import get_tf_data_efficient, subtract_frequency
@@ -100,7 +100,7 @@ if __name__ == '__main__':
         now = datetime.now()
         date_time = now.strftime("%m.%d.%Y")
         folder_name = f'results/{date_time}_{global_vars.get("dataset")}'
-        createFolder(folder_name)
+        create_folder(folder_name)
         print(f'generating {global_vars.get("report")} report...')
         getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
 

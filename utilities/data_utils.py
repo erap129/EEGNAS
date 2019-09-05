@@ -4,6 +4,7 @@ import torch
 from braindecode.torch_ext.util import np_to_var
 import global_vars
 import numpy as np
+from scipy.io import savemat
 
 
 def get_dummy_input():
@@ -21,16 +22,15 @@ def prepare_data_for_NN(X):
     return X
 
 
-def split_sequence(sequence, n_steps):
+def split_sequence(sequence, n_steps, n_steps_ahead, start_point, jumps):
     X, y = list(), list()
     for i in range(len(sequence)):
-        # find the end of this pattern
         end_ix = i + n_steps
-        # check if we are beyond the sequence
-        if end_ix > len(sequence) - 1:
+        if end_ix % jumps != 0:
+            continue
+        if end_ix + n_steps_ahead - 1 > len(sequence) - 1:
             break
-        # gather input and output parts of the pattern
-        seq_x, seq_y = sequence[i:end_ix], sequence[end_ix]
+        seq_x, seq_y = sequence[i:end_ix], sequence[end_ix:end_ix+n_steps_ahead]
         X.append(seq_x)
         y.append(seq_y)
     return np.array(X), np.array(y)
@@ -38,7 +38,6 @@ def split_sequence(sequence, n_steps):
 
 def split_parallel_sequences(sequences, n_steps, n_steps_ahead, start_point, jumps):
     X, y = list(), list()
-    sequences = sequences[start_point:]
     for i in range(len(sequences)):
         end_ix = i + n_steps
         if end_ix % jumps != 0:
@@ -86,3 +85,25 @@ def write_dict(dict, filename):
                 all_keys.append(K)
         for K in all_keys:
             f.write(f"{K}\t{global_vars.get(K)}\n")
+
+
+def export_data_to_file(dataset, format, classes=None):
+    if classes is None:
+        X_data = dataset.X
+        y_data = dataset.y
+        class_str = ''
+    else:
+        X_data = []
+        y_data = []
+        for class_idx in classes:
+            X_data.extend(dataset.X[np.where(dataset.y == class_idx)])
+            y_data.extend(dataset.y[np.where(dataset.y == class_idx)])
+        class_str = f'_classes_{str(classes)}'
+        X_data, y_data = unison_shuffled_copies(np.array(X_data), np.array(y_data))
+    if format == 'numpy':
+        np.save(f'data/export_data/X_all_{global_vars.get("dataset")}', X_data)
+        np.save(f'data/export_data/y_all_{global_vars.get("dataset")}', y_data)
+    elif format == 'matlab':
+        X_data = np.transpose(X_data, [1, 2, 0])
+        savemat(f'data/export_data/X_all_{global_vars.get("dataset")}{class_str}.mat', {'data': X_data})
+        savemat(f'data/export_data/y_all_{global_vars.get("dataset")}{class_str}.mat', {'data': y_data})

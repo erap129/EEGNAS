@@ -1,9 +1,12 @@
+import pywt
 from datetime import datetime
 import json
 import numpy as np
 from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
-from utilities.data_utils import split_parallel_sequences, unison_shuffled_copies
+
+import global_vars
+from utilities.data_utils import split_parallel_sequences, unison_shuffled_copies, split_sequence
 from copy import deepcopy
 plt.interactive(False)
 import pandas as pd
@@ -12,9 +15,10 @@ import pandas as pd
 def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps, fix_days=True):
     all_data = get_whole_netflow_data(file, fix_days)
     sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, start_point, jumps)
+    datetimes_X, datetimes_Y = split_sequence(all_data.index, n_before, n_ahead, start_point, jumps)
     X = sample_list.swapaxes(1, 2)[:, :10]
     y = y.swapaxes(1, 2)[:, 10]
-    return X, y
+    return X, y, datetimes_X, datetimes_Y
 
 
 def get_whole_netflow_data(file, fix_days=True):
@@ -36,7 +40,25 @@ def get_whole_netflow_data(file, fix_days=True):
     all_data = all_data.drop(columns=['time'])
     if fix_days:
         all_data = all_data.resample('H').pad()
+    all_data = all_data[global_vars.get('start_point'):]
     return all_data
+
+
+def get_time_freq(signal):
+    scales = range(1, 64)
+    waveletname = 'morl'
+    coeff, freq = pywt.cwt(signal, scales, waveletname, 1)
+    coeff = coeff[:,:63]
+    return coeff
+
+
+def turn_dataset_to_timefreq(X):
+    new_X = np.zeros((len(X), 10, 63, 63))
+    for ex_idx, example in enumerate(X):
+        for sig_idx, signal in enumerate(example):
+            new_X[ex_idx, sig_idx] = get_time_freq(signal)
+        print(f'converted example {ex_idx}/{len(X)} into TF')
+    return new_X
 
 
 def turn_netflow_into_classification(X, y, threshold, oversampling=True):

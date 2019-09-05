@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import torch
 from braindecode.datautil.splitters import concatenate_sets
 from sklearn.metrics import accuracy_score, classification_report
@@ -6,7 +6,7 @@ from sklearn.model_selection import KFold, train_test_split
 from torch import nn
 import global_vars
 from EEGNAS_experiment import get_normal_settings
-from data.netflow.netflow_data_utils import get_whole_netflow_data
+from data.netflow.netflow_data_utils import get_whole_netflow_data, preprocess_netflow_data
 from data_preprocessing import get_dataset, makeDummySignalTargets
 from evolution.nn_training import NN_Trainer
 from utilities.config_utils import set_params_by_dataset, get_configurations, set_gpu
@@ -17,29 +17,7 @@ import sys
 import pandas as pd
 
 from utilities.data_utils import calc_regression_accuracy
-from utilities.misc import concat_train_val_sets, createFolder, unify_dataset, reset_model_weights
-
-
-# Recurrent neural network (many-to-one)
-class RNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, num_classes):
-        super(RNN, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, num_classes)
-
-    def forward(self, x):
-        # Set initial hidden and cell states
-        x = x.view(-1, 32, 10)
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
-        h0, c0 = h0.cuda(), c0.cuda()
-        # Forward propagate LSTM
-        out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
-        # Decode the hidden state of the last time step
-        out = self.fc(out[:, -1, :])
-        return out
+from utilities.misc import concat_train_val_sets, create_folder, unify_dataset, reset_model_weights
 
 
 def export_netflow_asflowAE_results(df, data, model, folder_name):
@@ -126,16 +104,27 @@ def no_kfold_exp(dataset, model, folder_name, reset_weights=False):
 
 def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_num=None):
     model.eval()
+    _, _, datetimes_X, datetimes_Y = preprocess_netflow_data('data/netflow/akamai-dt-handovers_1.7.17-1.8.19.csv',
+                                              global_vars.get('input_height'), global_vars.get('steps_ahead'),
+                                      global_vars.get('start_point'), global_vars.get('jumps'))
+    datetimes = {}
+    _, _, datetimes['train'], datetimes['test'] = train_test_split(datetimes_X, datetimes_Y,
+                                                        test_size=global_vars.get('valid_set_fraction'), shuffle=False)
     y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
     if global_vars.get('steps_ahead') < global_vars.get('jumps'):
         y_pred = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
                         global_vars.get('steps_ahead')))])], axis=0) for y in y_pred])
         y_real = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
                         global_vars.get('steps_ahead')))])], axis=0) for y in data.y])
+        y_datetimes = np.array([np.concatenate([dt, pd.date_range(start=dt[-1] + np.timedelta64(1, 'h'),
+                                periods=global_vars.get('jumps') - global_vars.get('steps_ahead'), freq='h')], axis=0)
+                                for dt in datetimes[segment]])
         y_pred = np.concatenate([yi for yi in y_pred], axis=0)
         y_real = np.concatenate([yi for yi in y_real], axis=0)
+        y_datetimes = np.concatenate([yi for yi in y_datetimes], axis=0)
         df[f'{global_vars.get("steps_ahead")}_steps_ahead_real'] = y_real
         df[f'{global_vars.get("steps_ahead")}_steps_ahead_pred'] = y_pred
+        df['time'] = y_datetimes
     else:
         y_pred = np.swapaxes(
             model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy(), 0, 1)
@@ -143,15 +132,11 @@ def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_nu
         for steps_ahead in range(y_pred.shape[0]):
             df[f'{steps_ahead+1}_steps_ahead_real'] = y_real[steps_ahead]
             df[f'{steps_ahead+1}_steps_ahead_pred'] = y_pred[steps_ahead]
+        df['time'] = datetimes[segment][steps_ahead]
 
-    orig_df = get_whole_netflow_data('data/netflow/akamai-dt-handovers_1.7.17-1.8.19.csv')
-    datetimes = orig_df.index.values[global_vars.get('input_height')+global_vars.get('steps_ahead')-1:]
-    datetimes_dict = {}
-    datetimes_dict['train'], datetimes_dict['test'], _, _ = train_test_split(datetimes, datetimes,
-                                                test_size=global_vars.get('valid_set_fraction'), shuffle=False)
-    df['time'] = datetimes_dict[segment]
     df.index = pd.to_datetime(df['time'])
     df = df.drop(columns=['time'])
+    global_vars.set('prev_seg_len', len(df))
     actual, predicted = calc_regression_accuracy(df[f'{global_vars.get("steps_ahead")}_steps_ahead_pred'].values,
                                                  df[f'{global_vars.get("steps_ahead")}_steps_ahead_real'].values,
                                                  global_vars.get('netflow_threshold'))
@@ -201,6 +186,7 @@ if __name__ == '__main__':
     for configuration in configurations:
         global_vars.set_config(configuration)
         set_params_by_dataset('configurations/dataset_params.ini')
+        global_vars.set('prev_seg_len', 0)
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
         set_gpu()
@@ -211,7 +197,7 @@ if __name__ == '__main__':
             continue
         folder_name = f'regression_results/{date_time}_{global_vars.get("dataset")}' \
                       f'_{global_vars.get("model_file_name")}'
-        createFolder(folder_name)
+        create_folder(folder_name)
         if global_vars.get('k_fold'):
             kfold_exp(dataset, model, folder_name)
         else:

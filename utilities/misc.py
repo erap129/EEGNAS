@@ -16,7 +16,7 @@ import operator
 import torch.nn.functional as F
 
 
-def createFolder(directory):
+def create_folder(directory):
     try:
         if not os.path.exists(directory):
             os.makedirs(directory)

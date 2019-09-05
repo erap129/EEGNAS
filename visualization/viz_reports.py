@@ -11,7 +11,7 @@ from NASUtils import evaluate_single_model
 from data_preprocessing import get_dataset
 from utilities.NN_utils import get_intermediate_layer_value, get_class_distribution
 from utilities.data_utils import get_dummy_input, prepare_data_for_NN
-from utilities.misc import unify_dataset, label_by_idx
+from utilities.misc import unify_dataset, label_by_idx, create_folder
 from utilities.monitors import get_eval_function
 from visualization.deconvolution import ConvDeconvNet
 from visualization.pdf_utils import get_image, create_pdf_from_story, create_pdf
@@ -20,6 +20,7 @@ import numpy as np
 from torch import nn
 from reportlab.lib.styles import getSampleStyleSheet
 from utilities.misc import label_by_idx
+from scipy.io import savemat
 styles = getSampleStyleSheet()
 from visualization.viz_utils import pretrain_model_on_filtered_data, create_max_examples_per_channel, \
     get_max_examples_per_channel, export_performance_frequency_to_csv
@@ -111,6 +112,7 @@ def kernel_deconvolution_report(model, dataset, folder_name):
         return
     if os.path.exists(f'{report_file_name[:-4]}.txt'):
         os.remove(f'{report_file_name[:-4]}.txt')
+    create_folder(f'{folder_name}/reconstructions')
     conv_deconv = ConvDeconvNet(model)
     eeg_chans = list(range(global_vars.get('eeg_chans')))
     tf_plots = []
@@ -134,6 +136,8 @@ def kernel_deconvolution_report(model, dataset, folder_name):
                               f' against After:{after_filter_val[filter_idx]}\n'
                               f'Class distribution before:{get_class_distribution(model, X)}\n'
                               f'Class distribution after:{get_class_distribution(model, reconstruction)}\n', file=f)
+                    savemat(f'{folder_name}/reconstructions/X_layer_{layer_idx}_filter_{filter_idx}.mat',
+                            {'data': np.transpose(reconstruction.cpu().detach().numpy().squeeze(), [1,2,0])})
                     subj_tfs = []
                     for eeg_chan in eeg_chans:
                         subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),

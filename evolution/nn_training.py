@@ -1,9 +1,12 @@
 import itertools
 import torch.nn.functional as F
+from braindecode.datautil.iterators import get_balanced_batches, BalancedBatchSizeIterator
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import logging
 import torch.optim as optim
+
+from data.netflow.netflow_data_utils import turn_dataset_to_timefreq
 from utilities.misc import RememberBest, get_oper_by_loss_function
 import pandas as pd
 from collections import OrderedDict, defaultdict
@@ -21,6 +24,26 @@ from tensorboardX import SummaryWriter
 import random
 log = logging.getLogger(__name__)
 model_train_times = []
+
+
+class TimeFrequencyBatchIterator(BalancedBatchSizeIterator):
+    def __init__(self, batch_size):
+        super(TimeFrequencyBatchIterator, self).__init__(batch_size=batch_size)
+
+    def get_batches(self, dataset, shuffle):
+        n_trials = dataset.X.shape[0]
+        batches = get_balanced_batches(n_trials,
+                                       batch_size=self.batch_size,
+                                       rng=self.rng,
+                                       shuffle=shuffle)
+        for batch_inds in batches:
+            batch_X = dataset.X[batch_inds]
+            batch_y = dataset.y[batch_inds]
+            batch_X = turn_dataset_to_timefreq(batch_X)
+            # add empty fourth dimension if necessary
+            if batch_X.ndim == 3:
+                batch_X = batch_X[:, :, :, None]
+            yield (batch_X, batch_y)
 
 
 class NN_Trainer:
