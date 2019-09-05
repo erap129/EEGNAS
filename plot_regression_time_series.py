@@ -178,20 +178,20 @@ if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                         level=logging.DEBUG, stream=sys.stdout)
     CHOSEN_EXPERIMENT = sys.argv[1]
-    global_vars.init_config('configurations/config.ini')
+    global_vars.init_config('EEGNAS/configurations/config.ini')
     configurations = get_configurations(CHOSEN_EXPERIMENT, global_vars.configs)
 
     now = datetime.now()
     date_time = now.strftime("%m.%d.%Y")
     for configuration in configurations:
         global_vars.set_config(configuration)
-        set_params_by_dataset('configurations/dataset_params.ini')
+        set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
         global_vars.set('prev_seg_len', 0)
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
         set_gpu()
         try:
-            model = torch.load(f'models/{global_vars.get("models_dir")}/{global_vars.get("model_file_name")}').cuda()
+            model = torch.load(f'EEGNAS/models/{global_vars.get("models_dir")}/{global_vars.get("model_file_name")}').cuda()
         except Exception as e:
             print(f'experiment failed: {str(e)}')
             continue
