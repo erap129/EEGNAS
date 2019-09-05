@@ -1,26 +1,26 @@
 import os
 import re
 import shutil
-from evolution.loaded_model_evaluations import EEGNAS_from_file
-from evolution.nn_training import TimeFrequencyBatchIterator
-from utilities.data_utils import write_dict
-from utilities.gdrive import upload_exp_to_gdrive
-from utilities.config_utils import config_to_dict, get_configurations, get_multiple_values, set_params_by_dataset, \
+from EEGNAS.evolution.loaded_model_evaluations import EEGNAS_from_file
+from EEGNAS.evolution.nn_training import TimeFrequencyBatchIterator
+from EEGNAS.utilities.data_utils import write_dict
+from EEGNAS.utilities.gdrive import upload_exp_to_gdrive
+from EEGNAS.utilities.config_utils import config_to_dict, get_configurations, get_multiple_values, set_params_by_dataset, \
     set_gpu, set_seeds
 import torch.nn.functional as F
 import torch
-from data_preprocessing import get_train_val_test, get_pure_cross_subject
+from EEGNAS.data_preprocessing import get_train_val_test, get_pure_cross_subject
 from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
-from global_vars import init_config
-from utilities.report_generation import add_params_to_name, generate_report
-from utilities.misc import create_folder, get_oper_by_loss_function, exit_handler, listen, not_exclusively_in
-from utilities.monitors import *
-from evolution.genetic_algorithm import EEGNAS_evolution
+from EEGNAS.global_vars import init_config
+from EEGNAS.utilities.report_generation import add_params_to_name, generate_report
+from EEGNAS.utilities.misc import create_folder, get_oper_by_loss_function, exit_handler, listen, not_exclusively_in
+from EEGNAS.utilities.monitors import *
+from EEGNAS.evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
 import logging
-import global_vars
+from EEGNAS import global_vars
 import random
 import sys
 import csv
@@ -164,10 +164,10 @@ def cross_subject_exp(stop_criterion, iterator, loss_function):
         test_set_all[subject_id] = test_set
     evolution_file = '%s/archs.txt' % (exp_folder)
     naiveNAS = EEGNAS_evolution(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
-                        train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
-                        stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                        config=global_vars.config, subject_id='all', fieldnames=fieldnames, strategy='cross_subject',
-                        evolution_file=evolution_file, csv_file=csv_file)
+                                train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
+                                stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
+                                config=global_vars.config, subject_id='all', fieldnames=fieldnames, strategy='cross_subject',
+                                evolution_file=evolution_file, csv_file=csv_file)
     return naiveNAS.evolution()
 
 

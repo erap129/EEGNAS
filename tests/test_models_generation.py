@@ -2,17 +2,16 @@ import pickle
 import unittest
 
 from braindecode.torch_ext.util import np_to_var
-from models_generation import uniform_model, breed_layers,\
+from EEGNAS.models_generation import uniform_model, breed_layers,\
     finalize_model, DropoutLayer, BatchNormLayer, ConvLayer,\
     ActivationLayer, network_similarity, PoolingLayer, add_random_connection, IdentityLayer,\
     breed_grid
-import models_generation
 from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
-import global_vars
-from NASUtils import equal_grid_models
+from EEGNAS import global_vars, models_generation
+from EEGNAS.NASUtils import equal_grid_models
 import networkx as nx
 import numpy as np
-from global_vars import init_config
+from EEGNAS.global_vars import init_config
 import matplotlib.pyplot as plt
 from graphviz import Source
 import torch

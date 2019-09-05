@@ -1,7 +1,7 @@
 import unittest
 from EEGNAS_experiment import get_configurations, get_multiple_values, parse_args
-import global_vars
-from global_vars import init_config
+from EEGNAS import global_vars
+from EEGNAS.global_vars import init_config
 
 
 class TestModelGeneration(unittest.TestCase):

@@ -2,7 +2,7 @@ import torch
 from braindecode.torch_ext.modules import Expression
 from braindecode.torch_ext.util import np_to_var
 
-import global_vars
+from EEGNAS import global_vars
 from torch import nn
 from torchsummary import summary
 import numpy as np

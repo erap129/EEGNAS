@@ -2,19 +2,18 @@ import itertools
 import pickle
 import platform
 
-from data_preprocessing import get_train_val_test
-from models_generation import finalize_model, target_model,\
+from EEGNAS.data_preprocessing import get_train_val_test
+from EEGNAS.models_generation import finalize_model, target_model,\
     breed_layers, breed_two_ensembles
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
-import models_generation
 import logging
 import torch.optim as optim
-from utilities.misc import RememberBest
+from EEGNAS.utilities.misc import RememberBest
 import pandas as pd
 from collections import OrderedDict, defaultdict
 import numpy as np
-from data_preprocessing import get_pure_cross_subject
+from EEGNAS.data_preprocessing import get_pure_cross_subject
 import time
 import torch
 from braindecode.datautil.iterators import CropsFromTrialsIterator
@@ -22,13 +21,12 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or, ColumnBelow
 from braindecode.datautil.splitters import concatenate_sets
 import os
-import global_vars
 import csv
 from torch import nn
-from utilities.model_summary import summary
-from utilities.monitors import NoIncreaseDecrease
-import NASUtils
-import evolution.fitness_functions
+from EEGNAS.utilities.model_summary import summary
+from EEGNAS.utilities.monitors import NoIncreaseDecrease
+from EEGNAS import NASUtils, global_vars, models_generation
+import EEGNAS.evolution.fitness_functions
 import pdb
 from tensorboardX import SummaryWriter
 
@@ -60,7 +58,8 @@ def time_f(t_secs):
 
 def show_progress(train_time, exp_name):
     global model_train_times
-    total_trainings = global_vars.get('num_generations') * global_vars.get('pop_size') * len(global_vars.get('subjects_to_check'))
+    total_trainings = global_vars.get('num_generations') * global_vars.get('pop_size') * len(
+        global_vars.get('subjects_to_check'))
     model_train_times.append(train_time)
     avg_model_train_time = sum(model_train_times) / len(model_train_times)
     time_left = (total_trainings - len(model_train_times)) * avg_model_train_time
@@ -272,11 +271,11 @@ class NaiveNAS:
                        'average_pool_stride': (models_generation.PoolingLayer, 'stride_time')}
         for stat in layer_stats.keys():
             stats[stat] = NASUtils.get_average_param([pop['model'] for pop in weighted_population],
-                                                                 layer_stats[stat][0], layer_stats[stat][1])
+                                                     layer_stats[stat][0], layer_stats[stat][1])
             if global_vars.get('add_top_20_stats'):
                 stats[f'top20_{stat}'] = NASUtils.get_average_param([pop['model'] for pop in
                                                                      weighted_population[:int(len(weighted_population)/5)]],
-                                                         layer_stats[stat][0], layer_stats[stat][1])
+                                                                    layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [models_generation.DropoutLayer, models_generation.ActivationLayer, models_generation.ConvLayer,
@@ -297,7 +296,8 @@ class NaiveNAS:
             self.current_chosen_population_sample = range(1, global_vars.get('num_subjects') + 1)
         for subject in self.current_chosen_population_sample:
             if global_vars.get('ensemble_iterations'):
-                ensemble = [finalize_model(weighted_population[i]['model']) for i in range(global_vars.get('ensemble_size'))]
+                ensemble = [finalize_model(weighted_population[i]['model']) for i in range(
+                    global_vars.get('ensemble_size'))]
                 _, evaluations, _, num_epochs = self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
                 NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             _, evaluations, _, _, num_epochs = self.evaluate_model(model, final_evaluation=True, subject=subject)
@@ -373,9 +373,9 @@ class NaiveNAS:
 
     def evaluate_and_sort(self, weighted_population):
         self.evo_strategy(weighted_population)
-        getattr(evolution.fitness_functions, global_vars.get('fitness_function'))(weighted_population)
+        getattr(EEGNAS.evolution.fitness_functions, global_vars.get('fitness_function'))(weighted_population)
         if global_vars.get('fitness_penalty_function'):
-            getattr(evolution.fitness_functions, global_vars.get('fitness_penalty_function'))(weighted_population)
+            getattr(EEGNAS.evolution.fitness_functions, global_vars.get('fitness_penalty_function'))(weighted_population)
         weighted_population = NASUtils.sort_population(weighted_population)
         stats = self.calculate_stats(weighted_population)
         self.add_parent_child_relations(weighted_population, stats)

@@ -4,15 +4,14 @@ from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, Runti
 from utils import GenericMonitor, acc_func
 import numpy as np
 from naiveNAS import NaiveNAS, finalize_model
-import NASUtils
-from models_generation import uniform_model, breed_layers,\
+from EEGNAS import NASUtils, global_vars
+from EEGNAS.models_generation import uniform_model, breed_layers,\
     ConvLayer, ActivationLayer
 from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset, get_normal_settings
-from models_generation import target_model, random_model, random_grid_model
-import global_vars
+from EEGNAS.models_generation import target_model, random_model, random_grid_model
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
-from global_vars import init_config
-from data_preprocessing import DummySignalTarget
+from EEGNAS.global_vars import init_config
+from EEGNAS.data_preprocessing import DummySignalTarget
 import torch.nn.functional as F
 
 

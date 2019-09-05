@@ -1,8 +1,7 @@
 import unittest
 from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
-import global_vars
-from global_vars import init_config
-import NASUtils
+from EEGNAS.global_vars import init_config
+from EEGNAS import NASUtils, global_vars
 
 
 class TestModelGeneration(unittest.TestCase):

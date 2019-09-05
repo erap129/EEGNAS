@@ -4,20 +4,20 @@ from braindecode.datautil.splitters import concatenate_sets
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import KFold, train_test_split
 from torch import nn
-import global_vars
+from EEGNAS import global_vars
 from EEGNAS_experiment import get_normal_settings
-from data.netflow.netflow_data_utils import get_whole_netflow_data, preprocess_netflow_data
-from data_preprocessing import get_dataset, makeDummySignalTargets
-from evolution.nn_training import NN_Trainer
-from utilities.config_utils import set_params_by_dataset, get_configurations, set_gpu
+from EEGNAS.data.netflow.netflow_data_utils import get_whole_netflow_data, preprocess_netflow_data
+from EEGNAS.data_preprocessing import get_dataset, makeDummySignalTargets
+from EEGNAS.evolution.nn_training import NN_Trainer
+from EEGNAS.utilities.config_utils import set_params_by_dataset, get_configurations, set_gpu
 import matplotlib
 import numpy as np
 import logging
 import sys
 import pandas as pd
 
-from utilities.data_utils import calc_regression_accuracy
-from utilities.misc import concat_train_val_sets, create_folder, unify_dataset, reset_model_weights
+from EEGNAS.utilities.data_utils import calc_regression_accuracy
+from EEGNAS.utilities.misc import concat_train_val_sets, create_folder, unify_dataset, reset_model_weights
 
 
 def export_netflow_asflowAE_results(df, data, model, folder_name):
@@ -65,7 +65,7 @@ def kfold_exp(data, model, folder_name):
         X_train, X_test = data.X[train_index], data.X[test_index]
         y_train, y_test = data.y[train_index], data.y[test_index]
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
-                                                            shuffle=False)
+                                                          shuffle=False)
         dataset = {}
         dataset['train'], dataset['valid'], dataset['test'] = \
             makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
@@ -105,19 +105,19 @@ def no_kfold_exp(dataset, model, folder_name, reset_weights=False):
 def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_num=None):
     model.eval()
     _, _, datetimes_X, datetimes_Y = preprocess_netflow_data('data/netflow/akamai-dt-handovers_1.7.17-1.8.19.csv',
-                                              global_vars.get('input_height'), global_vars.get('steps_ahead'),
-                                      global_vars.get('start_point'), global_vars.get('jumps'))
+                                                             global_vars.get('input_height'), global_vars.get('steps_ahead'),
+                                                             global_vars.get('start_point'), global_vars.get('jumps'))
     datetimes = {}
     _, _, datetimes['train'], datetimes['test'] = train_test_split(datetimes_X, datetimes_Y,
-                                                        test_size=global_vars.get('valid_set_fraction'), shuffle=False)
+                                                                   test_size=global_vars.get('valid_set_fraction'), shuffle=False)
     y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
     if global_vars.get('steps_ahead') < global_vars.get('jumps'):
         y_pred = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
-                        global_vars.get('steps_ahead')))])], axis=0) for y in y_pred])
+                                                                                  global_vars.get('steps_ahead')))])], axis=0) for y in y_pred])
         y_real = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
-                        global_vars.get('steps_ahead')))])], axis=0) for y in data.y])
+                                                                                  global_vars.get('steps_ahead')))])], axis=0) for y in data.y])
         y_datetimes = np.array([np.concatenate([dt, pd.date_range(start=dt[-1] + np.timedelta64(1, 'h'),
-                                periods=global_vars.get('jumps') - global_vars.get('steps_ahead'), freq='h')], axis=0)
+                                                                  periods=global_vars.get('jumps') - global_vars.get('steps_ahead'), freq='h')], axis=0)
                                 for dt in datetimes[segment]])
         y_pred = np.concatenate([yi for yi in y_pred], axis=0)
         y_real = np.concatenate([yi for yi in y_real], axis=0)
