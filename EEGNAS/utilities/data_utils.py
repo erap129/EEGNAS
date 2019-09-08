@@ -1,10 +1,17 @@
+import os
 from copy import deepcopy
 
+import mne
 import torch
 from braindecode.torch_ext.util import np_to_var
+from mne.time_frequency import tfr_morlet
+
 from EEGNAS import global_vars
 import numpy as np
 from scipy.io import savemat
+from PIL import Image
+from EEGNAS.utilities.misc import create_folder
+import matplotlib.pyplot as plt
 
 
 def get_dummy_input():
@@ -107,3 +114,42 @@ def export_data_to_file(dataset, format, classes=None):
         X_data = np.transpose(X_data, [1, 2, 0])
         savemat(f'data/export_data/X_all_{global_vars.get("dataset")}{class_str}.mat', {'data': X_data})
         savemat(f'data/export_data/y_all_{global_vars.get("dataset")}{class_str}.mat', {'data': y_data})
+
+
+def EEG_to_TF(dataset, out_folder, dim):
+    ch_names = [str(i) for i in range(global_vars.get('eeg_chans'))]
+    ch_types = ['eeg' for i in range(global_vars.get('eeg_chans'))]
+    info = mne.create_info(ch_names=ch_names, sfreq=global_vars.get('frequency'), ch_types=ch_types)
+    n_cycles = 7  # number of cycles in Morlet wavelet
+    freqs = np.arange(7, 40, 1)  # frequencies of interest
+    create_folder(out_folder)
+    for segment in dataset.keys():
+        if segment == 'train':
+            continue
+        TF_array = np.zeros((len(dataset[segment].X), global_vars.get('eeg_chans'), dim, dim))
+        for ex_idx, example in enumerate(dataset[segment].X):
+            epochs = mne.EpochsArray(example[None, :, :], info=info)
+            power, itc = tfr_morlet(epochs, freqs=freqs, n_cycles=n_cycles,
+                                    return_itc=True, decim=3, n_jobs=1)
+            for ch_idx, channel in enumerate(ch_names):
+                fig = power.plot([power.ch_names.index(channel)])
+                fig.set_frameon(False)
+                fig.delaxes(fig.axes[1])
+                for ax in fig.axes:
+                    ax.get_xaxis().set_visible(False)
+                    ax.get_yaxis().set_visible(False)
+                fig.suptitle('')
+                # fig.canvas.draw()
+                # Now we can save it to a numpy array.
+                fig.savefig(f'{out_folder}/tmp.png', bbox_inches='tight')
+                # data = plt.imread(f'{out_folder}/{segment}/tmp.png')
+                # data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+                # data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+                # img = Image.fromarray(data).convert('LA').resize((dim, dim))
+                img = Image.open(f'{out_folder}/tmp.png').convert('LA').resize((dim, dim))
+                TF_array[ex_idx, ch_idx] = np.array(img)[:,:,0]
+                # fig.savefig(f'{out_folder}/{segment}/{ex_idx}.png', bbox_inches='tight')
+            print(f'created TF {ex_idx}/{len(dataset[segment].X)} in {segment} data')
+        os.remove(f'{out_folder}/tmp.png')
+        np.save(f'{out_folder}/X_{segment}', TF_array)
+        np.save(f'{out_folder}/y_{segment}', dataset[segment].y)

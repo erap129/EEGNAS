@@ -1,7 +1,7 @@
-import json
+import sys
+sys.path.append('..')
 import os
 from copy import deepcopy
-
 from braindecode.datasets.bbci import BBCIDataset
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
@@ -10,7 +10,8 @@ from EEGNAS.data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, T
 from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification, get_time_freq, \
     turn_dataset_to_timefreq
 from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
-from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file
+from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
+    EEG_to_TF
 from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -398,7 +399,6 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
     file_path = f"{os.path.dirname(__file__)}/{data_folder}netflow/akamai-dt-handovers_1.7.17-1.8.19.csv"
     X, y, _, _ = preprocess_netflow_data(file_path, global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                          global_vars.get('start_point'), global_vars.get('jumps'))
-
     if global_vars.get('time_frequency'):
         global_vars.set('input_height', 63)
         global_vars.set('input_width', 63)
@@ -569,10 +569,11 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    global_vars.set('dataset', 'BCI_IV_2b')
+    global_vars.set('dataset', 'BCI_IV_2a')
     set_params_by_dataset('configurations/dataset_params.ini')
     dataset = get_dataset('all')
-    dataset = unify_dataset(dataset)
-    export_data_to_file(dataset, format='matlab', classes=[0])
-    export_data_to_file(dataset, format='matlab', classes=[1])
-
+    concat_train_val_sets(dataset)
+    # dataset = unify_dataset(dataset)
+    # export_data_to_file(dataset, format='matlab', classes=[0])
+    # export_data_to_file(dataset, format='matlab', classes=[1])
+    EEG_to_TF(dataset, 'data/export_data/BCI_IV_2a_TF', 32)

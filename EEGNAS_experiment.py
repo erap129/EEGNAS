@@ -32,7 +32,7 @@ import atexit
 
 def parse_args(args):
     parser = ArgumentParser()
-    parser.add_argument("-c", "--config", help="path to configuration file", default='configurations/config.ini')
+    parser.add_argument("-c", "--config", help="path to configuration file", default='EEGNAS/configurations/config.ini')
     parser.add_argument("-e", "--experiment", help="experiment type", default='tests')
     parser.add_argument("-m", "--model", help="path to Pytorch model file")
     parser.add_argument("-g", "--garbage", help="Use garbage time", default='f')
@@ -49,9 +49,6 @@ def get_normal_settings():
     stop_criterion = Or([MaxEpochs(global_vars.get('max_epochs')),
                          NoIncreaseDecrease(f'valid_{global_vars.get("nn_objective")}', global_vars.get('max_increase_epochs'),
                                             oper=get_oper_by_loss_function(loss_function))])
-    # if global_vars.get('time_frequency'):
-    #     iterator = TimeFrequencyBatchIterator(batch_size=global_vars.get('batch_size'))
-    # else:
     iterator = BalancedBatchSizeIterator(batch_size=global_vars.get('batch_size'))
     monitors = [LossMonitor(), GenericMonitor('accuracy'), RuntimeMonitor()]
     for metric in global_vars.get('evaluation_metrics'):
@@ -218,7 +215,7 @@ if __name__ == '__main__':
             for index, configuration in enumerate(configurations):
                 try:
                     global_vars.set_config(configuration)
-                    set_params_by_dataset('configurations/dataset_params.ini')
+                    set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
                     if first_run:
                         first_dataset = global_vars.get('dataset')
                         if global_vars.get('include_params_folder_name'):

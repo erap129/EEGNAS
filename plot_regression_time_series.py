@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import torch
 from braindecode.datautil.splitters import concatenate_sets
+from sacred.observers import MongoObserver
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import KFold, train_test_split
 from torch import nn
@@ -10,19 +11,25 @@ from EEGNAS.data.netflow.netflow_data_utils import get_whole_netflow_data, prepr
 from EEGNAS.data_preprocessing import get_dataset, makeDummySignalTargets
 from EEGNAS.evolution.nn_training import NN_Trainer
 from EEGNAS.utilities.config_utils import set_params_by_dataset, get_configurations, set_gpu
+from sacred import Experiment
 import matplotlib
 import numpy as np
 import logging
 import sys
 import pandas as pd
-
-from EEGNAS.utilities.data_utils import calc_regression_accuracy
+from EEGNAS.utilities.data_utils import calc_regression_accuracy, write_dict
 from EEGNAS.utilities.misc import concat_train_val_sets, create_folder, unify_dataset, reset_model_weights
+
+ex = Experiment()
+ex.observers.append(MongoObserver.create(url='mongodb://eladr:eladnetflow@localhost/netflow_db', db_name='netflow_db'))
+# ex.add_config({'configuration':'test'})
 
 
 def export_netflow_asflowAE_results(df, data, model, folder_name):
     y_real = data.y
-    y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
+    if data.X.ndim == 3:
+        data.X = data.X[:, :, :, None]
+    y_pred = model(torch.tensor(data.X).float()).cpu().detach().numpy()
     for example_idx, (real_example, pred_example) in enumerate(zip(y_real, y_pred)):
         for channel_idx, (real_channel, pred_channel) in enumerate(zip(real_example, pred_example)):
             example_df = pd.DataFrame()
@@ -103,14 +110,18 @@ def no_kfold_exp(dataset, model, folder_name, reset_weights=False):
 
 
 def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_num=None):
+    ex.add_config({'configuration1': 'test'})
     model.eval()
-    _, _, datetimes_X, datetimes_Y = preprocess_netflow_data('data/netflow/akamai-dt-handovers_1.7.17-1.8.19.csv',
+    _, _, datetimes_X, datetimes_Y = preprocess_netflow_data('EEGNAS/data/netflow/akamai-dt-handovers_1.7.17-1.8.19.csv',
                                                              global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                                              global_vars.get('start_point'), global_vars.get('jumps'))
     datetimes = {}
     _, _, datetimes['train'], datetimes['test'] = train_test_split(datetimes_X, datetimes_Y,
                                                                    test_size=global_vars.get('valid_set_fraction'), shuffle=False)
-    y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
+    if data.X.ndim == 3:
+        data.X = data.X[:, :, :, None]
+    model.cpu()
+    y_pred = model(torch.tensor(data.X).float()).cpu().detach().numpy()
     if global_vars.get('steps_ahead') < global_vars.get('jumps'):
         y_pred = np.array([np.concatenate([y, np.array([np.nan for i in range(int(global_vars.get('jumps') -
                                                                                   global_vars.get('steps_ahead')))])], axis=0) for y in y_pred])
@@ -127,8 +138,9 @@ def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_nu
         df['time'] = y_datetimes
     else:
         y_pred = np.swapaxes(
-            model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy(), 0, 1)
+            model(torch.tensor(data.X).float()).cpu().detach().numpy(), 0, 1)
         y_real = np.swapaxes(data.y, 0, 1)
+        datetimes[segment] = np.swapaxes(datetimes[segment], 0, 1)
         for steps_ahead in range(y_pred.shape[0]):
             df[f'{steps_ahead+1}_steps_ahead_real'] = y_real[steps_ahead]
             df[f'{steps_ahead+1}_steps_ahead_pred'] = y_pred[steps_ahead]
@@ -147,13 +159,17 @@ def export_netflow_asflow_results(df, data, segment, model, folder_name, fold_nu
               f'{global_vars.get("steps_ahead")}_ahead_{segment}{fold_str}_accuracy.txt', 'w+') as f:
         print(f'accuracy score - {accuracy_score(actual, predicted)}', file=f)
         print(classification_report(actual, predicted), file=f)
-    df.to_csv(f'{folder_name}/{global_vars.get("input_height")}_'
-              f'{global_vars.get("steps_ahead")}_ahead_{segment}{fold_str}.csv')
+    filename = f'{folder_name}/{global_vars.get("input_height")}_' \
+               f'{global_vars.get("steps_ahead")}_ahead_{segment}{fold_str}.csv'
+    df.to_csv(filename)
+    ex.add_artifact(filename)
 
 
 def export_netflow_asflow_results_classification(df, data, segment, model, folder_name, fold_num, train_index, test_index):
     model.eval()
-    y_pred = model(torch.tensor(data.X[:, :, :, None]).float().cuda()).cpu().detach().numpy()
+    if data.X.ndim == 3:
+        data.X = data.X[:, :, :, None]
+    y_pred = model(torch.tensor(data.X).float()).cpu().detach().numpy()
     day = np.concatenate([[day for j in range(global_vars.get('jumps'))] for day in range(len(y_pred))], axis=0)
     y_pred = np.concatenate([[np.argmax(y) for i in range(global_vars.get('jumps'))] for y in y_pred], axis=0)
     y_real = np.concatenate([[y for i in range(global_vars.get('jumps'))] for y in data.y], axis=0)
@@ -171,34 +187,41 @@ def export_netflow_asflow_results_classification(df, data, segment, model, folde
               f'{global_vars.get("steps_ahead")}_ahead_{segment}{fold_str}_'
               f'classification.csv')
 
+# @ex.config
+# def my_config():
+#     try:
+#     configuration = global_vars.get_config_dict()
 
-
-if __name__ == '__main__':
+@ex.automain
+def main(experiment):
     log = logging.getLogger(__name__)
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                         level=logging.DEBUG, stream=sys.stdout)
-    CHOSEN_EXPERIMENT = sys.argv[1]
+    # CHOSEN_EXPERIMENT = sys.argv[1]
     global_vars.init_config('EEGNAS/configurations/config.ini')
-    configurations = get_configurations(CHOSEN_EXPERIMENT, global_vars.configs)
+    configurations = get_configurations(experiment, global_vars.configs)
 
     now = datetime.now()
     date_time = now.strftime("%m.%d.%Y")
-    for configuration in configurations:
-        global_vars.set_config(configuration)
-        set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
-        global_vars.set('prev_seg_len', 0)
-        dataset = get_dataset('all')
-        concat_train_val_sets(dataset)
-        set_gpu()
-        try:
-            model = torch.load(f'EEGNAS/models/{global_vars.get("models_dir")}/{global_vars.get("model_file_name")}').cuda()
-        except Exception as e:
-            print(f'experiment failed: {str(e)}')
-            continue
-        folder_name = f'regression_results/{date_time}_{global_vars.get("dataset")}' \
-                      f'_{global_vars.get("model_file_name")}'
-        create_folder(folder_name)
-        if global_vars.get('k_fold'):
-            kfold_exp(dataset, model, folder_name)
-        else:
-            no_kfold_exp(dataset, model, folder_name)
+    configuration = configurations[0]
+    global_vars.set_config(configuration)
+    set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
+    global_vars.set('prev_seg_len', 0)
+    dataset = get_dataset('all')
+    concat_train_val_sets(dataset)
+    set_gpu()
+    try:
+        model = torch.load(f'EEGNAS/models/{global_vars.get("models_dir")}/{global_vars.get("model_file_name")}')
+        model.cpu()
+    except Exception as e:
+        print(f'experiment failed: {str(e)}')
+        # continue
+    folder_name = f'regression_results/{date_time}_{global_vars.get("dataset")}' \
+                  f'_{global_vars.get("model_file_name")}'
+    create_folder(folder_name)
+    write_dict(global_vars.config, f"{folder_name}/config.txt")
+    ex.add_artifact(f'{folder_name}/config.txt')
+    if global_vars.get('k_fold'):
+        kfold_exp(dataset, model, folder_name)
+    else:
+        no_kfold_exp(dataset, model, folder_name)

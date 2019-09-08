@@ -39,3 +39,8 @@ def set_if_not_exists(key, value):
     global config
     if key not in config[config['DEFAULT']['exp_name']] and key not in config['DEFAULT']:
         set(key, value)
+
+
+def get_config_dict():
+    global config
+    return config
