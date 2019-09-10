@@ -17,6 +17,8 @@ def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
     all_datetimes_Y = []
     for file in files:
         all_data = get_whole_netflow_data(file)
+        all_data.fillna(method='ffill', inplace=True)
+        all_data.fillna(method='bfill', inplace=True)
         sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, start_point, jumps)
         datetimes_X, datetimes_Y = split_sequence(all_data.index, n_before, n_ahead, start_point, jumps)
         all_datetimes_X.extend(datetimes_X)
@@ -24,6 +26,7 @@ def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
         num_handovers = sample_list.shape[2] - 1
         all_X.extend(sample_list.swapaxes(1, 2)[:, :num_handovers])
         all_y.extend(y.swapaxes(1, 2)[:, num_handovers])
+
     max_handovers = max(x.shape[0] for x in all_X)
     for idx in range(len(all_X)):
         if all_X[idx].shape[0] < max_handovers:

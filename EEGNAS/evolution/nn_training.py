@@ -223,10 +223,12 @@ class NN_Trainer:
                 if global_vars.get('lstm'):
                     input_vars = np.squeeze(input_vars)
                 preds, loss = self.eval_on_batch(input_vars, target_vars, model)
+
                 all_preds.append(preds)
                 all_losses.append(loss)
                 all_batch_sizes.append(len(input_vars))
                 all_targets.append(target_vars)
+
             for m in self.monitors:
                 result_dict = m.monitor_set(setname, all_preds, all_losses,
                                             all_batch_sizes, all_targets,
