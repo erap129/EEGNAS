@@ -94,26 +94,28 @@ def write_dict(dict, filename):
             f.write(f"{K}\t{global_vars.get(K)}\n")
 
 
-def export_data_to_file(dataset, format, classes=None):
-    if classes is None:
-        X_data = dataset.X
-        y_data = dataset.y
-        class_str = ''
-    else:
-        X_data = []
-        y_data = []
-        for class_idx in classes:
-            X_data.extend(dataset.X[np.where(dataset.y == class_idx)])
-            y_data.extend(dataset.y[np.where(dataset.y == class_idx)])
-        class_str = f'_classes_{str(classes)}'
-        X_data, y_data = unison_shuffled_copies(np.array(X_data), np.array(y_data))
-    if format == 'numpy':
-        np.save(f'data/export_data/X_all_{global_vars.get("dataset")}', X_data)
-        np.save(f'data/export_data/y_all_{global_vars.get("dataset")}', y_data)
-    elif format == 'matlab':
-        X_data = np.transpose(X_data, [1, 2, 0])
-        savemat(f'data/export_data/X_all_{global_vars.get("dataset")}{class_str}.mat', {'data': X_data})
-        savemat(f'data/export_data/y_all_{global_vars.get("dataset")}{class_str}.mat', {'data': y_data})
+def export_data_to_file(dataset, format, out_folder, classes=None):
+    create_folder(out_folder)
+    for segment in dataset.keys():
+        if classes is None:
+            X_data = dataset[segment].X
+            y_data = dataset[segment].y
+            class_str = ''
+        else:
+            X_data = []
+            y_data = []
+            for class_idx in classes:
+                X_data.extend(dataset[segment].X[np.where(dataset[segment].y == class_idx)])
+                y_data.extend(dataset[segment].y[np.where(dataset[segment].y == class_idx)])
+            class_str = f'_classes_{str(classes)}'
+            X_data, y_data = unison_shuffled_copies(np.array(X_data), np.array(y_data))
+        if format == 'numpy':
+            np.save(f'{out_folder}/X_{segment}_{global_vars.get("dataset")}{class_str}', X_data)
+            np.save(f'{out_folder}/y_{segment}_{global_vars.get("dataset")}{class_str}', y_data)
+        elif format == 'matlab':
+            X_data = np.transpose(X_data, [1, 2, 0])
+            savemat(f'{out_folder}/X_{segment}_{global_vars.get("dataset")}{class_str}.mat', {'data': X_data})
+            savemat(f'{out_folder}/y_{segment}_{global_vars.get("dataset")}{class_str}.mat', {'data': y_data})
 
 
 def EEG_to_TF(dataset, out_folder, dim):
@@ -153,3 +155,7 @@ def EEG_to_TF(dataset, out_folder, dim):
         os.remove(f'{out_folder}/tmp.png')
         np.save(f'{out_folder}/X_{segment}', TF_array)
         np.save(f'{out_folder}/y_{segment}', dataset[segment].y)
+
+
+def tensor_to_eeglab(X, filepath):
+    savemat(filepath, {'data': np.transpose(X.cpu().detach().numpy().squeeze(), [1, 2, 0])})

@@ -168,8 +168,8 @@ def listen():
         signal.signal(signal.SIGUSR1, debug)  # Register handler
 
 
-def exit_handler(exp_folder):
-    if 'exp_folder' in globals().keys() and args.debug_mode:
+def exit_handler(exp_folder, args):
+    if args.debug_mode:
         print(f'deleting folder {exp_folder}')
         shutil.rmtree(exp_folder)
 

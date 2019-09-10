@@ -1,6 +1,10 @@
 import os
 import re
 import shutil
+
+from sacred import Experiment
+from sacred.observers import MongoObserver
+
 from EEGNAS.evolution.loaded_model_evaluations import EEGNAS_from_file
 from EEGNAS.evolution.nn_training import TimeFrequencyBatchIterator
 from EEGNAS.utilities.data_utils import write_dict
@@ -29,6 +33,12 @@ import code, traceback, signal
 global data_folder, valid_set_fraction
 import atexit
 
+ex = Experiment()
+ex.observers.append(MongoObserver.create(url='mongodb://localhost/netflow_db', db_name='netflow_db'))
+FIRST_RUN = False
+FIRST_DATASET = ''
+FOLDER_NAMES = []
+FIELDNAMES = ['exp_name', 'machine', 'dataset', 'date', 'subject', 'generation', 'model', 'param_name', 'param_value']
 
 def parse_args(args):
     parser = ArgumentParser()
@@ -75,10 +85,11 @@ def get_cropped_settings():
     return stop_criterion, iterator, loss_function, monitors
 
 
-def target_exp(subjects, stop_criterion, iterator, loss_function, model_from_file=None, write_header=True):
+def target_exp(exp_name, csv_file, subjects, model_from_file=None, write_header=True):
+    stop_criterion, iterator, loss_function, monitors = get_settings()
     if write_header:
         with open(csv_file, 'a', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
             writer.writeheader()
     for subject_id in subjects:
         train_set = {}
@@ -89,10 +100,10 @@ def target_exp(subjects, stop_criterion, iterator, loss_function, model_from_fil
             continue
         train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
             get_train_val_test(data_folder, subject_id)
-        eegnas_from_file = EEGNAS_from_file(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
+        eegnas_from_file = EEGNAS_from_file(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name = exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            subject_id=subject_id, fieldnames=fieldnames,
+                            subject_id=subject_id, fieldnames=FIELDNAMES,
                             csv_file=csv_file, model_from_file=model_from_file)
         if global_vars.get('weighted_population_file'):
             eegnas_from_file.run_target_ensemble()
@@ -100,9 +111,10 @@ def target_exp(subjects, stop_criterion, iterator, loss_function, model_from_fil
             eegnas_from_file.run_target_model()
 
 
-def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
+def per_subject_exp(exp_name, csv_file, subjects):
+    stop_criterion, iterator, loss_function, monitors = get_settings()
     with open(csv_file, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
         writer.writeheader()
     for subject_id in subjects:
         train_set = {}
@@ -114,20 +126,21 @@ def per_subject_exp(subjects, stop_criterion, iterator, loss_function):
         else:
             train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
                 get_train_val_test(data_folder, subject_id)
-        evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
-        eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
+        evolution_file = f'results/{exp_name}/subject_{subject_id}_archs.txt'
+        eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
+                            subject_id=subject_id, fieldnames=FIELDNAMES, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
         best_model_filename = eegnas.evolution()
         if global_vars.get('pure_cross_subject') or len(subjects) == 1:
             return [best_model_filename]
 
 
-def leave_one_out_exp(subjects, stop_criterion, iterator, loss_function):
+def leave_one_out_exp(exp_name, csv_file, subjects):
+    stop_criterion, iterator, loss_function, monitors = get_settings()
     with open(csv_file, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
         writer.writeheader()
     best_model_filenames = []
     for subject_id in subjects:
@@ -137,19 +150,20 @@ def leave_one_out_exp(subjects, stop_criterion, iterator, loss_function):
         train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
             get_pure_cross_subject(data_folder, exclude=[subject_id])
         evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
-        eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=exp_folder, exp_name=exp_name,
+        eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                            subject_id=subject_id, fieldnames=fieldnames, strategy='per_subject',
+                            subject_id=subject_id, fieldnames=FIELDNAMES, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
         best_model_filename = eegnas.evolution()
         best_model_filenames.append(best_model_filename)
     return best_model_filenames
 
 
-def cross_subject_exp(stop_criterion, iterator, loss_function):
+def cross_subject_exp(exp_name, csv_file):
+    stop_criterion, iterator, loss_function, monitors = get_settings()
     with open(csv_file, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
         writer.writeheader()
     train_set_all = {}
     val_set_all = {}
@@ -160,10 +174,10 @@ def cross_subject_exp(stop_criterion, iterator, loss_function):
         val_set_all[subject_id] = val_set
         test_set_all[subject_id] = test_set
     evolution_file = '%s/archs.txt' % (exp_folder)
-    naiveNAS = EEGNAS_evolution(iterator=iterator, exp_folder=exp_folder, exp_name = exp_name,
+    naiveNAS = EEGNAS_evolution(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name = exp_name,
                                 train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
                                 stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                                config=global_vars.config, subject_id='all', fieldnames=fieldnames, strategy='cross_subject',
+                                config=global_vars.config, subject_id='all', fieldnames=FIELDNAMES, strategy='cross_subject',
                                 evolution_file=evolution_file, csv_file=csv_file)
     return naiveNAS.evolution()
 
@@ -192,80 +206,81 @@ def get_exp_id():
     return exp_id
 
 
+@ex.main
+def main():
+    global FIRST_RUN, FIRST_DATASET, FOLDER_NAMES
+    try:
+        set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
+        set_gpu()
+        set_seeds()
+        if type(global_vars.get('subjects_to_check')) == list:
+            subjects = global_vars.get('subjects_to_check')
+        else:
+            subjects = random.sample(range(1, global_vars.get('num_subjects')),
+                                     global_vars.get('subjects_to_check'))
+        exp_folder = f"results/{exp_name}"
+        atexit.register(exit_handler, exp_folder, args)
+        create_folder(exp_folder)
+        FOLDER_NAMES.append(exp_name)
+        write_dict(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
+        csv_file = f"{exp_folder}/{exp_name}.csv"
+        report_file = f"{exp_folder}/report_{exp_name}.csv"
+        if 'cross_subject' in multiple_values and not global_vars.get('cross_subject'):
+            global_vars.set('num_generations', global_vars.get('num_generations') *
+                            global_vars.get('cross_subject_compensation_rate'))
+        start_time = time.time()
+        if global_vars.get('exp_type') in ['target', 'benchmark']:
+            target_exp(exp_name, csv_file)
+        elif global_vars.get('exp_type') == 'from_file':
+            target_exp(exp_name, csv_file,
+                       model_from_file=f"models/{global_vars.get('models_dir')}/{global_vars.get('model_file_name')}")
+        else:
+            best_model_filenames = exp_funcs[global_vars.get('exp_type')](exp_name, csv_file, subjects)
+            for best_model_filename in best_model_filenames:
+                target_exp(exp_name, csv_file, subjects, model_from_file=best_model_filename, write_header=False)
+        global_vars.set('total_time', str(time.time() - start_time))
+        write_dict(global_vars.config, f"{exp_folder}/final_config_{exp_name}.ini")
+        generate_report(csv_file, report_file)
+    except Exception as e:
+        with open(f"error_logs/error_log_{exp_name}.txt", "w") as err_file:
+            print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
+            print(traceback.format_exc(), file=err_file)
+        print('experiment failed. Exception message: %s' % (str(e)))
+        print(traceback.format_exc())
+        shutil.rmtree(exp_folder)
+        write_dict(global_vars.config, f"error_logs/final_config_{exp_name}.ini")
+        FOLDER_NAMES.remove(exp_name)
+
+
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                            level=logging.DEBUG, stream=sys.stdout)
+                        level=logging.DEBUG, stream=sys.stdout)
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2
     listen()
     exp_id = get_exp_id()
     exp_funcs = {'cross_subject': cross_subject_exp,
-                   'per_subject': per_subject_exp,
-                    'leave_one_out': leave_one_out_exp}
-    try:
-        experiments = args.experiment.split(',')
-        folder_names = []
-        first_run = True
-        for experiment in experiments:
-            configurations = get_configurations(experiment, global_vars.configs)
-            multiple_values = get_multiple_values(configurations)
-            for index, configuration in enumerate(configurations):
-                try:
-                    global_vars.set_config(configuration)
-                    set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
-                    if first_run:
-                        first_dataset = global_vars.get('dataset')
-                        if global_vars.get('include_params_folder_name'):
-                            multiple_values.extend(global_vars.get('include_params_folder_name'))
-                        first_run = False
-                    set_gpu()
-                    set_seeds()
-                    stop_criterion, iterator, loss_function, monitors = get_settings()
-                    if type(global_vars.get('subjects_to_check')) == list:
-                        subjects = global_vars.get('subjects_to_check')
-                    else:
-                        subjects = random.sample(range(1, global_vars.get('num_subjects')),
-                                                 global_vars.get('subjects_to_check'))
-                    exp_name = f"{exp_id}_{index+1}_{experiment}_{global_vars.get('dataset')}"
-                    exp_name = add_params_to_name(exp_name, multiple_values)
-                    exp_folder = f"results/{exp_name}"
-                    atexit.register(exit_handler, exp_folder)
-                    create_folder(exp_folder)
-                    folder_names.append(exp_name)
-                    write_dict(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
-                    csv_file = f"{exp_folder}/{exp_name}.csv"
-                    report_file = f"{exp_folder}/report_{exp_name}.csv"
-                    fieldnames = ['exp_name', 'machine', 'dataset', 'date', 'subject', 'generation', 'model', 'param_name', 'param_value']
-                    if 'cross_subject' in multiple_values and not global_vars.get('cross_subject'):
-                        global_vars.set('num_generations', global_vars.get('num_generations') *
-                                        global_vars.get('cross_subject_compensation_rate'))
-                    start_time = time.time()
-                    if global_vars.get('exp_type') in ['target', 'benchmark']:
-                        target_exp(stop_criterion, iterator, loss_function)
-                    elif global_vars.get('exp_type') == 'from_file':
-                        target_exp(stop_criterion, iterator, loss_function,
-                                   model_from_file=f"models/{global_vars.get('models_dir')}/{global_vars.get('model_file_name')}")
-                    else:
-                        best_model_filenames = exp_funcs[global_vars.get('exp_type')]\
-                            (subjects, stop_criterion, iterator, loss_function)
-                        for best_model_filename in best_model_filenames:
-                            target_exp(subjects, stop_criterion, iterator, loss_function,
-                                       model_from_file=best_model_filename, write_header=False)
-                    global_vars.set('total_time', str(time.time() - start_time))
-                    write_dict(global_vars.config, f"{exp_folder}/final_config_{exp_name}.ini")
-                    generate_report(csv_file, report_file)
-                except Exception as e:
-                    with open(f"error_logs/error_log_{exp_name}.txt", "w") as err_file:
-                        print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
-                        print(traceback.format_exc(), file=err_file)
-                    print('experiment failed. Exception message: %s' % (str(e)))
-                    print(traceback.format_exc())
-                    shutil.rmtree(exp_folder)
-                    write_dict(global_vars.config, f"error_logs/final_config_{exp_name}.ini")
-                    folder_names.remove(exp_name)
-    finally:
-        if args.drive == 't':
-            upload_exp_to_gdrive(folder_names, first_dataset)
+                 'per_subject': per_subject_exp,
+                 'leave_one_out': leave_one_out_exp}
+
+    experiments = args.experiment.split(',')
+    first_run = True
+    for experiment in experiments:
+        configurations = get_configurations(experiment, global_vars.configs)
+        multiple_values = get_multiple_values(configurations)
+        for index, configuration in enumerate(configurations):
+            global_vars.set_config(configuration)
+            if FIRST_RUN:
+                FIRST_DATASET = global_vars.get('dataset')
+                if global_vars.get('include_params_folder_name'):
+                    multiple_values.extend(global_vars.get('include_params_folder_name'))
+                FIRST_RUN = False
+            exp_name = f"{exp_id}_{index+1}_{experiment}_{global_vars.get('dataset')}"
+            exp_name = add_params_to_name(exp_name, multiple_values)
+            ex.run(options={'--name': exp_name})
+
+    if args.drive == 't':
+        upload_exp_to_gdrive(FOLDER_NAMES, FIRST_DATASET)

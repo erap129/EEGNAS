@@ -4,42 +4,52 @@ import json
 import numpy as np
 from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
-
 from EEGNAS import global_vars
 from EEGNAS.utilities.data_utils import split_parallel_sequences, unison_shuffled_copies, split_sequence
-from copy import deepcopy
 plt.interactive(False)
 import pandas as pd
 
 
-def preprocess_netflow_data(file, n_before, n_ahead, start_point, jumps, fix_days=True):
-    all_data = get_whole_netflow_data(file, fix_days)
-    sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, start_point, jumps)
-    datetimes_X, datetimes_Y = split_sequence(all_data.index, n_before, n_ahead, start_point, jumps)
-    X = sample_list.swapaxes(1, 2)[:, :10]
-    y = y.swapaxes(1, 2)[:, 10]
-    return X, y, datetimes_X, datetimes_Y
+def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
+    all_X = []
+    all_y = []
+    all_datetimes_X = []
+    all_datetimes_Y = []
+    for file in files:
+        all_data = get_whole_netflow_data(file)
+        sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, start_point, jumps)
+        datetimes_X, datetimes_Y = split_sequence(all_data.index, n_before, n_ahead, start_point, jumps)
+        all_datetimes_X.extend(datetimes_X)
+        all_datetimes_Y.extend(datetimes_Y)
+        num_handovers = sample_list.shape[2] - 1
+        all_X.extend(sample_list.swapaxes(1, 2)[:, :num_handovers])
+        all_y.extend(y.swapaxes(1, 2)[:, num_handovers])
+    max_handovers = max(x.shape[0] for x in all_X)
+    for idx in range(len(all_X)):
+        if all_X[idx].shape[0] < max_handovers:
+            all_X[idx] = np.pad(all_X[idx], pad_width=((max_handovers-all_X[idx].shape[0],0),(0,0)))
+    return np.stack(all_X, axis=0), np.stack(all_y, axis=0), \
+           np.stack(all_datetimes_X, axis=0), np.stack(all_datetimes_Y, axis=0)
 
 
-def get_whole_netflow_data(file, fix_days=True):
+def get_whole_netflow_data(file):
     orig_df = pd.read_csv(file)
     vols = {}
-    data_sample = []
+    dfs = []
     for index, row in orig_df.iterrows():
         vols[row['id']] = [row['ts'], row['vol']]
+    idx = 0
     for key, value in vols.items():
-        df = pd.DataFrame([json.loads(value[0]), json.loads(value[1])], index=['ts', 'vol']).T
+        datetimes = [datetime.utcfromtimestamp(int(tm)) for tm in json.loads(value[0])]
+        df = pd.DataFrame(list(zip(datetimes, json.loads(value[1]))), columns=['ts', orig_df.iloc[idx]['id']])
         df = df.sort_values(by='ts')
-        data_sample.append(np.array(df['vol']))
-    sum_arr = [sum(x) for x in zip(*data_sample)]
-    data_sample.append(np.array(sum_arr))
-    data_time = [datetime.utcfromtimestamp(int(tm)) for tm in df['ts']]
-    all_data = pd.DataFrame(list(zip(*([data_time] + data_sample))), columns=['time'] + list(orig_df['id'].
-                            values.astype('str')) + ['sum'])
-    all_data.index = pd.to_datetime(all_data['time'])
-    all_data = all_data.drop(columns=['time'])
-    if fix_days:
-        all_data = all_data.resample('H').pad()
+        df.index = pd.to_datetime(df['ts'])
+        df = df.drop(columns=['ts'])
+        df.resample('H').pad()
+        dfs.append(df)
+        idx += 1
+    all_data = pd.concat(dfs, axis=1)
+    all_data['sum'] = all_data.sum(axis=1)
     all_data = all_data[global_vars.get('start_point'):]
     return all_data
 
@@ -85,8 +95,6 @@ def turn_netflow_into_classification(X, y, threshold, oversampling=True):
 def count_overflows_in_data(dataset, threshold, start_idx=0, end_idx=24):
     overflow_count = 0
     for example in dataset.y:
-        # plt.plot(example)
-        # plt.show()
         for measurement in example[start_idx:end_idx]:
             if measurement > threshold:
                 overflow_count += 1

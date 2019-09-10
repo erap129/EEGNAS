@@ -21,8 +21,7 @@ from EEGNAS.utilities.data_utils import calc_regression_accuracy, write_dict
 from EEGNAS.utilities.misc import concat_train_val_sets, create_folder, unify_dataset, reset_model_weights
 
 ex = Experiment()
-ex.observers.append(MongoObserver.create(url='mongodb://eladr:eladnetflow@localhost/netflow_db', db_name='netflow_db'))
-# ex.add_config({'configuration':'test'})
+ex.observers.append(MongoObserver.create(url='mongodb://localhost/netflow_db', db_name='netflow_db'))
 
 
 def export_netflow_asflowAE_results(df, data, model, folder_name):

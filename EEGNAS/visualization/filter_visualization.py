@@ -98,9 +98,11 @@ if __name__ == '__main__':
             prev_dataset = global_vars.get('dataset')
 
         now = datetime.now()
-        date_time = now.strftime("%m.%d.%Y")
+        date_time = now.strftime("%m.%d.%Y-%H:%M")
         folder_name = f'results/{date_time}_{global_vars.get("dataset")}'
         create_folder(folder_name)
         print(f'generating {global_vars.get("report")} report...')
+        if global_vars.get('to_eeglab'):
+            create_folder(f'{folder_name}/{global_vars.get("report")}')
         getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
 

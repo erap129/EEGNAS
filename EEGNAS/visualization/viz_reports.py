@@ -10,7 +10,7 @@ from EEGNAS import global_vars
 from EEGNAS.NASUtils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
 from EEGNAS.utilities.NN_utils import get_intermediate_layer_value, get_class_distribution
-from EEGNAS.utilities.data_utils import get_dummy_input, prepare_data_for_NN
+from EEGNAS.utilities.data_utils import get_dummy_input, prepare_data_for_NN, tensor_to_eeglab
 from EEGNAS.utilities.misc import unify_dataset, label_by_idx, create_folder
 from EEGNAS.utilities.monitors import get_eval_function
 from EEGNAS.visualization.deconvolution import ConvDeconvNet
@@ -41,6 +41,9 @@ def perturbation_report(model, dataset, folder_name):
         single_subj_dataset = deepcopy(dataset)
         perturbed_data = global_vars.get('band_filter')(single_subj_dataset.X,
                                                         max(1, frequency - 1), frequency + 1, global_vars.get('frequency'))
+        if global_vars.get('to_matlab'):
+            tensor_to_eeglab(perturbed_data, f'{folder_name}/perturbation_report/frequency_{frequency}_'
+                                             f'{global_vars.get("band_filter")}.mat')
         single_subj_dataset.X = perturbed_data
         subj_tfs = []
         for eeg_chan in eeg_chans:
@@ -112,7 +115,6 @@ def kernel_deconvolution_report(model, dataset, folder_name):
         return
     if os.path.exists(f'{report_file_name[:-4]}.txt'):
         os.remove(f'{report_file_name[:-4]}.txt')
-    create_folder(f'{folder_name}/reconstructions')
     conv_deconv = ConvDeconvNet(model)
     eeg_chans = list(range(global_vars.get('eeg_chans')))
     tf_plots = []
@@ -136,8 +138,9 @@ def kernel_deconvolution_report(model, dataset, folder_name):
                               f' against After:{after_filter_val[filter_idx]}\n'
                               f'Class distribution before:{get_class_distribution(model, X)}\n'
                               f'Class distribution after:{get_class_distribution(model, reconstruction)}\n', file=f)
-                    savemat(f'{folder_name}/reconstructions/X_layer_{layer_idx}_filter_{filter_idx}.mat',
-                            {'data': np.transpose(reconstruction.cpu().detach().numpy().squeeze(), [1,2,0])})
+                    if global_vars.get('to_eeglab'):
+                        tensor_to_eeglab(reconstruction,
+                            f'{folder_name}/kernel_deconvolution/X_layer_{layer_idx}_filter_{filter_idx}.mat')
                     subj_tfs = []
                     for eeg_chan in eeg_chans:
                         subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),
@@ -165,6 +168,8 @@ def avg_class_tf_report(model, dataset, folder_name):
     class_examples = []
     for class_idx in range(global_vars.get('n_classes')):
         class_examples.append(dataset.X[np.where(dataset.y == class_idx)])
+        if global_vars.get('to_eeglab'):
+            tensor_to_eeglab(class_examples[-1], f'{folder_name}/avg_class_tf/{label_by_idx(class_idx)}.mat')
     chan_data = []
     for class_idx in range(global_vars.get('n_classes')):
         chan_data.append(defaultdict(list))
