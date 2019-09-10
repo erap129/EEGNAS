@@ -280,6 +280,8 @@ if __name__ == '__main__':
                 FIRST_RUN = False
             exp_name = f"{exp_id}_{index+1}_{experiment}_{global_vars.get('dataset')}"
             exp_name = add_params_to_name(exp_name, multiple_values)
+            ex.config = {}
+            ex.add_config(configuration)
             ex.run(options={'--name': exp_name})
 
     if args.drive == 't':
