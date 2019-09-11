@@ -200,14 +200,12 @@ class EEGNAS_evolution:
                 model_stats['first_parent_index'] = pop['first_parent_index']
                 model_stats['second_parent_index'] = pop['second_parent_index']
             NASUtils.add_model_to_stats(pop, i, model_stats)
+            for stat, val in model_stats.items():
+                if 'layer' not in stat:
+                    global_vars.get('sacred_ex').log_scalar(f'model_{i}_{stat}', val, self.current_generation)
             self.write_to_csv(model_stats, self.current_generation+1, model=i)
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
-
-            # if global_vars.get('add_top_20_stats'):
-            #     stats[f'top20_{stat}'] = NASUtils.get_average_param([pop['model'] for pop in
-            #                                                          weighted_population[:int(len(weighted_population)/5)]],
-            #                                              layer_stats[stat][0], layer_stats[stat][1])
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [DropoutLayer, ActivationLayer, ConvLayer, IdentityLayer, BatchNormLayer, PoolingLayer]:
@@ -279,6 +277,8 @@ class EEGNAS_evolution:
             if global_vars.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NASUtils.inject_dropout(weighted_population)
             stats, weighted_population = self.evaluate_and_sort(weighted_population)
+            for stat, val in stats.items():
+                global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, generation)
             if generation < num_generations - 1:
                 weighted_population = self.selection(weighted_population)
                 breed_population(weighted_population, self)
@@ -296,7 +296,7 @@ class EEGNAS_evolution:
                 best_model_filename = self.save_best_model(weighted_population)
                 self.save_final_population(weighted_population)
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
-            self.print_to_evolution_file(weighted_population[:3], generation + 1)
+            self.print_to_evolution_file(weighted_population, generation + 1)
         return best_model_filename
 
     def selection(self, weighted_population):
@@ -430,14 +430,14 @@ class EEGNAS_evolution:
         if self.evolution_file is not None:
             with open(self.evolution_file, "a") as text_file_local:
                 text_file = text_file_local
-                print('Architectures for Subject %s, Generation %d\n' % (str(self.subject_id), generation), file=text_file)
-                for model in models:
+                for m_idx, model in enumerate(models):
+                    print(f'Generation {generation}, model {m_idx}:', file=text_file)
                     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # PyTorch v0.4.0
                     finalized_model = finalize_model(model['model'])
                     print_model = finalized_model.to(device)
                     summary(print_model, (global_vars.get('eeg_chans'), global_vars.get('input_height'),
                                           global_vars.get('input_width')), file=text_file)
-
+                    print(model, file=text_file)
 
 
 

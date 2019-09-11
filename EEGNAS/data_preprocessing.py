@@ -11,7 +11,7 @@ from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn
     turn_dataset_to_timefreq
 from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
 from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
-    EEG_to_TF
+    EEG_to_TF, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime
 from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -497,6 +497,19 @@ def get_tuh_train_val_test(data_folder):
     return train_set, valid_set, test_set
 
 
+def get_multivariate_ts(data_folder):
+    dataset_name = global_vars.get('multivariate_ts_dataset')
+    set_global_vars_by_sktime(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+                                       f'{dataset_name}/{dataset_name}_TRAIN.ts')
+    X_train, y_train = sktime_to_numpy(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+                                       f'{dataset_name}/{dataset_name}_TRAIN.ts')
+    X_test, y_test = sktime_to_numpy(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+                                       f'{dataset_name}/{dataset_name}_TEST.ts')
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'))
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
+    return train_set, valid_set, test_set
+
+
 def get_pure_cross_subject(data_folder, exclude=[]):
     train_x = []
     val_x = []
@@ -556,6 +569,8 @@ def get_train_val_test(data_folder, subject_id):
         return get_netflow_asflow_AE(data_folder)
     elif global_vars.get('dataset') == 'cifar10':
         return get_cifar10(data_folder)
+    elif global_vars.get('dataset') == 'multivariate_ts':
+        return get_multivariate_ts(data_folder)
 
 
 
@@ -574,10 +589,13 @@ if __name__ == '__main__':
     set_default_config('configurations/config.ini')
     global_vars.set('dataset', 'BCI_IV_2a')
     set_params_by_dataset('configurations/dataset_params.ini')
-    dataset = get_dataset('all')
+    dataset = get_dataset(1)
     concat_train_val_sets(dataset)
-    # dataset = unify_dataset(dataset)
-    # export_data_to_file(dataset, format='matlab', classes=[0])
-    # export_data_to_file(dataset, format='matlab', classes=[1])
-    # EEG_to_TF(dataset, 'data/export_data/BCI_IV_2a_TF', 32)
-    export_data_to_file(dataset, 'numpy', 'data/export_data/BCI_IV_2a')
+
+    dataset['train'].X = dataset['train'].X[:10]
+    dataset['train'].y = dataset['train'].y[:10]
+    dataset['test'].X = dataset['test'].X[:10]
+    dataset['test'].y = dataset['test'].y[:10]
+
+    EEG_to_TF_matlab(dataset, 'data/export_data/BCI_IV_2a_TF_matlab')
+

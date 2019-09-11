@@ -34,7 +34,6 @@ global data_folder, valid_set_fraction
 import atexit
 
 ex = Experiment()
-ex.observers.append(MongoObserver.create(url='mongodb://localhost/netflow_db', db_name='netflow_db'))
 FIRST_RUN = False
 FIRST_DATASET = ''
 FOLDER_NAMES = []
@@ -241,6 +240,7 @@ def main():
         global_vars.set('total_time', str(time.time() - start_time))
         write_dict(global_vars.config, f"{exp_folder}/final_config_{exp_name}.ini")
         generate_report(csv_file, report_file)
+        ex.add_artifact(report_file)
     except Exception as e:
         with open(f"error_logs/error_log_{exp_name}.txt", "w") as err_file:
             print('experiment failed. Exception message: %s' % (str(e)), file=err_file)
@@ -282,6 +282,10 @@ if __name__ == '__main__':
             exp_name = add_params_to_name(exp_name, multiple_values)
             ex.config = {}
             ex.add_config(configuration)
+            if len(ex.observers) == 0:
+                ex.observers.append(MongoObserver.create(url=f'mongodb://localhost/{global_vars.get("mongodb_name")}',
+                                                     db_name=global_vars.get("mongodb_name")))
+            global_vars.set('sacred_ex', ex)
             ex.run(options={'--name': exp_name})
 
     if args.drive == 't':

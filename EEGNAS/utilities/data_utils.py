@@ -5,13 +5,14 @@ import mne
 import torch
 from braindecode.torch_ext.util import np_to_var
 from mne.time_frequency import tfr_morlet
+from oct2py import octave
 
 from EEGNAS import global_vars
 import numpy as np
 from scipy.io import savemat
 from PIL import Image
 from EEGNAS.utilities.misc import create_folder
-import matplotlib.pyplot as plt
+from sktime.utils.load_data import load_from_tsfile_to_dataframe
 
 
 def get_dummy_input():
@@ -126,8 +127,6 @@ def EEG_to_TF(dataset, out_folder, dim):
     freqs = np.arange(7, 40, 1)  # frequencies of interest
     create_folder(out_folder)
     for segment in dataset.keys():
-        if segment == 'train':
-            continue
         TF_array = np.zeros((len(dataset[segment].X), global_vars.get('eeg_chans'), dim, dim))
         for ex_idx, example in enumerate(dataset[segment].X):
             epochs = mne.EpochsArray(example[None, :, :], info=info)
@@ -141,21 +140,53 @@ def EEG_to_TF(dataset, out_folder, dim):
                     ax.get_xaxis().set_visible(False)
                     ax.get_yaxis().set_visible(False)
                 fig.suptitle('')
-                # fig.canvas.draw()
-                # Now we can save it to a numpy array.
                 fig.savefig(f'{out_folder}/tmp.png', bbox_inches='tight')
-                # data = plt.imread(f'{out_folder}/{segment}/tmp.png')
-                # data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-                # data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-                # img = Image.fromarray(data).convert('LA').resize((dim, dim))
                 img = Image.open(f'{out_folder}/tmp.png').convert('LA').resize((dim, dim))
                 TF_array[ex_idx, ch_idx] = np.array(img)[:,:,0]
-                # fig.savefig(f'{out_folder}/{segment}/{ex_idx}.png', bbox_inches='tight')
             print(f'created TF {ex_idx}/{len(dataset[segment].X)} in {segment} data')
         os.remove(f'{out_folder}/tmp.png')
         np.save(f'{out_folder}/X_{segment}', TF_array)
         np.save(f'{out_folder}/y_{segment}', dataset[segment].y)
 
 
+def EEG_to_TF_matlab(dataset, out_folder):
+    octave.addpath('eeglab/functions/guifunc');
+    octave.addpath('eeglab/functions/popfunc');
+    octave.addpath('eeglab/functions/adminfunc');
+    octave.addpath('eeglab/functions/sigprocfunc');
+    octave.addpath('eeglab/functions/miscfunc');
+    octave.addpath('eeglab/functions/timefreqfunc');
+    create_folder(out_folder)
+    for segment in dataset.keys():
+        TF_array = np.zeros((len(dataset[segment].X), global_vars.get('eeg_chans'), 49, 50))
+        for ex_idx, example in enumerate(dataset[segment].X):
+            for ch_idx, channel in enumerate(example):
+                tf = octave.newtimef(channel.reshape(1, -1), 1125, [0, 4500], 250, [3, 0.5],
+                                     'baseline', 0, 'plotphase', 'off', 'padratio', 1, 'ntimesout', 50)
+                TF_array[ex_idx, ch_idx] = tf
+                print(f'created TF for example {ex_idx}/{len(dataset[segment].X)}, channel {ch_idx}/{len(example)} in {segment} data\n')
+        np.save(f'{out_folder}/X_{segment}_{global_vars.get("dataset")}_TF_matlab', TF_array)
+        np.save(f'{out_folder}/y_{segment}_{global_vars.get("dataset")}_TF_matlab', dataset[segment].y)
+
+
 def tensor_to_eeglab(X, filepath):
     savemat(filepath, {'data': np.transpose(X.cpu().detach().numpy().squeeze(), [1, 2, 0])})
+
+
+def sktime_to_numpy(file):
+    X_ts, y = load_from_tsfile_to_dataframe(file)
+    X = np.zeros((len(X_ts), len(X_ts.columns), len(X_ts.iloc[0]['dim_0'])))
+    for i in range(len(X_ts)):
+        for col_idx, col in enumerate(X_ts.columns):
+            X[i, col_idx] = X_ts.iloc[i][col].values
+    return X, y.astype(np.float).astype('int')-1
+
+
+def set_global_vars_by_sktime(file):
+    X_ts, y = load_from_tsfile_to_dataframe(file)
+    global_vars.set('input_height', len(X_ts.iloc[0]['dim_0']))
+    global_vars.set('eeg_chans', len(X_ts.columns))
+    global_vars.set('n_classes', len(np.unique(y)))
+
+
+
