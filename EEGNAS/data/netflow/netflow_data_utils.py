@@ -26,8 +26,9 @@ def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
         num_handovers = sample_list.shape[2] - 1
         all_X.extend(sample_list.swapaxes(1, 2)[:, :num_handovers])
         all_y.extend(y.swapaxes(1, 2)[:, num_handovers])
-
-    max_handovers = max(x.shape[0] for x in all_X)
+    max_handovers = global_vars.get('max_handovers')
+    if not max_handovers:
+        max_handovers = max(x.shape[0] for x in all_X)
     for idx in range(len(all_X)):
         if all_X[idx].shape[0] < max_handovers:
             all_X[idx] = np.pad(all_X[idx], pad_width=((max_handovers-all_X[idx].shape[0],0),(0,0)))
@@ -48,13 +49,18 @@ def get_whole_netflow_data(file):
         df = df.sort_values(by='ts')
         df.index = pd.to_datetime(df['ts'])
         df = df.drop(columns=['ts'])
-        df.resample('H').pad()
+        df = df.resample('H').pad()
         dfs.append(df)
         idx += 1
     all_data = pd.concat(dfs, axis=1)
     all_data['sum'] = all_data.sum(axis=1)
     all_data = all_data[global_vars.get('start_point'):]
     return all_data
+
+
+def get_netflow_threshold(file, stds=2):
+    df = get_whole_netflow_data(file)
+    return df['sum'].mean() + df['sum'].std() * stds
 
 
 def get_time_freq(signal):

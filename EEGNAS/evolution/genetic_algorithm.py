@@ -437,7 +437,6 @@ class EEGNAS_evolution:
                     print_model = finalized_model.to(device)
                     summary(print_model, (global_vars.get('eeg_chans'), global_vars.get('input_height'),
                                           global_vars.get('input_width')), file=text_file)
-                    print(model, file=text_file)
 
 
 

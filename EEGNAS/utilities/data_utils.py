@@ -161,7 +161,7 @@ def EEG_to_TF_matlab(dataset, out_folder):
         TF_array = np.zeros((len(dataset[segment].X), global_vars.get('eeg_chans'), 49, 50))
         for ex_idx, example in enumerate(dataset[segment].X):
             for ch_idx, channel in enumerate(example):
-                tf = octave.newtimef(channel.reshape(1, -1), 1125, [0, 4500], 250, [3, 0.5],
+                tf = octave.newtimef(channel.reshape(1, -1), global_vars.get('input_height'), [0, 4500], 250, [3, 0.5],
                                      'baseline', 0, 'plotphase', 'off', 'padratio', 1, 'ntimesout', 50)
                 TF_array[ex_idx, ch_idx] = tf
                 print(f'created TF for example {ex_idx}/{len(dataset[segment].X)}, channel {ch_idx}/{len(example)} in {segment} data\n')

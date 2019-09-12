@@ -587,15 +587,9 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    global_vars.set('dataset', 'BCI_IV_2a')
+    global_vars.set('dataset', 'BCI_IV_2b')
     set_params_by_dataset('configurations/dataset_params.ini')
     dataset = get_dataset(1)
     concat_train_val_sets(dataset)
-
-    dataset['train'].X = dataset['train'].X[:10]
-    dataset['train'].y = dataset['train'].y[:10]
-    dataset['test'].X = dataset['test'].X[:10]
-    dataset['test'].y = dataset['test'].y[:10]
-
-    EEG_to_TF_matlab(dataset, 'data/export_data/BCI_IV_2a_TF_matlab')
+    EEG_to_TF_matlab(dataset, 'data/export_data/BCI_IV_2b_TF_matlab')
 
