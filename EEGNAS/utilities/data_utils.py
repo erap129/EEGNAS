@@ -176,18 +176,22 @@ def tensor_to_eeglab(X, filepath):
 
 def sktime_to_numpy(file):
     X_ts, y = load_from_tsfile_to_dataframe(file)
-    X = np.zeros((len(X_ts), len(X_ts.columns), len(X_ts.iloc[0]['dim_0'])))
+    max_len = global_vars.get('input_height')
+    X = np.zeros((len(X_ts), len(X_ts.columns), max_len))
     for i in range(len(X_ts)):
         for col_idx, col in enumerate(X_ts.columns):
-            X[i, col_idx] = X_ts.iloc[i][col].values
-    # return X, y.astype(np.float).astype('int')-1
+            X[i, col_idx] = np.pad(X_ts.iloc[i][col].values, pad_width=(0,max_len-len(X_ts.iloc[i][col].values)))
     return X, pd.Categorical(pd.Series(y)).codes
 
-def set_global_vars_by_sktime(file):
-    X_ts, y = load_from_tsfile_to_dataframe(file)
-    global_vars.set('input_height', len(X_ts.iloc[0]['dim_0']))
-    global_vars.set('eeg_chans', len(X_ts.columns))
-    global_vars.set('n_classes', len(np.unique(y)))
+def set_global_vars_by_sktime(train_file, test_file):
+    X_train_ts, y_train = load_from_tsfile_to_dataframe(train_file)
+    X_test_ts, y_test = load_from_tsfile_to_dataframe(test_file)
+    train_max_len = max([len(X_train_ts.iloc[i]['dim_0']) for i in range(len(X_train_ts))])
+    test_max_len = max([len(X_test_ts.iloc[i]['dim_0']) for i in range(len(X_test_ts))])
+    max_len = max(train_max_len, test_max_len)
+    global_vars.set('input_height', max_len)
+    global_vars.set('eeg_chans', len(X_train_ts.columns))
+    global_vars.set('n_classes', len(np.unique(y_train)))
 
 
 

@@ -248,7 +248,6 @@ def main():
         print('experiment failed. Exception message: %s' % (str(e)))
         print(traceback.format_exc())
         shutil.rmtree(exp_folder)
-        write_dict(global_vars.config, f"error_logs/final_config_{exp_name}.ini")
         FOLDER_NAMES.remove(exp_name)
 
 

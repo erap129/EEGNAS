@@ -500,7 +500,9 @@ def get_tuh_train_val_test(data_folder):
 def get_multivariate_ts(data_folder):
     dataset_name = global_vars.get('multivariate_ts_dataset')
     set_global_vars_by_sktime(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
-                                       f'{dataset_name}/{dataset_name}_TRAIN.ts')
+                                       f'{dataset_name}/{dataset_name}_TRAIN.ts',
+                              f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+                                      f'{dataset_name}/{dataset_name}_TEST.ts')
     X_train, y_train = sktime_to_numpy(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
                                        f'{dataset_name}/{dataset_name}_TRAIN.ts')
     X_test, y_test = sktime_to_numpy(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
