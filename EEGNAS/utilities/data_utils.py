@@ -13,6 +13,7 @@ from scipy.io import savemat
 from PIL import Image
 from EEGNAS.utilities.misc import create_folder
 from sktime.utils.load_data import load_from_tsfile_to_dataframe
+import pandas as pd
 
 
 def get_dummy_input():
@@ -179,8 +180,8 @@ def sktime_to_numpy(file):
     for i in range(len(X_ts)):
         for col_idx, col in enumerate(X_ts.columns):
             X[i, col_idx] = X_ts.iloc[i][col].values
-    return X, y.astype(np.float).astype('int')-1
-
+    # return X, y.astype(np.float).astype('int')-1
+    return X, pd.Categorical(pd.Series(y)).codes
 
 def set_global_vars_by_sktime(file):
     X_ts, y = load_from_tsfile_to_dataframe(file)
