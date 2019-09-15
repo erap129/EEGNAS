@@ -591,7 +591,7 @@ if __name__ == '__main__':
     set_default_config('configurations/config.ini')
     global_vars.set('dataset', 'BCI_IV_2b')
     set_params_by_dataset('configurations/dataset_params.ini')
-    dataset = get_dataset(1)
+    dataset = get_dataset('all')
     concat_train_val_sets(dataset)
     EEG_to_TF_matlab(dataset, 'data/export_data/BCI_IV_2b_TF_matlab')
 

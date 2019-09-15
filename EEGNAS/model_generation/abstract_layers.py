@@ -106,3 +106,12 @@ class ConcatLayer(Layer):
 class AveragingLayer(Layer):
     def __init__(self):
         pass
+
+
+class LayerBlock(Layer):
+    def __init_(self, length):
+        layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
+        Layer.__init__(self)
+        self.layers = [layers[random.randint(0, 5)]() for i in range(length)]
+
+

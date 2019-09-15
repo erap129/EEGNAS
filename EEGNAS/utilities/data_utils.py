@@ -2,10 +2,10 @@ import os
 from copy import deepcopy
 
 import mne
+import oct2py
 import torch
 from braindecode.torch_ext.util import np_to_var
 from mne.time_frequency import tfr_morlet
-from oct2py import octave
 
 from EEGNAS import global_vars
 import numpy as np
@@ -151,21 +151,33 @@ def EEG_to_TF(dataset, out_folder, dim):
 
 
 def EEG_to_TF_matlab(dataset, out_folder):
-    octave.addpath('eeglab/functions/guifunc');
-    octave.addpath('eeglab/functions/popfunc');
-    octave.addpath('eeglab/functions/adminfunc');
-    octave.addpath('eeglab/functions/sigprocfunc');
-    octave.addpath('eeglab/functions/miscfunc');
-    octave.addpath('eeglab/functions/timefreqfunc');
     create_folder(out_folder)
     for segment in dataset.keys():
+        if segment == 'train':
+            continue
         TF_array = np.zeros((len(dataset[segment].X), global_vars.get('eeg_chans'), 49, 50))
         for ex_idx, example in enumerate(dataset[segment].X):
-            for ch_idx, channel in enumerate(example):
-                tf = octave.newtimef(channel.reshape(1, -1), global_vars.get('input_height'), [0, 4500], 250, [3, 0.5],
-                                     'baseline', 0, 'plotphase', 'off', 'padratio', 1, 'ntimesout', 50)
-                TF_array[ex_idx, ch_idx] = tf
-                print(f'created TF for example {ex_idx}/{len(dataset[segment].X)}, channel {ch_idx}/{len(example)} in {segment} data\n')
+            with oct2py.Oct2Py() as octave:
+                octave.addpath('eeglab/functions/guifunc')
+                octave.addpath('eeglab/functions/popfunc')
+                octave.addpath('eeglab/functions/adminfunc')
+                octave.addpath('eeglab/functions/sigprocfunc')
+                octave.addpath('eeglab/functions/miscfunc')
+                octave.addpath('eeglab/functions/timefreqfunc')
+                for ch_idx, channel in enumerate(example):
+                    finished = False
+                    while not finished:
+                        try:
+                            tf = octave.newtimef(channel.reshape(1, -1), global_vars.get('input_height'), [0, 4500], 250, [3, 0.5],
+                                             'baseline', 0, 'plotphase', 'off', 'padratio', 1, 'ntimesout', 50)
+                            TF_array[ex_idx, ch_idx] = tf
+                            finished = True
+                            print(f'created TF for example {ex_idx}/{len(dataset[segment].X)}, '
+                                  f'channel {ch_idx}/{len(example)} in {segment} data\n')
+                        except Exception as e:
+                            print(f'failed TF for example {ex_idx}/{len(dataset[segment].X)}, '
+                                  f'channel {ch_idx}/{len(example)} in {segment} data with msg {str(e)}'
+                                  f'\ntrying again...\n')
         np.save(f'{out_folder}/X_{segment}_{global_vars.get("dataset")}_TF_matlab', TF_array)
         np.save(f'{out_folder}/y_{segment}_{global_vars.get("dataset")}_TF_matlab', dataset[segment].y)
 
