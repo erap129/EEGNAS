@@ -68,7 +68,7 @@ naiveNAS = NaiveNAS(iterator=iterator, exp_folder=None, exp_name=None,
                     stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                     config=global_vars.config, subject_id=1, fieldnames=None, strategy='per_subject',
                     csv_file=None, evolution_file=None)
-naiveNAS.evaluate_model(model)
+naiveNAS.train_and_evaluate_model(model)
 
 
 train_batches = list(iterator.get_batches(train_set[subject_id], shuffle=False))

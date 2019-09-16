@@ -181,3 +181,21 @@ def not_exclusively_in(subj, model_from_file):
     if subj in all_subjs:
         return False
     return True
+
+
+def time_f(t_secs):
+    try:
+        val = int(t_secs)
+    except ValueError:
+        return "!!!ERROR: ARGUMENT NOT AN INTEGER!!!"
+    pos = abs(int(t_secs))
+    day = pos / (3600*24)
+    rem = pos % (3600*24)
+    hour = rem / 3600
+    rem = rem % 3600
+    mins = rem / 60
+    secs = rem % 60
+    res = '%02d:%02d:%02d:%02d' % (day, hour, mins, secs)
+    if int(t_secs) < 0:
+        res = "-%s" % res
+    return res

@@ -1,28 +1,20 @@
-import itertools
 import pickle
 import platform
-
 from EEGNAS.data_preprocessing import get_train_val_test
-from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import logging
-import torch.optim as optim
 import torch.nn.functional as F
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
-from EEGNAS.model_generation.simple_model_generation import finalize_model
-from EEGNAS.utilities.misc import RememberBest
-import pandas as pd
+from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer
+from EEGNAS.utilities.misc import time_f
 from collections import OrderedDict, defaultdict
 import numpy as np
-from EEGNAS.data_preprocessing import get_pure_cross_subject
 import time
 import torch
 import EEGNAS.evolution.fitness_functions
-from braindecode.datautil.iterators import CropsFromTrialsIterator
-from braindecode.models.util import to_dense_prediction_model
 from EEGNAS.evolution.nn_training import NN_Trainer
-from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or, ColumnBelow
+from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.splitters import concatenate_sets
 from EEGNAS.evolution.evolution_misc_functions import add_parent_child_relations
 from EEGNAS.evolution.breeding import breed_population
@@ -33,8 +25,8 @@ import EEGNAS.evolution.fitness_functions
 from EEGNAS.utilities.model_summary import summary
 from EEGNAS.utilities.monitors import NoIncreaseDecrease
 from EEGNAS import NASUtils, global_vars
-import pdb
-from tensorboardX import SummaryWriter
+from deap import creator, base, tools
+
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 import random
@@ -42,24 +34,6 @@ WARNING = '\033[93m'
 ENDC = '\033[0m'
 log = logging.getLogger(__name__)
 model_train_times = []
-
-
-def time_f(t_secs):
-    try:
-        val = int(t_secs)
-    except ValueError:
-        return "!!!ERROR: ARGUMENT NOT AN INTEGER!!!"
-    pos = abs(int(t_secs))
-    day = pos / (3600*24)
-    rem = pos % (3600*24)
-    hour = rem / 3600
-    rem = rem % 3600
-    mins = rem / 60
-    secs = rem % 60
-    res = '%02d:%02d:%02d:%02d' % (day, hour, mins, secs)
-    if int(t_secs) < 0:
-        res = "-%s" % res
-    return res
 
 
 def show_progress(train_time, exp_name):
@@ -70,6 +44,10 @@ def show_progress(train_time, exp_name):
     avg_model_train_time = sum(model_train_times) / len(model_train_times)
     time_left = (total_trainings - len(model_train_times)) * avg_model_train_time
     print(f"Experiment: {exp_name}, time left: {time_f(time_left)}")
+
+
+# def  evaluate_ind(individual):
+#     finalized_model = finalize_model(individual)
 
 
 class EEGNAS_evolution:
@@ -102,6 +80,13 @@ class EEGNAS_evolution:
         else:
             self.current_chosen_population_sample = []
         self.mutation_rate = global_vars.get('mutation_rate')
+        # creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+        # creator.create("Individual", list, fitness=creator.FitnessMax)
+        # self.toolbox = base.Toolbox()
+        # self.toolbox.register("random_layer", random_layer)
+        # self.toolbox.register("individual", tools.initRepeat, creator.Individual, self.toolbox.random_layer,
+        #                       n=global_vars.get('num_layers'))
+        # self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
 
     def sample_subjects(self):
         self.current_chosen_population_sample = sorted(random.sample(
@@ -403,7 +388,7 @@ class EEGNAS_evolution:
             self.set_cropping_for_model(model)
         dataset = self.get_single_subj_dataset(subject, final_evaluation)
         nn_trainer = NN_Trainer(self.iterator, self.loss_function, self.stop_criterion, self.monitors)
-        return nn_trainer.evaluate_model(model, dataset, state=state)
+        return nn_trainer.train_and_evaluate_model(model, dataset, state=state)
 
     def write_to_csv(self, stats, generation, model='avg'):
         if self.csv_file is not None:

@@ -23,7 +23,7 @@ def pretrain_model_on_filtered_data(pretrained_model, low_freq, high_freq):
             pure_cross_subj_dataset_copy[section].X = global_vars.get('band_filter')\
                 (pure_cross_subj_dataset_copy[section].X, max(1, freq - 1), freq + 1, global_vars.get('frequency')).astype(np.float32)
         nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-        _, _, model, _, _ = nn_trainer.evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy)
+        _, _, model, _, _ = nn_trainer.train_and_evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy)
         freq_models[freq] = model
     return freq_models
 

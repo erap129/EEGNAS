@@ -93,8 +93,10 @@ def write_dict(dict, filename):
             for K, _ in sorted(inner_dict.items()):
                 all_keys.append(K)
         for K in all_keys:
-            f.write(f"{K}\t{global_vars.get(K)}\n")
-
+            if type(global_vars.get(K)) == 'str':
+                f.write(f"{K}\t'{global_vars.get(K)}'\n")
+            else:
+                f.write(f"{K}\t{global_vars.get(K)}\n")
 
 def export_data_to_file(dataset, format, out_folder, classes=None):
     create_folder(out_folder)
@@ -195,6 +197,7 @@ def sktime_to_numpy(file):
             X[i, col_idx] = np.pad(X_ts.iloc[i][col].values, pad_width=(0,max_len-len(X_ts.iloc[i][col].values)))
     return X, pd.Categorical(pd.Series(y)).codes
 
+
 def set_global_vars_by_sktime(train_file, test_file):
     X_train_ts, y_train = load_from_tsfile_to_dataframe(train_file)
     X_test_ts, y_test = load_from_tsfile_to_dataframe(test_file)
@@ -204,6 +207,17 @@ def set_global_vars_by_sktime(train_file, test_file):
     global_vars.set('input_height', max_len)
     global_vars.set('eeg_chans', len(X_train_ts.columns))
     global_vars.set('n_classes', len(np.unique(y_train)))
+
+
+def load_values_from_config(config_file, keys):
+    configuration = {}
+    f = open(config_file, 'r')
+    list_of_lines = f.readlines()
+    for line in list_of_lines:
+        line_split = line.split('\t')
+        configuration[line_split[0]] = line_split[1][:-1]
+    for key in keys:
+        global_vars.set(key, eval(configuration[key]))
 
 
 

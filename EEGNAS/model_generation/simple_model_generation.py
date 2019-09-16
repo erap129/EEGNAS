@@ -32,9 +32,6 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
             prev_channels = global_vars.get('eeg_chans')
             prev_height = global_vars.get('input_height')
             prev_width = global_vars.get('input_width')
-            # if global_vars.get('channel_dim') == 'channels':
-            #     prev_channels = global_vars.get('eeg_chans')
-            #     prev_eeg_channels = 1
         if isinstance(layer, PoolingLayer):
             while applyFix and (prev_height-layer.pool_height) / layer.stride_height < 1:
                 if random.uniform(0,1) < 0.5 and layer.pool_height > 1:
@@ -43,8 +40,6 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.stride_height -= 1
                 if layer.pool_height == 1 and layer.stride_height == 1:
                     break
-            # if global_vars.get('channel_dim') == 'channels':
-            #     layer.pool_eeg_chan = 1
             model.add_module('%s_%d' % (type(layer).__name__, i), nn.MaxPool2d(kernel_size=(int(layer.pool_height), int(layer.pool_width)),
                                                                       stride=(int(layer.stride_height), 1)))
 
@@ -65,8 +60,6 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.kernel_height = prev_height
                 if applyFix and layer.kernel_width > prev_width:
                     layer.kernel_width = prev_width
-            # if global_vars.get('channel_dim') == 'channels':
-            #     layer.kernel_eeg_chan = 1
             model.add_module(conv_name, layer_class(prev_channels, layer.filter_num,
                                                 (layer.kernel_height, layer.kernel_width),
                                                 stride=1))
@@ -103,10 +96,6 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
 
 def check_legal_model(layer_collection):
-    # if global_vars.get('channel_dim') == 'channels':
-    #     input_chans = 1
-    # else:
-    #     input_chans = global_vars.get('eeg_chans')
     height = global_vars.get('input_height')
     width = global_vars.get('input_width')
     for layer in layer_collection:
@@ -119,8 +108,6 @@ def check_legal_model(layer_collection):
         if height < 1 or width < 1:
             print(f"illegal model, height={height}, width={width}")
             return False
-    # if global_vars.get('cropping'):
-    #     return check_legal_cropping_model(layer_collection)
     return True
 
 

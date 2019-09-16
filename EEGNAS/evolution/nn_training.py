@@ -78,7 +78,7 @@ class NN_Trainer:
         n_preds_per_input = out.cpu().data.numpy().shape[2]
         return n_preds_per_input
 
-    def evaluate_model(self, model, dataset, state=None, final_evaluation=False, ensemble=False):
+    def train_model(self, model, dataset, state=None, final_evaluation=False, ensemble=False):
         if self.cuda:
             torch.cuda.empty_cache()
         if final_evaluation:
@@ -135,12 +135,17 @@ class NN_Trainer:
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach or ensemble:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
         end = time.time()
+        self.final_time = end - start
+        self.num_epochs = num_epochs
+        return model
+
+    def train_and_evaluate_model(self, model, dataset, state=None, final_evaluation=False, ensemble=False):
+        self.train_model(model, dataset, state, final_evaluation, ensemble)
         evaluations = {}
         for evaluation_metric in global_vars.get('evaluation_metrics'):
             evaluations[evaluation_metric] = {'train': self.epochs_df.iloc[-1][f"train_{evaluation_metric}"],
                                               'valid': self.epochs_df.iloc[-1][f"valid_{evaluation_metric}"],
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
-        final_time = end-start
         if self.cuda:
             torch.cuda.empty_cache()
         if global_vars.get('use_tensorboard'):
@@ -158,7 +163,7 @@ class NN_Trainer:
             else:
                 del model
                 model = None
-        return final_time, evaluations, model, self.rememberer.model_state_dict, num_epochs
+        return self.final_time, evaluations, model, self.rememberer.model_state_dict, self.num_epochs
 
     def setup_after_stop_training(self, model, final_evaluation):
         self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)

@@ -98,7 +98,7 @@ class TestModelGeneration(unittest.TestCase):
 
     def test_evaluation_target_model(self):
         model = target_model('deep')
-        self.naiveNAS.evaluate_model(model)
+        self.naiveNAS.train_and_evaluate_model(model)
 
     def test_save_best_model(self):
         weighted_population = [{'model': random_model(10)}]

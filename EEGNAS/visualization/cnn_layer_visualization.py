@@ -129,7 +129,7 @@ if __name__ == '__main__':
                         stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                         config=global_vars.config, subject_id=subject_id, fieldnames=None, strategy='cross_subject',
                         evolution_file=None, csv_file=None)
-    _, _, pretrained_model, _, _ = naiveNAS.evaluate_model(model[model_selection], final_evaluation=True)
+    _, _, pretrained_model, _, _ = naiveNAS.train_and_evaluate_model(model[model_selection], final_evaluation=True)
     layer_vis = CNNLayerVisualization(pretrained_model, cnn_layer[model_selection], filter_pos[model_selection])
     layer_vis.visualise_layer_with_hooks()
 

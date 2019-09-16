@@ -75,7 +75,7 @@ def kfold_exp(data, model, folder_name):
         dataset = {}
         dataset['train'], dataset['valid'], dataset['test'] = \
             makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
-        nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
+        nn_trainer.train_and_evaluate_model(model, dataset, final_evaluation=True)
         for segment in ['train', 'valid', 'test']:
             df = pd.DataFrame()
             if global_vars.get('problem') == 'classification':
@@ -94,7 +94,7 @@ def no_kfold_exp(dataset, model, folder_name, reset_weights=False):
         reset_model_weights(model)
         stop_criterion, iterator, loss_function, monitors = get_normal_settings()
         nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-        nn_trainer.evaluate_model(model, dataset, final_evaluation=True)
+        nn_trainer.train_and_evaluate_model(model, dataset, final_evaluation=True)
     for segment in dataset.keys():
         df = pd.DataFrame()
         if global_vars.get('problem') == 'classification':
