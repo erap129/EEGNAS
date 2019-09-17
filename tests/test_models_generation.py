@@ -8,7 +8,7 @@ from EEGNAS.models_generation import uniform_model, breed_layers,\
     breed_grid
 from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
 from EEGNAS import global_vars, models_generation
-from EEGNAS.NASUtils import equal_grid_models
+from EEGNAS.utilities.NAS_utils import equal_grid_models
 import networkx as nx
 import numpy as np
 from EEGNAS.global_vars import init_config

@@ -132,30 +132,6 @@ def remove_from_models_hash(model, model_set, genome_set):
             model_set.remove(model)
 
 
-def get_model_layers(model):
-    if global_vars.get('grid'):
-        return [layer['layer'] for layer in model.nodes.values()]
-    else:
-        return model
-
-
-def hash_model(model, model_set, genome_set):
-    if global_vars.get('grid'):
-        add_model = True
-        for other_model in model_set:
-            if equal_grid_models(model, other_model):
-                add_model = False
-        if add_model:
-            model_set.append(model)
-    else:
-        if model not in model_set:
-            model_set.append(model)
-    layers = get_model_layers(model)
-    for layer in layers:
-        if layer not in genome_set:
-            genome_set.append(layer)
-
-
 def count_layer_type_in_pop(models, layer_type):
     count = 0
     for model in models:
@@ -327,6 +303,25 @@ def evaluate_single_model(model, X, y, eval_func):
         return eval_func(pred_labels, y)
 
 
+def get_model_layers(model):
+    if global_vars.get('grid'):
+        return [layer['layer'] for layer in model.nodes.values()]
+    else:
+        return model
 
 
-
+def hash_model(model, model_set, genome_set):
+    if global_vars.get('grid'):
+        add_model = True
+        for other_model in model_set:
+            if equal_grid_models(model, other_model):
+                add_model = False
+        if add_model:
+            model_set.append(model)
+    else:
+        if model not in model_set:
+            model_set.append(model)
+    layers = get_model_layers(model)
+    for layer in layers:
+        if layer not in genome_set:
+            genome_set.append(layer)

@@ -2,7 +2,8 @@ import re
 
 from EEGNAS.evolution.EEGNAS import EEGNAS
 from EEGNAS.data_preprocessing import get_pure_cross_subject
-from EEGNAS import NASUtils, global_vars
+from EEGNAS import global_vars
+from EEGNAS.utilities import NAS_utils
 import torch
 from EEGNAS.evolution.nn_training import NN_Trainer
 
@@ -39,5 +40,5 @@ class EEGNAS_from_file(EEGNAS):
         final_time, evaluations, model, model_state, num_epochs =\
                     nn_trainer.train_and_evaluate_model(model, dataset)
         stats['final_train_time'] = str(final_time)
-        NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
+        NAS_utils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
         self.write_to_csv(stats, generation=1, model=re.findall(r'\d+', self.model_from_file)[-1])

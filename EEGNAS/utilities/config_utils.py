@@ -74,11 +74,12 @@ def get_multiple_values(configurations):
 
 def set_params_by_dataset(params_config_path):
     config_dict = config_to_dict(params_config_path)
-    # for param in ['num_subjects', 'num_subjects', 'eeg_chans', 'input_time_len', 'n_classes', 'subjects_to_check',
-    #               'evaluation_metrics', 'ga_objective', 'nn_objective', 'frequency', 'problem', 'exclude_subjects']:
-    #     set_param_for_dataset(param, config_dict)
-    for param_name in config_dict[global_vars.get('dataset')]:
-        global_vars.set_if_not_exists(param_name, config_dict[global_vars.get('dataset')][param_name])
+    if global_vars.get('dataset') in config_dict.keys():
+        key = global_vars.get('dataset')
+    else:
+        key = 'default'
+    for param_name in config_dict[key]:
+        global_vars.set_if_not_exists(param_name, config_dict[key][param_name])
     if global_vars.get('ensemble_iterations'):
         global_vars.set('evaluation_metrics', global_vars.get('evaluation_metrics') + ['raw', 'target'])
         if not global_vars.get('ensemble_size'):

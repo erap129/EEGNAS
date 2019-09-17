@@ -131,7 +131,10 @@ def per_subject_exp(exp_name, csv_file, subjects):
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             subject_id=subject_id, fieldnames=FIELDNAMES, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
-        best_model_filename = eegnas.evolution()
+        if global_vars.get('deap'):
+            best_model_filename = eegnas.evolution_deap()
+        else:
+            best_model_filename = eegnas.evolution()
         if global_vars.get('pure_cross_subject') or len(subjects) == 1:
             return [best_model_filename]
 
@@ -281,7 +284,7 @@ if __name__ == '__main__':
             exp_name = add_params_to_name(exp_name, multiple_values)
             ex.config = {}
             ex.add_config(configuration)
-            if len(ex.observers) == 0:
+            if len(ex.observers) == 0 and not args.debug_mode:
                 ex.observers.append(MongoObserver.create(url=f'mongodb://localhost/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
             global_vars.set('sacred_ex', ex)

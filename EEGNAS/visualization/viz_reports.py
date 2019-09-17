@@ -4,14 +4,13 @@ from copy import deepcopy
 
 import torch
 from braindecode.torch_ext.util import np_to_var
-from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph
 from EEGNAS import global_vars
-from EEGNAS.NASUtils import evaluate_single_model
+from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
 from EEGNAS.utilities.NN_utils import get_intermediate_layer_value, get_class_distribution
 from EEGNAS.utilities.data_utils import get_dummy_input, prepare_data_for_NN, tensor_to_eeglab
-from EEGNAS.utilities.misc import unify_dataset, label_by_idx, create_folder
+from EEGNAS.utilities.misc import unify_dataset
 from EEGNAS.utilities.monitors import get_eval_function
 from EEGNAS.visualization.deconvolution import ConvDeconvNet
 from EEGNAS.visualization.pdf_utils import get_image, create_pdf_from_story, create_pdf
@@ -20,7 +19,7 @@ import numpy as np
 from torch import nn
 from reportlab.lib.styles import getSampleStyleSheet
 from EEGNAS.utilities.misc import label_by_idx
-from scipy.io import savemat
+
 styles = getSampleStyleSheet()
 from EEGNAS.visualization.viz_utils import pretrain_model_on_filtered_data, create_max_examples_per_channel, \
     get_max_examples_per_channel, export_performance_frequency_to_csv

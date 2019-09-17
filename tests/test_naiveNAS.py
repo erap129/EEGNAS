@@ -3,11 +3,15 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, RuntimeMonitor
 from utils import GenericMonitor, acc_func
 import numpy as np
-from naiveNAS import NaiveNAS, finalize_model
-from EEGNAS import NASUtils, global_vars
+from naiveNAS import NaiveNAS
+
+import EEGNAS.utilities.NAS_utils
+import EEGNAS.utilities.NN_utils
+from EEGNAS import global_vars
+from EEGNAS.utilities import NAS_utils
 from EEGNAS.models_generation import uniform_model, breed_layers,\
     ConvLayer, ActivationLayer
-from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset, get_normal_settings
+from EEGNAS_experiment import get_configurations, parse_args, set_params_by_dataset
 from EEGNAS.models_generation import target_model, random_model, random_grid_model
 from braindecode.experiments.stopcriteria import MaxEpochs, NoDecrease, Or
 from EEGNAS.global_vars import init_config
@@ -55,8 +59,8 @@ class TestModelGeneration(unittest.TestCase):
         model2 = uniform_model(10, ActivationLayer)
         model_set = []
         genome_set = []
-        NASUtils.hash_model(model1, model_set, genome_set)
-        NASUtils.hash_model(model2, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model1, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model2, model_set, genome_set)
         assert(len(model_set)) == 1
         assert(len(genome_set)) == 1
 
@@ -67,9 +71,9 @@ class TestModelGeneration(unittest.TestCase):
         model3, _ = breed_layers(1, model1, model2)
         model_set = []
         genome_set = []
-        NASUtils.hash_model(model1, model_set, genome_set)
-        NASUtils.hash_model(model2, model_set, genome_set)
-        NASUtils.hash_model(model3, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model1, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model2, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model3, model_set, genome_set)
         assert(len(model_set)) == 1 or 2
         assert(len(genome_set)) == 1 or 2
 
@@ -78,8 +82,8 @@ class TestModelGeneration(unittest.TestCase):
         model2 = [ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1)]
         model_set = []
         genome_set = []
-        NASUtils.hash_model(model1, model_set, genome_set)
-        NASUtils.hash_model(model2, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model1, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model2, model_set, genome_set)
         assert (len(model_set)) == 2
         assert (len(genome_set)) >= 2
 
@@ -88,12 +92,12 @@ class TestModelGeneration(unittest.TestCase):
         model2 = [ConvLayer(kernel_eeg_chan=2), ConvLayer(kernel_eeg_chan=1), ActivationLayer()]
         model_set = []
         genome_set = []
-        NASUtils.hash_model(model1, model_set, genome_set)
-        NASUtils.hash_model(model2, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model1, model_set, genome_set)
+        EEGNAS.utilities.NAS_utils.hash_model(model2, model_set, genome_set)
         assert(len(genome_set)) <= 5
-        NASUtils.remove_from_models_hash(model1, model_set, genome_set)
+        NAS_utils.remove_from_models_hash(model1, model_set, genome_set)
         assert(len(genome_set)) >= 3
-        NASUtils.remove_from_models_hash(model2, model_set, genome_set)
+        NAS_utils.remove_from_models_hash(model2, model_set, genome_set)
         assert(len(genome_set)) == 0
 
     def test_evaluation_target_model(self):

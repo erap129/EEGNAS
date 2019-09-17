@@ -1,10 +1,15 @@
 import random
-from EEGNAS import NASUtils, global_vars
+
+import EEGNAS.utilities.NAS_utils
+import EEGNAS.utilities.NN_utils
+from EEGNAS import global_vars
+from EEGNAS.utilities import NAS_utils
 import torch
 from torch import nn
 import sys
 import numpy as np
 import copy
+
 from EEGNAS.model_generation.simple_model_generation import new_model_from_structure_pytorch, add_layer_to_state, \
     check_legal_model, random_layer, finalize_model
 
@@ -22,15 +27,15 @@ def breed_population(weighted_population, eegnas):
 
 def breed_perm_ensembles(weighted_population, breeding_method, eegnas):
     children = []
-    ensembles = list(NASUtils.chunks(list(range(len(weighted_population))), global_vars.get('ensemble_size')))
+    ensembles = list(NAS_utils.chunks(list(range(len(weighted_population))), global_vars.get('ensemble_size')))
     while len(weighted_population) + len(children) < global_vars.get('pop_size'):
         breeders = random.sample(ensembles, 2)
         first_ensemble = [weighted_population[i] for i in breeders[0]]
         second_ensemble = [weighted_population[i] for i in breeders[1]]
         for ensemble in [first_ensemble, second_ensemble]:
             assert (len(np.unique([pop['perm_ensemble_id'] for pop in ensemble])) == 1)
-        first_ensemble_states = [NASUtils.get_model_state(pop) for pop in first_ensemble]
-        second_ensemble_states = [NASUtils.get_model_state(pop) for pop in second_ensemble]
+        first_ensemble_states = [NAS_utils.get_model_state(pop) for pop in first_ensemble]
+        second_ensemble_states = [NAS_utils.get_model_state(pop) for pop in second_ensemble]
         new_ensemble, new_ensemble_states, cut_point = breed_two_ensembles(breeding_method,
                                                                            mutation_rate=self.mutation_rate,
                                                                            first_ensemble=first_ensemble,
@@ -44,7 +49,7 @@ def breed_perm_ensembles(weighted_population, breeding_method, eegnas):
                                  'second_parent_index': second_ensemble[0]['perm_ensemble_id'],
                                  'parents': [first_ensemble[0], second_ensemble[0]],
                                  'cut_point': cut_point})
-                NASUtils.hash_model(new_model, eegnas.models_set, eegnas.genome_set)
+                EEGNAS.utilities.NAS_utils.hash_model(new_model, eegnas.models_set, eegnas.genome_set)
     weighted_population.extend(children)
 
 
@@ -54,8 +59,8 @@ def breed_normal_population(weighted_population, breeding_method, eegnas):
         breeders = random.sample(range(len(weighted_population)), 2)
         first_breeder = weighted_population[breeders[0]]
         second_breeder = weighted_population[breeders[1]]
-        first_model_state = NASUtils.get_model_state(first_breeder)
-        second_model_state = NASUtils.get_model_state(second_breeder)
+        first_model_state = NAS_utils.get_model_state(first_breeder)
+        second_model_state = NAS_utils.get_model_state(second_breeder)
         new_model, new_model_state, cut_point = breeding_method(mutation_rate=eegnas.mutation_rate,
                                                                 first_model=first_breeder['model'],
                                                                 second_model=second_breeder['model'],
@@ -65,7 +70,7 @@ def breed_normal_population(weighted_population, breeding_method, eegnas):
             children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
                              'parents': [first_breeder, second_breeder], 'cut_point': cut_point,
                              'first_parent_index': breeders[0], 'second_parent_index': breeders[1]})
-            NASUtils.hash_model(new_model, eegnas.models_set, eegnas.genome_set)
+            EEGNAS.utilities.NAS_utils.hash_model(new_model, eegnas.models_set, eegnas.genome_set)
     weighted_population.extend(children)
 
 

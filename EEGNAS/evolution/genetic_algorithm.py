@@ -1,12 +1,18 @@
 import pickle
 import platform
+
+from deap.algorithms import eaSimple, varAnd
+from deap.tools import selTournament
+
 from EEGNAS.data_preprocessing import get_train_val_test
 from braindecode.experiments.loggers import Printer
 import logging
 import torch.nn.functional as F
+
+from EEGNAS.evolution.deap_tools import Individual, initialize_deap_population, mutate_layers_deap
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
-from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer
+from EEGNAS.model_generation.simple_model_generation import finalize_model
 from EEGNAS.utilities.misc import time_f
 from collections import OrderedDict, defaultdict
 import numpy as np
@@ -17,14 +23,15 @@ from EEGNAS.evolution.nn_training import NN_Trainer
 from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.splitters import concatenate_sets
 from EEGNAS.evolution.evolution_misc_functions import add_parent_child_relations
-from EEGNAS.evolution.breeding import breed_population
+from EEGNAS.evolution.breeding import breed_population, breed_layers
 import os
 import csv
 from torch import nn
 import EEGNAS.evolution.fitness_functions
 from EEGNAS.utilities.model_summary import summary
 from EEGNAS.utilities.monitors import NoIncreaseDecrease
-from EEGNAS import NASUtils, global_vars
+from EEGNAS import global_vars
+from EEGNAS.utilities import NAS_utils
 from deap import creator, base, tools
 
 
@@ -44,10 +51,6 @@ def show_progress(train_time, exp_name):
     avg_model_train_time = sum(model_train_times) / len(model_train_times)
     time_left = (total_trainings - len(model_train_times)) * avg_model_train_time
     print(f"Experiment: {exp_name}, time left: {time_f(time_left)}")
-
-
-# def  evaluate_ind(individual):
-#     finalized_model = finalize_model(individual)
 
 
 class EEGNAS_evolution:
@@ -80,13 +83,34 @@ class EEGNAS_evolution:
         else:
             self.current_chosen_population_sample = []
         self.mutation_rate = global_vars.get('mutation_rate')
-        # creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-        # creator.create("Individual", list, fitness=creator.FitnessMax)
-        # self.toolbox = base.Toolbox()
-        # self.toolbox.register("random_layer", random_layer)
-        # self.toolbox.register("individual", tools.initRepeat, creator.Individual, self.toolbox.random_layer,
-        #                       n=global_vars.get('num_layers'))
-        # self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
+
+    def breed_layers_deap(self, mutation_rate, first_ind, second_ind):
+        first_child_model, first_child_state, _ = breed_layers(mutation_rate, first_ind['model'], second_ind['model'],
+                                                               first_model_state=first_ind['model_state'],
+                                                               second_model_state=second_ind['model_state'])
+        second_child_model, second_child_state, _ = breed_layers(mutation_rate, second_ind['model'], first_ind['model'],
+                                                                 first_model_state=second_ind['model_state'],
+                                                                 second_model_state=first_ind['model_state'])
+        if first_child_model is None or second_child_model is None:
+            return first_ind, second_ind
+        first_child = self.toolbox.individual()
+        second_child = self.toolbox.individual()
+        first_child['model'], first_child['model_state'], first_child['age'] = first_child_model, first_child_state, 0
+        second_child['model'], second_child['model_state'], second_child['age'] = second_child_model, second_child_state, 0
+        return first_child, second_child
+
+    def evaluate_ind_deap(self, individual):
+        finalized_model = finalize_model(individual['model'])
+        final_time, evaluations, model, model_state, num_epochs = \
+            self.activate_model_evaluation(finalized_model, individual['model_state'], subject=self.subject_id)
+        NAS_utils.add_evaluations_to_weighted_population(individual, evaluations)
+        individual['model_state'] = model_state
+        individual['train_time'] = final_time
+        individual['finalized_model'] = model
+        individual['num_epochs'] = num_epochs
+        individual['fitness'] = evaluations[global_vars.get('ga_objective')]['valid']
+        show_progress(final_time, self.exp_name)
+        return evaluations[global_vars.get('ga_objective')]['valid'],
 
     def sample_subjects(self):
         self.current_chosen_population_sample = sorted(random.sample(
@@ -97,7 +121,7 @@ class EEGNAS_evolution:
         self.current_chosen_population_sample = [self.subject_id]
         for i, pop in enumerate(weighted_population):
             start_time = time.time()
-            if NASUtils.check_age(pop):
+            if NAS_utils.check_age(pop):
                 weighted_population[i] = weighted_population[i - 1]
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
@@ -109,7 +133,7 @@ class EEGNAS_evolution:
             if global_vars.get('grid_as_ensemble') and global_vars.get('delete_finalized_models'):
                 pop['weighted_avg_params'] = model
             self.current_model_index = -1
-            NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
+            NAS_utils.add_evaluations_to_weighted_population(weighted_population[i], evaluations)
             weighted_population[i]['model_state'] = model_state
             weighted_population[i]['train_time'] = final_time
             weighted_population[i]['finalized_model'] = model
@@ -120,12 +144,12 @@ class EEGNAS_evolution:
 
     def all_strategy(self, weighted_population):
         summed_parameters = ['train_time', 'num_epochs']
-        summed_parameters.extend(NASUtils.get_metric_strs())
+        summed_parameters.extend(NAS_utils.get_metric_strs())
         if global_vars.get('cross_subject_sampling_method') == 'generation':
             self.sample_subjects()
         for i, pop in enumerate(weighted_population):
             start_time = time.time()
-            if NASUtils.check_age(pop):
+            if NAS_utils.check_age(pop):
                 weighted_population[i] = weighted_population[i - 1]
                 weighted_population[i]['train_time'] = 0
                 weighted_population[i]['num_epochs'] = 0
@@ -139,9 +163,9 @@ class EEGNAS_evolution:
                 finalized_model = finalize_model(pop['model'])
                 final_time, evaluations, model, model_state, num_epochs = \
                     self.activate_model_evaluation(finalized_model, pop['model_state'], subject=subject)
-                NASUtils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
-                                                                str_prefix=f"{subject}_")
-                NASUtils.sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
+                NAS_utils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
+                                                                 str_prefix=f"{subject}_")
+                NAS_utils.sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
                 weighted_population[i]['%d_train_time' % subject] = final_time
                 weighted_population[i]['train_time'] += final_time
                 weighted_population[i]['%d_model_state' % subject] = model_state
@@ -157,7 +181,7 @@ class EEGNAS_evolution:
     def calculate_stats(self, weighted_population):
         stats = {}
         params = ['train_time', 'num_epochs', 'fitness']
-        params.extend(NASUtils.get_metric_strs())
+        params.extend(NAS_utils.get_metric_strs())
         for param in params:
             stats[param] = np.mean([sample[param] for sample in weighted_population])
         if self.subject_id == 'all':
@@ -184,7 +208,7 @@ class EEGNAS_evolution:
                 model_stats['cut_point'] = pop['cut_point']
                 model_stats['first_parent_index'] = pop['first_parent_index']
                 model_stats['second_parent_index'] = pop['second_parent_index']
-            NASUtils.add_model_to_stats(pop, i, model_stats)
+            NAS_utils.add_model_to_stats(pop, i, model_stats)
             for stat, val in model_stats.items():
                 if 'layer' not in stat:
                     global_vars.get('sacred_ex').log_scalar(f'model_{i}_{stat}', val, self.current_generation)
@@ -195,13 +219,13 @@ class EEGNAS_evolution:
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [DropoutLayer, ActivationLayer, ConvLayer, IdentityLayer, BatchNormLayer, PoolingLayer]:
             stats['%s_count' % layer_type.__name__] = \
-                NASUtils.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
+                NAS_utils.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)
             if global_vars.get('add_top_20_stats'):
                 stats['top20_%s_count' % layer_type.__name__] = \
-                    NASUtils.count_layer_type_in_pop([pop['model'] for pop in
+                    NAS_utils.count_layer_type_in_pop([pop['model'] for pop in
                                                       weighted_population[:int(len(weighted_population)/5)]], layer_type)
         if global_vars.get('grid') and not global_vars.get('grid_as_ensemble'):
-            stats['num_of_models_with_skip'] = NASUtils.num_of_models_with_skip_connection(weighted_population)
+            stats['num_of_models_with_skip'] = NAS_utils.num_of_models_with_skip_connection(weighted_population)
         return stats
 
     def add_final_stats(self, stats, weighted_population):
@@ -213,9 +237,9 @@ class EEGNAS_evolution:
                 ensemble = [finalize_model(weighted_population[i]['model']) for i in range(
                     global_vars.get('ensemble_size'))]
                 _, evaluations, _, num_epochs = self.ensemble_evaluate_model(ensemble, final_evaluation=True, subject=subject)
-                NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
+                NAS_utils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             _, evaluations, _, _, num_epochs = self.activate_model_evaluation(model, final_evaluation=True, subject=subject)
-            NASUtils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
+            NAS_utils.add_evaluations_to_stats(stats, evaluations, str_prefix=f"{subject}_final_")
             stats['%d_final_epoch_num' % subject] = num_epochs
 
     def save_best_model(self, weighted_population):
@@ -241,26 +265,26 @@ class EEGNAS_evolution:
         self.evo_strategy(weighted_population)
         getattr(EEGNAS.evolution.fitness_functions, global_vars.get('fitness_function'))(weighted_population)
         if global_vars.get('fitness_penalty_function'):
-            getattr(NASUtils, global_vars.get('fitness_penalty_function'))(weighted_population)
+            getattr(NAS_utils, global_vars.get('fitness_penalty_function'))(weighted_population)
         reverse_order = True
         if self.loss_function == F.mse_loss:
             reverse_order = False
-        weighted_population = NASUtils.sort_population(weighted_population, reverse=reverse_order)
+        weighted_population = NAS_utils.sort_population(weighted_population, reverse=reverse_order)
         stats = self.calculate_stats(weighted_population)
         add_parent_child_relations(weighted_population, stats)
         if global_vars.get('ranking_correlation_num_iterations'):
-            NASUtils.ranking_correlations(weighted_population, stats)
+            NAS_utils.ranking_correlations(weighted_population, stats)
         return stats, weighted_population
 
     def evolution(self):
         num_generations = global_vars.get('num_generations')
-        weighted_population = NASUtils.initialize_population(self.models_set, self.genome_set, self.subject_id)
+        weighted_population = NAS_utils.initialize_population(self.models_set, self.genome_set, self.subject_id)
         for generation in range(num_generations):
             self.current_generation = generation
             if global_vars.get('perm_ensembles'):
                 self.mark_perm_ensembles(weighted_population)
             if global_vars.get('inject_dropout') and generation == int((num_generations / 2) - 1):
-                NASUtils.inject_dropout(weighted_population)
+                NAS_utils.inject_dropout(weighted_population)
             stats, weighted_population = self.evaluate_and_sort(weighted_population)
             for stat, val in stats.items():
                 global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, generation)
@@ -284,6 +308,86 @@ class EEGNAS_evolution:
             self.print_to_evolution_file(weighted_population, generation + 1)
         return best_model_filename
 
+    def eaSimple(self, population, toolbox, cxpb, mutpb, ngen, stats=None,
+                 halloffame=None, verbose=__debug__):
+        logbook = tools.Logbook()
+        logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
+
+        # Evaluate the individuals with an invalid fitness
+        invalid_ind = [ind for ind in population if not ind.fitness.valid]
+        fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+        for ind, fit in zip(invalid_ind, fitnesses):
+            ind.fitness.values = fit
+
+        if halloffame is not None:
+            halloffame.update(population)
+
+        record = stats.compile(population) if stats else {}
+        logbook.record(gen=0, nevals=len(invalid_ind), **record)
+        if verbose:
+            print(logbook.stream)
+
+        # Begin the generational process
+        for gen in range(1, ngen + 1):
+            self.current_generation += 1
+            # Select the next generation individuals
+            offspring = toolbox.select(population, len(population))
+
+            # Vary the pool of individuals
+            offspring = varAnd(offspring, toolbox, cxpb, mutpb)
+
+            # Evaluate the individuals with an invalid fitness
+            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+            valid_ind = [ind for ind in offspring if ind.fitness.valid]
+            fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+            for ind, fit in zip(invalid_ind, fitnesses):
+                ind.fitness.values = fit
+            for ind in valid_ind:
+                ind['age'] += 1
+
+            # Update the hall of fame with the generated individuals
+            if halloffame is not None:
+                halloffame.update(offspring)
+
+            # Replace the current population by the offspring
+            population[:] = offspring
+
+            # Append the current generation statistics to the logbook
+            record = stats.compile(population) if stats else {}
+            logbook.record(gen=gen, nevals=len(invalid_ind), **record)
+            if verbose:
+                print(logbook.stream)
+            pop_stats = self.calculate_stats(self.population)
+            for stat, val in pop_stats.items():
+                global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, self.current_generation)
+            self.write_to_csv({k: str(v) for k, v in pop_stats.items()}, self.current_generation)
+            self.print_to_evolution_file(self.population, self.current_generation)
+        return population, logbook
+
+    def evolution_deap(self):
+        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+        creator.create("Individual", dict, fitness=creator.FitnessMax)
+        self.toolbox = base.Toolbox()
+        self.toolbox.register("individual", creator.Individual)
+        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
+        self.toolbox.register("evaluate", self.evaluate_ind_deap)
+        self.toolbox.register("mate", self.breed_layers_deap, 0)
+        self.toolbox.register("mutate", mutate_layers_deap)
+        self.toolbox.register("select", selTournament, tournsize=3)
+        self.population = self.toolbox.population(global_vars.get('pop_size'))
+        self.current_generation = 0
+        initialize_deap_population(self.population, self.models_set, self.genome_set)
+        stats = tools.Statistics(key=lambda ind: ind.fitness.values)
+        stats.register("avg", np.mean)
+        stats.register("std", np.std)
+        stats.register("min", np.min)
+        stats.register("max", np.max)
+        final_population, logbook = self.eaSimple(self.population, self.toolbox, 0.2, global_vars.get('mutation_rate'),
+                                    global_vars.get('num_generations'), stats=stats, verbose=True)
+        best_model_filename = self.save_best_model(final_population)
+        self.save_final_population(final_population)
+        return best_model_filename
+
     def selection(self, weighted_population):
         if global_vars.get('perm_ensembles'):
             return self.selection_perm_ensembles(weighted_population)
@@ -295,21 +399,21 @@ class EEGNAS_evolution:
             decay_functions = {'linear': lambda x: x,
                                'log': lambda x: np.sqrt(np.log(x + 1))}
             if random.uniform(0, 1) < decay_functions[global_vars.get('decay_function')](index / global_vars.get('pop_size')):
-                NASUtils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
+                NAS_utils.remove_from_models_hash(model['model'], self.models_set, self.genome_set)
                 del weighted_population[index]
             else:
                 model['age'] += 1
         return weighted_population
 
     def selection_perm_ensembles(self, weighted_population):
-        ensembles = list(NASUtils.chunks(list(range(global_vars.get('pop_size'))), global_vars.get('ensemble_size')))
+        ensembles = list(NAS_utils.chunks(list(range(global_vars.get('pop_size'))), global_vars.get('ensemble_size')))
         for index, ensemble in enumerate(ensembles):
             decay_functions = {'linear': lambda x: x,
                                'log': lambda x: np.sqrt(np.log(x + 1))}
             if random.uniform(0, 1) < decay_functions[global_vars.get('decay_function')](index / len(ensembles)) and\
                 len([pop for pop in weighted_population if pop is not None]) > 2 * global_vars.get('ensemble_size'):
                 for pop in ensemble:
-                    NASUtils.remove_from_models_hash(weighted_population[pop]['model'], self.models_set, self.genome_set)
+                    NAS_utils.remove_from_models_hash(weighted_population[pop]['model'], self.models_set, self.genome_set)
                     weighted_population[pop] = None
             else:
                 for pop in ensemble:
@@ -358,7 +462,7 @@ class EEGNAS_evolution:
             states.append(state)
             trained_models.append(model)
         if global_vars.get('ensembling_method') == 'manual':
-            new_avg_evaluations = NASUtils.format_manual_ensemble_evaluations(avg_evaluations)
+            new_avg_evaluations = NAS_utils.format_manual_ensemble_evaluations(avg_evaluations)
         elif global_vars.get('ensembling_method') == 'averaging_layer':
             new_avg_evaluations = self.ensemble_by_avg_layer(trained_models, subject)
         return avg_final_time, new_avg_evaluations, states, avg_num_epochs
@@ -376,7 +480,7 @@ class EEGNAS_evolution:
         return single_subj_dataset
 
     def activate_model_evaluation(self, model, state=None, subject=None, final_evaluation=False, ensemble=False):
-        print(f'free params in network:{NASUtils.pytorch_count_params(model)}')
+        print(f'free params in network:{NAS_utils.pytorch_count_params(model)}')
         if subject is None:
             subject = self.subject_id
         if self.cuda:

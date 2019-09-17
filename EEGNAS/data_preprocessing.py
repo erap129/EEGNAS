@@ -512,6 +512,21 @@ def get_multivariate_ts(data_folder):
     return train_set, valid_set, test_set
 
 
+def get_data_from_npy(data_folder):
+    X_train = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/X_train.npy')
+    X_test = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/X_test.npy')
+    y_train = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/y_train.npy')
+    y_test = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/y_test.npy')
+    global_vars.set('eeg_chans', X_train.shape[1])
+    global_vars.set('input_height', X_train.shape[2])
+    if X_train.ndim > 3:
+        global_vars.set('input_width', X_train.shape[3])
+    global_vars.set('n_classes', len(np.unique(y_train)))
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'))
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
+    return train_set, valid_set, test_set
+
+
 def get_pure_cross_subject(data_folder, exclude=[]):
     train_x = []
     val_x = []
@@ -573,7 +588,8 @@ def get_train_val_test(data_folder, subject_id):
         return get_cifar10(data_folder)
     elif global_vars.get('dataset') == 'multivariate_ts':
         return get_multivariate_ts(data_folder)
-
+    else:
+        return get_data_from_npy(data_folder)
 
 
 def get_dataset(subject_id):
