@@ -3,7 +3,7 @@ import random
 from EEGNAS import global_vars
 from EEGNAS.evolution.breeding import breed_layers
 from EEGNAS.utilities.NAS_utils import hash_model
-from model_generation.simple_model_generation import random_model, random_layer, check_legal_model
+from EEGNAS.model_generation.simple_model_generation import random_model, random_layer, check_legal_model
 
 
 class Individual():
