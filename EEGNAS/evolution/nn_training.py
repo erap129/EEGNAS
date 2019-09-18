@@ -1,4 +1,6 @@
 import itertools
+from copy import deepcopy
+
 import torch.nn.functional as F
 from braindecode.datautil.iterators import get_balanced_batches, BalancedBatchSizeIterator
 from braindecode.datautil.splitters import concatenate_sets
@@ -127,7 +129,7 @@ class NN_Trainer:
         num_epochs = self.run_until_stop(model, dataset)
         self.setup_after_stop_training(model, final_evaluation)
         if final_evaluation:
-            loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
+            dataset_train_backup = deepcopy(dataset['train'])
             if ensemble:
                 self.run_one_epoch(dataset, model)
                 self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer, force=ensemble)
@@ -135,8 +137,8 @@ class NN_Trainer:
             else:
                 dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
             num_epochs += self.run_until_stop(model, dataset)
-            if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach or ensemble:
-                self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
+            self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
+            dataset['train'] = dataset_train_backup
         end = time.time()
         self.final_time = end - start
         self.num_epochs = num_epochs

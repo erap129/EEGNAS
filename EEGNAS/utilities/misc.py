@@ -71,7 +71,7 @@ class RememberBest(object):
         current_val = float(epochs_df[self.column_name].iloc[-1])
         if self.oper(current_val, self.best_val) or force:
             self.best_epoch = i_epoch
-            self.highest_val = current_val
+            self.best_val = current_val
             self.model_state_dict = deepcopy(model.state_dict())
             self.optimizer_state_dict = deepcopy(optimizer.state_dict())
             log.info("New best {:s}: {:5f}".format(self.column_name,
