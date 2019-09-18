@@ -1,6 +1,7 @@
 import itertools
 import torch.nn.functional as F
 from braindecode.datautil.iterators import get_balanced_batches, BalancedBatchSizeIterator
+from braindecode.datautil.splitters import concatenate_sets
 from braindecode.torch_ext.util import np_to_var
 from braindecode.experiments.loggers import Printer
 import logging
@@ -131,6 +132,8 @@ class NN_Trainer:
                 self.run_one_epoch(dataset, model)
                 self.rememberer.remember_epoch(self.epochs_df, model, self.optimizer, force=ensemble)
                 num_epochs += 1
+            else:
+                dataset['train'] = concatenate_sets([dataset['train'], dataset['valid']])
             num_epochs += self.run_until_stop(model, dataset)
             if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach or ensemble:
                 self.rememberer.reset_to_best_model(self.epochs_df, model, self.optimizer)
@@ -170,7 +173,7 @@ class NN_Trainer:
         if final_evaluation:
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             self.stop_criterion = Or(stop_criteria=[
-                MaxEpochs(max_epochs=self.rememberer.best_epoch * 2),
+                MaxEpochs(max_epochs=global_vars.get('final_max_epochs')),
                 ColumnBelow(column_name='valid_loss', target_value=loss_to_reach)])
 
     def run_until_stop(self, model, single_subj_dataset):

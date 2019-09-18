@@ -36,7 +36,7 @@ class EEGNAS_from_file(EEGNAS):
             _, _, model, _, _ = nn_trainer.train_and_evaluate_model(model, dataset)
         dataset = self.get_single_subj_dataset(self.subject_id, final_evaluation=True)
         nn_trainer = NN_Trainer(self.iterator, self.loss_function, self.stop_criterion, self.monitors)
-        _, _, model, _, _ = nn_trainer.train_and_evaluate_model(model, dataset)
+        _, _, model, _, _ = nn_trainer.train_and_evaluate_model(model, dataset, final_evaluation=True)
         final_time, evaluations, model, model_state, num_epochs =\
                     nn_trainer.train_and_evaluate_model(model, dataset)
         stats['final_train_time'] = str(final_time)

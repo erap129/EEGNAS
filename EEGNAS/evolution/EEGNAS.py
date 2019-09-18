@@ -59,7 +59,7 @@ class EEGNAS:
         single_subj_dataset = OrderedDict((('train', self.datasets['train'][subject]),
                                            ('valid', self.datasets['valid'][subject]),
                                            ('test', self.datasets['test'][subject])))
-        if final_evaluation:
+        if final_evaluation and global_vars.get('ensemble_iterations'):
             single_subj_dataset['train'] = concatenate_sets(
                 [single_subj_dataset['train'], single_subj_dataset['valid']])
         return single_subj_dataset
