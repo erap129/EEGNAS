@@ -6,6 +6,8 @@ from functools import reduce
 import networkx as nx
 import random
 from braindecode.torch_ext.util import np_to_var
+from sklearn.utils import shuffle
+
 from EEGNAS import global_vars
 import numpy as np
 from copy import deepcopy
@@ -214,9 +216,13 @@ def sort_population(weighted_population, reverse):
             pops = [weighted_population[i] for i in range(global_vars.get('pop_size'))
                     if weighted_population[i]['group_id'] == order['group_id']]
             new_weighted_pop.extend(pops)
-        return new_weighted_pop
+        result = new_weighted_pop
     else:
-        return sorted(weighted_population, key=lambda x: x['fitness'], reverse=reverse)
+        result = sorted(weighted_population, key=lambda x: x['fitness'], reverse=reverse)
+    if global_vars.get('random_search'):
+        return shuffle(result)
+    else:
+        return result
 
 
 def add_model_to_stats(pop, model_index, model_stats):
