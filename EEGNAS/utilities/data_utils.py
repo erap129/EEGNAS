@@ -122,34 +122,20 @@ def export_data_to_file(dataset, format, out_folder, classes=None):
             savemat(f'{out_folder}/y_{segment}_{global_vars.get("dataset")}{class_str}.mat', {'data': y_data})
 
 
-def EEG_to_TF(dataset, out_folder, dim):
+def EEG_to_TF(dataset):
     ch_names = [str(i) for i in range(global_vars.get('eeg_chans'))]
     ch_types = ['eeg' for i in range(global_vars.get('eeg_chans'))]
     info = mne.create_info(ch_names=ch_names, sfreq=global_vars.get('frequency'), ch_types=ch_types)
-    n_cycles = 7  # number of cycles in Morlet wavelet
-    freqs = np.arange(7, 40, 1)  # frequencies of interest
-    create_folder(out_folder)
+    freqs = np.arange(1, global_vars.get('max_tf_freq'), 1)  # frequencies of interest
+    n_cycles = freqs / 4.  # different number of cycle per frequency
     for segment in dataset.keys():
-        TF_array = np.zeros((len(dataset[segment].X), global_vars.get('eeg_chans'), dim, dim))
-        for ex_idx, example in enumerate(dataset[segment].X):
-            epochs = mne.EpochsArray(example[None, :, :], info=info)
-            power, itc = tfr_morlet(epochs, freqs=freqs, n_cycles=n_cycles,
-                                    return_itc=True, decim=3, n_jobs=1)
-            for ch_idx, channel in enumerate(ch_names):
-                fig = power.plot([power.ch_names.index(channel)])
-                fig.set_frameon(False)
-                fig.delaxes(fig.axes[1])
-                for ax in fig.axes:
-                    ax.get_xaxis().set_visible(False)
-                    ax.get_yaxis().set_visible(False)
-                fig.suptitle('')
-                fig.savefig(f'{out_folder}/tmp.png', bbox_inches='tight')
-                img = Image.open(f'{out_folder}/tmp.png').convert('LA').resize((dim, dim))
-                TF_array[ex_idx, ch_idx] = np.array(img)[:,:,0]
-            print(f'created TF {ex_idx}/{len(dataset[segment].X)} in {segment} data')
-        os.remove(f'{out_folder}/tmp.png')
-        np.save(f'{out_folder}/X_{segment}', TF_array)
-        np.save(f'{out_folder}/y_{segment}', dataset[segment].y)
+        TF_list = []
+        epochs = mne.EpochsArray(dataset[segment].X, info=info, baseline=(0, 0.5))
+        for idx in range(len(dataset[segment].X)):
+            power = tfr_morlet(epochs[idx], freqs=freqs, n_cycles=n_cycles,
+                                return_itc=False, decim=3, n_jobs=1)
+            TF_list.append(power.data.astype(np.float32))
+        dataset[segment].X = np.stack(TF_list, axis=0)
 
 
 def EEG_to_TF_matlab(dataset, out_folder):
@@ -207,6 +193,14 @@ def set_global_vars_by_sktime(train_file, test_file):
     global_vars.set('input_height', max_len)
     global_vars.set('eeg_chans', len(X_train_ts.columns))
     global_vars.set('n_classes', len(np.unique(y_train)))
+
+
+def set_global_vars_by_dataset(data):
+    global_vars.set('eeg_chans', data.X.shape[1])
+    global_vars.set('input_height', data.X.shape[2])
+    if data.X.ndim == 4:
+        global_vars.set('input_width', data.X.shape[3])
+    global_vars.set('n_classes', len(np.unique(data.y)))
 
 
 def load_values_from_config(config_file, keys):

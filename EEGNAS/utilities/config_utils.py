@@ -45,7 +45,10 @@ def get_configurations(experiment, config, set_exp_name=True):
             configurations[config_index]['DEFAULT'][key] = all_configs[config_index][i]
             i += 1
         for key in exp_config.keys():
-            configurations[config_index][experiment][key] = all_configs[config_index][i]
+            if key == 'dataset':
+                configurations[config_index]['DEFAULT'][key] = all_configs[config_index][i]
+            else:
+                configurations[config_index][experiment][key] = all_configs[config_index][i]
             i += 1
     return configurations
 

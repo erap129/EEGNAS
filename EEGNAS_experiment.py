@@ -12,7 +12,7 @@ from EEGNAS.utilities.config_utils import config_to_dict, get_configurations, ge
     set_gpu, set_seeds
 import torch.nn.functional as F
 import torch
-from EEGNAS.data_preprocessing import get_train_val_test, get_pure_cross_subject
+from EEGNAS.data_preprocessing import get_train_val_test, get_pure_cross_subject, get_dataset
 from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
@@ -115,15 +115,12 @@ def per_subject_exp(exp_name, csv_file, subjects):
         writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
         writer.writeheader()
     for subject_id in subjects:
-        train_set = {}
-        val_set = {}
-        test_set = {}
+        train_set, val_set, test_set = {}, {}, {}
         if global_vars.get('pure_cross_subject'):
-            train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
-                get_pure_cross_subject(data_folder)
+            dataset = get_dataset('all')
         else:
-            train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
-                get_train_val_test(data_folder, subject_id)
+            dataset = get_dataset(subject_id)
+        train_set[subject_id], val_set[subject_id], test_set[subject_id] = dataset['train'], dataset['valid'], dataset['test']
         evolution_file = f'results/{exp_name}/subject_{subject_id}_archs.txt'
         eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
@@ -279,7 +276,7 @@ if __name__ == '__main__':
                 if global_vars.get('include_params_folder_name'):
                     multiple_values.extend(global_vars.get('include_params_folder_name'))
                 FIRST_RUN = False
-            exp_name = f"{exp_id}_{index+1}_{experiment}_{global_vars.get('dataset')}"
+            exp_name = f"{exp_id}_{index+1}_{experiment}"
             exp_name = add_params_to_name(exp_name, multiple_values)
             ex.config = {}
             ex.add_config(configuration)

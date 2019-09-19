@@ -11,7 +11,7 @@ from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn
     turn_dataset_to_timefreq
 from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
 from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
-    EEG_to_TF, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime
+    EEG_to_TF, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime, set_global_vars_by_dataset
 from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -400,11 +400,6 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
                   in global_vars.get('netflow_file_names')]
     X, y, _, _ = preprocess_netflow_data(file_paths, global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                          global_vars.get('start_point'), global_vars.get('jumps'))
-    if global_vars.get('time_frequency'):
-        global_vars.set('input_height', 63)
-        global_vars.set('input_width', 63)
-        X = turn_dataset_to_timefreq(X)
-
     if global_vars.get('problem') != 'classification':
         global_vars.set('n_classes', global_vars.get('steps_ahead'))
     X_train, X_test, y_train, y_test = train_test_split(X, y,
@@ -600,14 +595,17 @@ def get_dataset(subject_id):
     else:
         dataset['train'], dataset['valid'], dataset['test'] =\
             get_train_val_test(global_vars.get('data_folder'), subject_id)
+    if global_vars.get('time_frequency'):
+        EEG_to_TF(dataset)
+        set_global_vars_by_dataset(dataset['train'])
     return dataset
 
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    global_vars.set('dataset', 'BCI_IV_2b')
+    global_vars.set('dataset', 'BCI_IV_2a')
     set_params_by_dataset('configurations/dataset_params.ini')
-    dataset = get_dataset('all')
+    dataset = get_dataset(1)
     concat_train_val_sets(dataset)
-    EEG_to_TF_matlab(dataset, 'data/export_data/BCI_IV_2b_TF_matlab')
+    EEG_to_TF(dataset, 'data/export_data/BCI_IV_2a_TF', 128)
 
