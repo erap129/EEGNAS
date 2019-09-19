@@ -104,12 +104,11 @@ def set_seeds():
 
 
 def set_gpu():
-    os.environ["CUDA_VISIBLE_DEVICES"] = global_vars.get('gpu_select')
     try:
         torch.cuda.current_device()
         if not global_vars.get('force_gpu_off'):
             global_vars.set('cuda', True)
-            print(f'set active GPU to {global_vars.get("gpu_select")}')
+            print('using CUDA')
     except AssertionError as e:
         print('no cuda available, using CPU')
 

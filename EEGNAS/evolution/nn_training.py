@@ -198,6 +198,7 @@ class NN_Trainer:
                     input_vars = input_vars.cuda()
                     target_vars = target_vars.cuda()
             self.optimizer.zero_grad()
+            print(f'active GPU is {torch.cuda.current_device()}')
             outputs = model(input_vars)
             if self.loss_function == F.mse_loss:
                 target_vars = target_vars.float()

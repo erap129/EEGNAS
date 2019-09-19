@@ -1,10 +1,9 @@
 import os
 import re
 import shutil
-
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 from sacred import Experiment
 from sacred.observers import MongoObserver
-
 from EEGNAS.evolution.loaded_model_evaluations import EEGNAS_from_file
 from EEGNAS.evolution.nn_training import TimeFrequencyBatchIterator
 from EEGNAS.utilities.data_utils import write_dict
