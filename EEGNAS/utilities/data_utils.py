@@ -120,7 +120,7 @@ def export_data_to_file(dataset, format, out_folder, classes=None, transpose_tim
             np.save(f'{out_folder}/y_{segment}{class_str}', y_data)
         elif format == 'matlab':
             X_data = np.transpose(X_data, [1, 2, 0])
-            savemat(f'{out_folder}/X_{segment}{class_str}.mat', {'data': X_data})
+            savemat(f'{out_folder}/x_{segment}{class_str}.mat', {'data': X_data})
             savemat(f'{out_folder}/y_{segment}{class_str}.mat', {'data': y_data})
 
 
