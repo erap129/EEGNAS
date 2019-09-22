@@ -394,8 +394,6 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
 
 
 def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
-    if not global_vars.get('shuffle'):
-        shuffle = False
     file_paths = [f"{os.path.dirname(__file__)}/{data_folder}netflow/{filename}" for filename
                   in global_vars.get('netflow_file_names')]
     X, y, _, _ = preprocess_netflow_data(file_paths, global_vars.get('input_height'), global_vars.get('steps_ahead'),
@@ -605,7 +603,8 @@ if __name__ == '__main__':
     set_default_config('configurations/config.ini')
     global_vars.set('dataset', 'BCI_IV_2a')
     set_params_by_dataset('configurations/dataset_params.ini')
-    dataset = get_dataset(1)
+    dataset = get_dataset('all')
     concat_train_val_sets(dataset)
-    EEG_to_TF(dataset, 'data/export_data/BCI_IV_2a_TF', 128)
+    # EEG_to_TF(dataset, 'data/e
+    export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}', transpose_time=True)
 

@@ -31,7 +31,7 @@ def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
         max_handovers = max(x.shape[0] for x in all_X)
     for idx in range(len(all_X)):
         if all_X[idx].shape[0] < max_handovers:
-            all_X[idx] = np.pad(all_X[idx], pad_width=((max_handovers-all_X[idx].shape[0],0),(0,0)))
+            all_X[idx] = np.pad(all_X[idx], pad_width=((max_handovers-all_X[idx].shape[0],0),(0,0)), mode='constant')
     return np.stack(all_X, axis=0), np.stack(all_y, axis=0), \
            np.stack(all_datetimes_X, axis=0), np.stack(all_datetimes_Y, axis=0)
 

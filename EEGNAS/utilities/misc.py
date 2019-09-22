@@ -74,9 +74,8 @@ class RememberBest(object):
             self.best_val = current_val
             self.model_state_dict = deepcopy(model.state_dict())
             self.optimizer_state_dict = deepcopy(optimizer.state_dict())
-            log.info("New best {:s}: {:5f}".format(self.column_name,
+            print("New best {:s}: {:5f}".format(self.column_name,
                                                    current_val))
-            log.info("")
 
     def reset_to_best_model(self, epochs_df, model, optimizer):
         """

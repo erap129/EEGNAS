@@ -23,9 +23,11 @@ from EEGNAS.utilities.monitors import *
 from EEGNAS.evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
 import logging
+import sys
+logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
+                    level=logging.DEBUG, stream=sys.stdout)
 from EEGNAS import global_vars
 import random
-import sys
 import csv
 import time
 import code, traceback, signal
@@ -253,8 +255,6 @@ def main():
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
-    logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                        level=logging.DEBUG, stream=sys.stdout)
     data_folder = 'data/'
     low_cut_hz = 0
     valid_set_fraction = 0.2

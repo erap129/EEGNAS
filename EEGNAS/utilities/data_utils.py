@@ -98,7 +98,7 @@ def write_dict(dict, filename):
             else:
                 f.write(f"{K}\t{global_vars.get(K)}\n")
 
-def export_data_to_file(dataset, format, out_folder, classes=None):
+def export_data_to_file(dataset, format, out_folder, classes=None, transpose_time=False):
     create_folder(out_folder)
     for segment in dataset.keys():
         if classes is None:
@@ -113,13 +113,15 @@ def export_data_to_file(dataset, format, out_folder, classes=None):
                 y_data.extend(dataset[segment].y[np.where(dataset[segment].y == class_idx)])
             class_str = f'_classes_{str(classes)}'
             X_data, y_data = unison_shuffled_copies(np.array(X_data), np.array(y_data))
+            if transpose_time:
+                X_data = np.transpose(X_data, (0, 2, 1))
         if format == 'numpy':
-            np.save(f'{out_folder}/X_{segment}_{global_vars.get("dataset")}{class_str}', X_data)
-            np.save(f'{out_folder}/y_{segment}_{global_vars.get("dataset")}{class_str}', y_data)
+            np.save(f'{out_folder}/X_{segment}{class_str}', X_data)
+            np.save(f'{out_folder}/y_{segment}{class_str}', y_data)
         elif format == 'matlab':
             X_data = np.transpose(X_data, [1, 2, 0])
-            savemat(f'{out_folder}/X_{segment}_{global_vars.get("dataset")}{class_str}.mat', {'data': X_data})
-            savemat(f'{out_folder}/y_{segment}_{global_vars.get("dataset")}{class_str}.mat', {'data': y_data})
+            savemat(f'{out_folder}/X_{segment}{class_str}.mat', {'data': X_data})
+            savemat(f'{out_folder}/y_{segment}{class_str}.mat', {'data': y_data})
 
 
 def EEG_to_TF(dataset):
@@ -180,7 +182,7 @@ def sktime_to_numpy(file):
     X = np.zeros((len(X_ts), len(X_ts.columns), max_len))
     for i in range(len(X_ts)):
         for col_idx, col in enumerate(X_ts.columns):
-            X[i, col_idx] = np.pad(X_ts.iloc[i][col].values, pad_width=(0,max_len-len(X_ts.iloc[i][col].values)))
+            X[i, col_idx] = np.pad(X_ts.iloc[i][col].values, pad_width=(0,max_len-len(X_ts.iloc[i][col].values)), mode='constant')
     return X, pd.Categorical(pd.Series(y)).codes
 
 
