@@ -227,10 +227,10 @@ class DummySignalTarget:
 
 
 def get_ner_train_val_test(data_folder):
-    X = np.load(f"{os.path.dirname(__file__)}/{data_folder}NER15/preproc/epochs.npy")
-    y, User = np.load(f"{os.path.dirname(__file__)}/{data_folder}NER15/preproc/infos.npy")
-    X_test = np.load(f"{os.path.dirname(__file__)}/{data_folder}NER15/preproc/test_epochs.npy")
-    y_test = pd.read_csv(f"{os.path.dirname(__file__)}/{data_folder}NER15/preproc/true_labels.csv").values.reshape(-1)
+    X = np.load(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}NER15/preproc/epochs.npy")
+    y, User = np.load(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}NER15/preproc/infos.npy")
+    X_test = np.load(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}NER15/preproc/test_epochs.npy")
+    y_test = pd.read_csv(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}NER15/preproc/true_labels.csv").values.reshape(-1)
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'))
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
@@ -273,7 +273,7 @@ def get_bci_iv_2b_train_val_test(subject_id):
 
 
 def get_bloomberg_train_val_test(data_folder):
-    X_train_val, y_train_val, X_test, y_test = get_bloomberg(f'{os.path.dirname(__file__)}/{data_folder}/Bloomberg')
+    X_train_val, y_train_val, X_test, y_test = get_bloomberg(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}/Bloomberg')
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=global_vars.get('valid_set_fraction'))
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
@@ -281,10 +281,10 @@ def get_bloomberg_train_val_test(data_folder):
 
 
 def get_nyse_train_val_test(data_folder):
-    df = pd.read_csv(f"{os.path.dirname(__file__)}/{data_folder}/NYSE/prices-split-adjusted.csv", index_col=0)
+    df = pd.read_csv(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}/NYSE/prices-split-adjusted.csv", index_col=0)
     df["adj close"] = df.close  # Moving close to the last column
     df.drop(['close'], 1, inplace=True)  # Moving close to the last column
-    df2 = pd.read_csv(f"{os.path.dirname(__file__)}/{data_folder}/NYSE/fundamentals.csv")
+    df2 = pd.read_csv(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}/NYSE/fundamentals.csv")
     symbols = list(set(df.symbol))
 
     df = df[df.symbol == 'GOOG']
@@ -322,7 +322,7 @@ def get_nyse_train_val_test(data_folder):
 
 
 def get_human_activity_train_val_test(data_folder, subject_id):
-    X_train_val, y_train_val, X_test, y_test = get_human_activity(f'{os.path.dirname(__file__)}/{data_folder}/HumanActivity', subject_id)
+    X_train_val, y_train_val, X_test, y_test = get_human_activity(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}/HumanActivity', subject_id)
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
                                                       test_size=global_vars.get('valid_set_fraction'))
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
@@ -330,12 +330,12 @@ def get_human_activity_train_val_test(data_folder, subject_id):
 
 
 def get_mental_imagery(data_folder, sub_dataset, subject_id):
-    dataset_files = [f for f in os.listdir(f'{os.path.dirname(__file__)}/{data_folder}MentalImagery/{sub_dataset}') if
-                       os.path.isfile(f'{os.path.dirname(__file__)}/{data_folder}MentalImagery/{sub_dataset}/{f}')]
+    dataset_files = [f for f in os.listdir(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}MentalImagery/{sub_dataset}') if
+                       os.path.isfile(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}MentalImagery/{sub_dataset}/{f}')]
     selected_file = ''
     for subj_file in dataset_files:
         if f'sub_{subject_id}' in subj_file:
-            selected_file = f'{os.path.dirname(__file__)}/{data_folder}MentalImagery/{sub_dataset}/{subj_file}'
+            selected_file = f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}MentalImagery/{sub_dataset}/{subj_file}'
     data = scipy.io.loadmat(selected_file)['eeg_data_wrt_task_rep_no_eog_256Hz_last_beep']
     X = []
     y = []
@@ -359,7 +359,7 @@ def opp_sliding_window(data_x, data_y, ws, ss):
 
 
 def get_opportunity_train_val_test(data_folder):
-    with open(f'{os.path.dirname(__file__)}/{data_folder}/Opportunity/oppChallenge_gestures.data', 'rb') as pickle_file:
+    with open(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}/Opportunity/oppChallenge_gestures.data', 'rb') as pickle_file:
         data = pickle.load(pickle_file)
         X_train, y_train = data[0]
         X_test, y_test = data[1]
@@ -374,8 +374,8 @@ def get_opportunity_train_val_test(data_folder):
 
 
 def get_sonarsub_train_val_test(data_folder):
-    X = np.load(f"{os.path.dirname(__file__)}/{data_folder}SonarSub/data_file_aug.npy")
-    y = np.load(f"{os.path.dirname(__file__)}/{data_folder}SonarSub/labels_file_aug.npy")
+    X = np.load(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}SonarSub/data_file_aug.npy")
+    y = np.load(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}SonarSub/labels_file_aug.npy")
     X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'))
     X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=global_vars.get('valid_set_fraction'))
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
@@ -383,8 +383,8 @@ def get_sonarsub_train_val_test(data_folder):
 
 
 def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
-    X = np.load(f"{os.path.dirname(__file__)}/{data_folder}netflow/X.npy")[:, :n_sequences]
-    y = np.load(f"{os.path.dirname(__file__)}/{data_folder}netflow/y.npy")[:, :n_sequences]
+    X = np.load(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}netflow/X.npy")[:, :n_sequences]
+    y = np.load(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}netflow/y.npy")[:, :n_sequences]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=global_vars.get('valid_set_fraction'),
                                                         shuffle=shuffle)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
@@ -394,7 +394,7 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
 
 
 def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
-    file_paths = [f"{os.path.dirname(__file__)}/{data_folder}netflow/{filename}" for filename
+    file_paths = [f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}netflow/{filename}" for filename
                   in global_vars.get('netflow_file_names')]
     X, y, _, _ = preprocess_netflow_data(file_paths, global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                          global_vars.get('start_point'), global_vars.get('jumps'))
@@ -414,7 +414,7 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
 
 
 def get_netflow_asflow_AE(data_folder, shuffle=True):
-    dataset_netflow_path_pr = f'{os.path.dirname(__file__)}/{data_folder}netflow/asflowAE/as_flow_vol_final.csv'
+    dataset_netflow_path_pr = f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}netflow/asflowAE/as_flow_vol_final.csv'
     pd_df = pd.read_csv(dataset_netflow_path_pr, index_col=0).fillna(0)
     time_steps = pd_df.columns
     devs_id = pd_df.index
@@ -492,13 +492,13 @@ def get_tuh_train_val_test(data_folder):
 
 def get_multivariate_ts(data_folder):
     dataset_name = global_vars.get('multivariate_ts_dataset')
-    set_global_vars_by_sktime(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+    set_global_vars_by_sktime(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}Multivariate_ts/'
                                        f'{dataset_name}/{dataset_name}_TRAIN.ts',
-                              f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+                              f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}Multivariate_ts/'
                                       f'{dataset_name}/{dataset_name}_TEST.ts')
-    X_train, y_train = sktime_to_numpy(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+    X_train, y_train = sktime_to_numpy(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}Multivariate_ts/'
                                        f'{dataset_name}/{dataset_name}_TRAIN.ts')
-    X_test, y_test = sktime_to_numpy(f'{os.path.dirname(__file__)}/{data_folder}Multivariate_ts/'
+    X_test, y_test = sktime_to_numpy(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}Multivariate_ts/'
                                        f'{dataset_name}/{dataset_name}_TEST.ts')
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'))
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
@@ -506,10 +506,10 @@ def get_multivariate_ts(data_folder):
 
 
 def get_data_from_npy(data_folder):
-    X_train = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/X_train.npy')
-    X_test = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/X_test.npy')
-    y_train = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/y_train.npy')
-    y_test = np.load(f'{os.path.dirname(__file__)}/{data_folder}{global_vars.get("dataset_dir")}/y_test.npy')
+    X_train = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/X_train.npy')
+    X_test = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/X_test.npy')
+    y_train = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/y_train.npy')
+    y_test = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/y_test.npy')
     global_vars.set('eeg_chans', X_train.shape[1])
     global_vars.set('input_height', X_train.shape[2])
     if X_train.ndim > 3:
@@ -544,10 +544,10 @@ def get_pure_cross_subject(data_folder, exclude=[]):
 
 def get_train_val_test(data_folder, subject_id):
     if global_vars.get('dataset') == 'BCI_IV_2a':
-        return get_bci_iv_2a_train_val_test(f"{os.path.dirname(__file__)}/{data_folder}BCI_IV/",
+        return get_bci_iv_2a_train_val_test(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}BCI_IV/",
                                             subject_id, global_vars.get('low_cut_hz'))
     elif global_vars.get('dataset') == 'HG':
-        return get_hg_train_val_test(f"{os.path.dirname(__file__)}/{data_folder}HG/", subject_id,
+        return get_hg_train_val_test(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}HG/", subject_id,
                                      global_vars.get('low_cut_hz'))
     elif global_vars.get('dataset') == 'NER15':
         return get_ner_train_val_test(data_folder)
@@ -602,7 +602,7 @@ def get_dataset(subject_id):
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
     for dataset in ['BCI_IV_2a', 'BCI_IV_2b', 'MentalImageryLongWords', 'HG', 'TUH', 'NER15']:
-        global_vars.set('dataset', 'BCI_IV_2a')
+        global_vars.set('dataset', dataset)
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
