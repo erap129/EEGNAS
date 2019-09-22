@@ -601,10 +601,10 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    global_vars.set('dataset', 'BCI_IV_2a')
-    set_params_by_dataset('configurations/dataset_params.ini')
-    dataset = get_dataset('all')
-    concat_train_val_sets(dataset)
-    # EEG_to_TF(dataset, 'data/e
-    export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}', transpose_time=True)
+    for dataset in ['BCI_IV_2a', 'BCI_IV_2b', 'MentalImageryLongWords', 'HG', 'TUH', 'NER15']:
+        global_vars.set('dataset', 'BCI_IV_2a')
+        set_params_by_dataset('configurations/dataset_params.ini')
+        dataset = get_dataset('all')
+        concat_train_val_sets(dataset)
+        export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}', transpose_time=True)
 
