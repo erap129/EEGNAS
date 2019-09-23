@@ -36,6 +36,7 @@ def generate_report(filename, report_filename):
     for key, value in params_to_average.items():
         params_to_average[key] = params_to_average[key] / avg_count[key]
     pd.DataFrame(params_to_average, index=[0]).to_csv(report_filename)
+    return params_to_average[f'final_test_{global_vars.get("ga_objective")}']
 
 
 def concat_and_pivot_results(fold_names, first_dataset):

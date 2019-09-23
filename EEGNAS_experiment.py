@@ -1,6 +1,8 @@
 import os
 import re
 import shutil
+from collections import defaultdict
+
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 from sacred import Experiment
 from sacred.observers import MongoObserver
@@ -24,6 +26,7 @@ from EEGNAS.evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
 import logging
 import sys
+import pandas as pd
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
 from EEGNAS import global_vars
@@ -207,7 +210,7 @@ def get_exp_id():
 
 
 @ex.main
-def main():
+def main(_config):
     global FIRST_RUN, FIRST_DATASET, FOLDER_NAMES
     try:
         set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
@@ -240,7 +243,7 @@ def main():
                 target_exp(exp_name, csv_file, subjects, model_from_file=best_model_filename, write_header=False)
         global_vars.set('total_time', str(time.time() - start_time))
         write_dict(global_vars.config, f"{exp_folder}/final_config_{exp_name}.ini")
-        generate_report(csv_file, report_file)
+        result = generate_report(csv_file, report_file)
         ex.add_artifact(report_file)
     except Exception as e:
         with open(f"error_logs/error_log_{exp_name}.txt", "w") as err_file:
@@ -250,6 +253,7 @@ def main():
         print(traceback.format_exc())
         shutil.rmtree(exp_folder)
         FOLDER_NAMES.remove(exp_name)
+    return result
 
 
 if __name__ == '__main__':

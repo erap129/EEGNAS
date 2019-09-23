@@ -601,7 +601,7 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    for dataset in ['BCI_IV_2a', 'BCI_IV_2b', 'MentalImageryLongWords', 'HG', 'TUH', 'NER15']:
+    for dataset in ['MentalImageryLongWords', 'HG', 'TUH', 'NER15']:
         global_vars.set('dataset', dataset)
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')
