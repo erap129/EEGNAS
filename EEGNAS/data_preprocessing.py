@@ -491,7 +491,7 @@ def get_tuh_train_val_test(data_folder):
 
 
 def get_multivariate_ts(data_folder):
-    dataset_name = global_vars.get('multivariate_ts_dataset')
+    dataset_name = global_vars.get('dataset')
     set_global_vars_by_sktime(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}Multivariate_ts/'
                                        f'{dataset_name}/{dataset_name}_TRAIN.ts',
                               f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}Multivariate_ts/'
@@ -579,7 +579,7 @@ def get_train_val_test(data_folder, subject_id):
         return get_netflow_asflow_AE(data_folder)
     elif global_vars.get('dataset') == 'cifar10':
         return get_cifar10(data_folder)
-    elif global_vars.get('dataset') == 'multivariate_ts':
+    elif global_vars.get('dataset') in ["ArticularyWordRecognition", "AtrialFibrillation", "BasicMotions", "CharacterTrajectories", "Cricket", "DuckDuckGeese", "EigenWorms", "Epilepsy", "ERing", "EthanolConcentration", "FaceDetection", "FingerMovements", "HandMovementDirection", "Handwriting", "Heartbeat", "InsectWingbeat", "JapaneseVowels", "Libras", "LSST", "MotorImagery", "NATOPS", "PEMS-SF", "PenDigits", "PhonemeSpectra", "RacketSports", "SelfRegulationSCP1", "SelfRegulationSCP2", "SpokenArabicDigits", "StandWalkJump", "UWaveGestureLibrary"]:
         return get_multivariate_ts(data_folder)
     else:
         return get_data_from_npy(data_folder)
@@ -601,7 +601,7 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    for dataset in ['MentalImageryLongWords', 'HG', 'TUH', 'NER15']:
+    for dataset in ["ArticularyWordRecognition", "AtrialFibrillation", "BasicMotions", "CharacterTrajectories", "Cricket", "DuckDuckGeese", "EigenWorms", "Epilepsy", "ERing", "EthanolConcentration", "FaceDetection", "FingerMovements", "HandMovementDirection", "Handwriting", "Heartbeat", "InsectWingbeat", "JapaneseVowels", "Libras", "LSST", "MotorImagery", "NATOPS", "PEMS-SF", "PenDigits", "PhonemeSpectra", "RacketSports", "SelfRegulationSCP1", "SelfRegulationSCP2", "SpokenArabicDigits", "StandWalkJump", "UWaveGestureLibrary"]:
         global_vars.set('dataset', dataset)
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')
