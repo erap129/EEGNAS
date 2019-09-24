@@ -64,7 +64,7 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
     report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("band_filter").__name__}.pdf'
     if os.path.isfile(report_file_name):
         return
-    baselines = OrderedDict()
+    baselines = []
     freq_models = pretrain_model_on_filtered_data(pretrained_model, global_vars.get('low_freq'),
                                                   global_vars.get('high_freq'))
     all_performances = []
@@ -73,9 +73,9 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
         single_subj_performances = []
         single_subj_performances_freq = []
         single_subj_dataset = get_dataset(subject)
-        baselines[subject] = evaluate_single_model(pretrained_model, single_subj_dataset['test'].X,
+        baselines.append(evaluate_single_model(pretrained_model, single_subj_dataset['test'].X,
                                                      single_subj_dataset['test'].y,
-                                                     eval_func=get_eval_function())
+                                                     eval_func=get_eval_function()))
         for freq in range(global_vars.get('low_freq'), global_vars.get('high_freq') + 1):
             single_subj_dataset_freq = deepcopy(single_subj_dataset)
             for section in ['train', 'valid', 'test']:
@@ -88,13 +88,25 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
                                                                   single_subj_dataset['test'].y, get_eval_function()))
         all_performances.append(single_subj_performances)
         all_performances_freq.append(single_subj_performances_freq)
-    baselines['average'] = np.average(list(baselines.values()))
+    baselines.append(np.average(baselines, axis=0))
     all_performances.append(np.average(all_performances, axis=0))
     all_performances_freq.append(np.average(all_performances_freq, axis=0))
     if global_vars.get('to_csv'):
         export_performance_frequency_to_csv(all_performances, all_performances_freq, baselines, folder_name)
     performance_plot_imgs = plot_performance_frequency([all_performances, all_performances_freq], baselines,
                                                        legend=['no retraining', 'with retraining', 'unperturbed'])
+    for subj_idx in range(len(all_performances)):
+        for perf_idx in range(len(all_performances[subj_idx])):
+            if subj_idx == len(all_performances) - 1:
+                subj_str = 'avg'
+            else:
+                subj_str = subj_idx
+            global_vars.get('sacred_ex').log_scalar(f'subject {subj_str} no retrain', all_performances[subj_idx][perf_idx],
+                                                    global_vars.get('low_freq') + perf_idx)
+            global_vars.get('sacred_ex').log_scalar(f'subject {subj_str} retrain', all_performances_freq[subj_idx][perf_idx],
+                                                    global_vars.get('low_freq') + perf_idx)
+            global_vars.get('sacred_ex').log_scalar(f'subject {subj_str} baseline', baselines[subj_idx],
+                                                    global_vars.get('low_freq') + perf_idx)
     story = [get_image(tf) for tf in performance_plot_imgs]
     create_pdf_from_story(report_file_name, story)
     for tf in performance_plot_imgs:
@@ -174,7 +186,7 @@ def avg_class_tf_report(model, dataset, folder_name):
         chan_data.append(defaultdict(list))
         for example in class_examples[class_idx]:
             for eeg_chan in eeg_chans:
-                chan_data[-1][eeg_chan].append(get_tf_data_efficient(example[None, :, :], eeg_chan, global_vars.get('frequency')))
+                chan_data[-1][eeg_chan].append(get_tf_data_efficient(example[None, :, :], eeg_chan, global_vars.get('frequency'), dB=True))
     avg_tfs = []
     for class_idx in range(global_vars.get('n_classes')):
         class_tfs = []

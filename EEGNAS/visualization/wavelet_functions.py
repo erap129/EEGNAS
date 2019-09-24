@@ -4,45 +4,10 @@ import math
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from copy import deepcopy
-
 plt.interactive(False)
 
 
-def get_tf_data(data, channel, srate):
-    min_freq = 2
-    max_freq = 30
-    num_frex = 40
-    frex = np.linspace(min_freq, max_freq, num_frex)
-    range_cycles = [4, 10]
-    time_points = data.shape[2]
-    num_trials = len(data)
-
-    s = np.logspace(math.log10(range_cycles[0]), math.log10(range_cycles[1]), num_frex) / (2 * math.pi * frex)
-    wavtime = np.arange(-2, 2 + (1/srate), 1 / srate)
-    half_wave = int((len(wavtime) - 1) / 2)
-
-    n_wave = len(wavtime)
-    n_data = time_points
-    n_conv = n_wave + n_data - 1
-
-    tf = np.zeros((len(frex), time_points, num_trials))
-
-    for fi in range(len(frex)):
-        wavelet = np.exp(2 * 1j * math.pi * frex[fi] * wavtime) * np.exp(-wavtime ** 2 / (2 * s[fi] ** 2))
-        wavelet_x = np.fft.fft(wavelet, n_conv)
-        wavelet_x = wavelet_x / np.max(wavelet_x)
-
-        for triali in range(num_trials):
-            data_x = np.fft.fft(data[triali, channel, :].squeeze(), n_conv)
-            ass = np.fft.ifft(wavelet_x * data_x)
-            ass = ass[half_wave + 1:-half_wave+1]
-            tf[fi, :, triali] = abs(ass) ** 2
-
-    tf_trial_avg = np.mean(tf, axis=2)
-    return tf_trial_avg
-
-
-def get_tf_data_efficient(data, channel, srate):
+def get_tf_data_efficient(data, channel, srate, dB=False):
     """
     :param data: data is a [num_trials X num_channels X trial_length] array
     :param channel: the channel to perform TF analysis on
@@ -78,6 +43,11 @@ def get_tf_data_efficient(data, channel, srate):
         ass = ass[half_wave + 1:-half_wave+1]
         ass = ass.reshape(num_trials, time_points)
         tf[fi, :] = np.mean(abs(ass) ** 2, axis=0)
+
+    if dB:
+        baseline = np.mean(tf[:,:500], axis=1)
+        tf = 10*np.log10(tf/baseline[:, None])
+
     return tf
 
 

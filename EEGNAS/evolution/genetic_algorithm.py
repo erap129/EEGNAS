@@ -74,7 +74,7 @@ class EEGNAS_evolution:
         self.fieldnames = fieldnames
         self.models_set = []
         self.genome_set = []
-        self.evo_strategy = {'cross_subject': self.all_strategy, 'per_subject': self.one_strategy}[strategy]
+        self.evo_strategy = {'per_subject': self.one_strategy}[strategy]
         self.csv_file = csv_file
         self.evolution_file = evolution_file
         self.current_model_index = -1
@@ -141,42 +141,6 @@ class EEGNAS_evolution:
             end_time = time.time()
             show_progress(end_time - start_time, self.exp_name)
             print('trained model %d in generation %d' % (i + 1, self.current_generation))
-
-    def all_strategy(self, weighted_population):
-        summed_parameters = ['train_time', 'num_epochs']
-        summed_parameters.extend(NAS_utils.get_metric_strs())
-        if global_vars.get('cross_subject_sampling_method') == 'generation':
-            self.sample_subjects()
-        for i, pop in enumerate(weighted_population):
-            start_time = time.time()
-            if NAS_utils.check_age(pop):
-                weighted_population[i] = weighted_population[i - 1]
-                weighted_population[i]['train_time'] = 0
-                weighted_population[i]['num_epochs'] = 0
-                continue
-            if global_vars.get('cross_subject_sampling_method') == 'model':
-                self.sample_subjects()
-            for key in summed_parameters:
-                weighted_population[i][key] = 0
-            for subject in random.sample(self.current_chosen_population_sample,
-                                         len(self.current_chosen_population_sample)):
-                finalized_model = finalize_model(pop['model'])
-                final_time, evaluations, model, model_state, num_epochs = \
-                    self.activate_model_evaluation(finalized_model, pop['model_state'], subject=subject)
-                NAS_utils.add_evaluations_to_weighted_population(weighted_population[i], evaluations,
-                                                                 str_prefix=f"{subject}_")
-                NAS_utils.sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
-                weighted_population[i]['%d_train_time' % subject] = final_time
-                weighted_population[i]['train_time'] += final_time
-                weighted_population[i]['%d_model_state' % subject] = model_state
-                weighted_population[i]['%d_num_epochs' % subject] = num_epochs
-                weighted_population[i]['num_epochs'] += num_epochs
-                end_time = time.time()
-                show_progress(end_time - start_time, self.exp_name)
-                print('trained model %d in subject %d in generation %d' % (i + 1, subject, self.current_generation))
-            weighted_population[i]['finalized_model'] = model
-            for key in summed_parameters:
-                weighted_population[i][key] /= global_vars.get('cross_subject_sampling_rate')
 
     def calculate_stats(self, weighted_population):
         stats = {}
@@ -279,6 +243,7 @@ class EEGNAS_evolution:
     def evolution(self):
         num_generations = global_vars.get('num_generations')
         weighted_population = NAS_utils.initialize_population(self.models_set, self.genome_set, self.subject_id)
+        all_architectures = []
         for generation in range(num_generations):
             self.current_generation = generation
             if global_vars.get('perm_ensembles'):
@@ -301,9 +266,10 @@ class EEGNAS_evolution:
                             self.mutation_rate = global_vars.get('mutation_rate')
                 if global_vars.get('save_every_generation'):
                     self.save_best_model(weighted_population)
+                all_architectures.append([pop['model'] for pop in weighted_population])
             else:  # last generation
                 best_model_filename = self.save_best_model(weighted_population)
-                self.save_final_population(weighted_population)
+                pickle.dump(weighted_population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(weighted_population, generation + 1)
         return best_model_filename
@@ -507,12 +473,6 @@ class EEGNAS_evolution:
                                     'dataset': global_vars.get('dataset'), 'date': time.strftime("%d/%m/%Y"),
                                     'subject': subject, 'generation': str(generation), 'model': str(model),
                                     'param_name': key, 'param_value': value})
-
-    def garbage_time(self):
-        model = target_model('deep')
-        while 1:
-            print('GARBAGE TIME GARBAGE TIME GARBAGE TIME')
-            self.activate_model_evaluation(model)
 
     def print_to_evolution_file(self, models, generation):
         global text_file

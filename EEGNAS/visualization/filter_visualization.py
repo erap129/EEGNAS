@@ -2,6 +2,10 @@ import configparser
 import os
 import sys
 from copy import deepcopy
+
+from sacred import Experiment
+from sacred.observers import MongoObserver
+
 sys.path.append("..")
 from EEGNAS.visualization import viz_reports
 from EEGNAS.utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations
@@ -28,6 +32,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
 # matplotlib.use("TkAgg")
 plt.interactive(False)
+ex = Experiment()
 
 
 def get_intermediate_act_map(data, select_layer, model):
@@ -74,6 +79,11 @@ def frequency_correlation_single_example(pretrained_model, data, discriminating_
     pass
 
 
+@ex.main
+def main():
+    getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
+
+
 if __name__ == '__main__':
     configs = configparser.ConfigParser()
     configs.read('visualization_configurations/viz_config.ini')
@@ -104,5 +114,14 @@ if __name__ == '__main__':
         print(f'generating {global_vars.get("report")} report...')
         if global_vars.get('to_eeglab'):
             create_folder(f'{folder_name}/{global_vars.get("report")}')
-        getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
+
+        exp_name = f"{global_vars.get('dataset')}_{global_vars.get('report')}"
+        ex.config = {}
+        ex.add_config(configuration)
+        if len(ex.observers) == 0 and len(sys.argv) <= 2:
+            ex.observers.append(MongoObserver.create(url=f'mongodb://localhost/{global_vars.get("mongodb_name")}',
+                                                     db_name=global_vars.get("mongodb_name")))
+        global_vars.set('sacred_ex', ex)
+        ex.run(options={'--name': exp_name})
+
 

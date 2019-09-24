@@ -55,11 +55,9 @@ def tf_plot(tf_trial_avgs, title, vmax=None, yscale='linear'):
 
 def plot_performance_frequency(performances, baselines, legend):
     colors = ['greed', 'red', 'blue']
-    baseline_idx = 0
     im_names = []
     for idx, performance_series in enumerate(zip(*performances)):
-        baseline = list(baselines.values())[baseline_idx]
-        baseline_idx += 1
+        baseline = baselines[idx]
         for performance in performance_series:
             plt.plot(range(len(performance)), performance, color=colors.pop())
         colors = ['greed', 'red', 'blue']

@@ -163,28 +163,6 @@ def leave_one_out_exp(exp_name, csv_file, subjects):
     return best_model_filenames
 
 
-def cross_subject_exp(exp_name, csv_file):
-    stop_criterion, iterator, loss_function, monitors = get_settings()
-    with open(csv_file, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
-        writer.writeheader()
-    train_set_all = {}
-    val_set_all = {}
-    test_set_all = {}
-    for subject_id in range(1, global_vars.get('num_subjects') + 1):
-        train_set, val_set, test_set = get_train_val_test(data_folder, subject_id)
-        train_set_all[subject_id] = train_set
-        val_set_all[subject_id] = val_set
-        test_set_all[subject_id] = test_set
-    evolution_file = '%s/archs.txt' % (exp_folder)
-    naiveNAS = EEGNAS_evolution(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name = exp_name,
-                                train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
-                                stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
-                                config=global_vars.config, subject_id='all', fieldnames=FIELDNAMES, strategy='cross_subject',
-                                evolution_file=evolution_file, csv_file=csv_file)
-    return naiveNAS.evolution()
-
-
 def get_settings():
     if global_vars.get('cropping'):
         global_vars.set('original_input_time_len', global_vars.get('input_time_len'))
@@ -264,8 +242,7 @@ if __name__ == '__main__':
     valid_set_fraction = 0.2
     listen()
     exp_id = get_exp_id()
-    exp_funcs = {'cross_subject': cross_subject_exp,
-                 'per_subject': per_subject_exp,
+    exp_funcs = {'per_subject': per_subject_exp,
                  'leave_one_out': leave_one_out_exp}
 
     experiments = args.experiment.split(',')

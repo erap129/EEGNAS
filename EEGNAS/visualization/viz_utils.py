@@ -66,10 +66,9 @@ def export_performance_frequency_to_csv(performances, retrained_performances, ba
             example_df = pd.DataFrame()
             if subj_id == len(performances) - 1:
                 example_df['subject'] = ['average']
-                example_df['baseline'] = [baselines['average']]
             else:
                 example_df['subject'] = [subj_id + 1]
-                example_df['baseline'] = [baselines[subj_id+1]]
+            example_df['baseline'] = baselines[subj_id]
             example_df['frequency'] = [freq + 1]
             example_df['performance'] = [perf_freq]
             example_df['retrained_performance'] = [retrained_perf_freq]
