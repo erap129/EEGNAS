@@ -1,7 +1,7 @@
 import pickle
 import platform
 
-from deap.algorithms import eaSimple, varAnd
+from deap.algorithms import varAnd
 from deap.tools import selTournament
 
 from EEGNAS.data_preprocessing import get_train_val_test
@@ -12,7 +12,8 @@ import torch.nn.functional as F
 from EEGNAS.evolution.deap_tools import Individual, initialize_deap_population, mutate_layers_deap
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
-from EEGNAS.model_generation.simple_model_generation import finalize_model
+from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer, random_layer_no_init, Module, \
+    check_legal_model, random_model
 from EEGNAS.utilities.misc import time_f
 from collections import OrderedDict, defaultdict
 import numpy as np
@@ -111,6 +112,17 @@ class EEGNAS_evolution:
         individual['fitness'] = evaluations[global_vars.get('ga_objective')]['valid']
         show_progress(final_time, self.exp_name)
         return evaluations[global_vars.get('ga_objective')]['valid'],
+
+    def evaluate_module_deap(self, module):
+        fitness = 0
+        module_count = 0
+        for pop in self.population:
+            for other_module in pop['model']:
+                if type(other_module) == Module and other_module.module_idx == module.module_idx:
+                    fitness += pop['fitness'] / len(pop['model'])
+                    module_count += 1
+        fitness /= module_count
+        return fitness
 
     def sample_subjects(self):
         self.current_chosen_population_sample = sorted(random.sample(
@@ -330,7 +342,88 @@ class EEGNAS_evolution:
             self.print_to_evolution_file(self.population, self.current_generation)
         return population, logbook
 
+    def eaDual(self, population, modules, toolbox, cxpb, mutpb, ngen, stats=None,
+                 halloffame=None, verbose=__debug__):
+        logbook = tools.Logbook()
+        logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
+
+        # Evaluate the individuals with an invalid fitness
+        invalid_ind = [ind for ind in population if not ind.fitness.valid]
+        fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+        for ind, fit in zip(invalid_ind, fitnesses):
+            ind.fitness.values = fit
+
+        if halloffame is not None:
+            halloffame.update(population)
+
+        record = stats.compile(population) if stats else {}
+        logbook.record(gen=0, nevals=len(invalid_ind), **record)
+        if verbose:
+            print(logbook.stream)
+
+        # Begin the generational process
+        for gen in range(1, ngen + 1):
+            self.current_generation += 1
+            # Select the next generation individuals
+            offspring = toolbox.select(population, len(population))
+
+            # Vary the pool of individuals
+            offspring = varAnd(offspring, toolbox, cxpb, mutpb)
+
+            # Evaluate the individuals with an invalid fitness
+            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+            valid_ind = [ind for ind in offspring if ind.fitness.valid]
+            fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+            for ind, fit in zip(invalid_ind, fitnesses):
+                ind.fitness.values = fit
+            for ind in valid_ind:
+                ind['age'] += 1
+
+            # Update the hall of fame with the generated individuals
+            if halloffame is not None:
+                halloffame.update(offspring)
+
+            # Replace the current population by the offspring
+            population[:] = offspring
+
+            # Evaluate all modules
+            module_fitnesses = toolbox.map(toolbox.evaluate_module, modules)
+            for ind, fit in zip(modules, module_fitnesses):
+                ind.fitness.values = fit
+
+            # Select the next generation modules
+            module_offspring = toolbox.select(modules, len(modules))
+
+            # Vary the pool of modules
+            module_offspring = varAnd(module_offspring, toolbox, cxpb, mutpb)
+            modules[:] = module_offspring
+
+            # Update models with new modules, killing if necessary
+            for pop_idx, pop in enumerate(population):
+                for idx in range(len(pop)):
+                    pop[idx] = global_vars.get('modules')[pop[idx].module_idx]
+                if not check_legal_model(pop):
+                    population[pop_idx] = random_model()
+
+            # Append the current generation statistics to the logbook
+            record = stats.compile(population) if stats else {}
+            logbook.record(gen=gen, nevals=len(invalid_ind), **record)
+            if verbose:
+                print(logbook.stream)
+            pop_stats = self.calculate_stats(self.population)
+            for stat, val in pop_stats.items():
+                global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, self.current_generation)
+            self.write_to_csv({k: str(v) for k, v in pop_stats.items()}, self.current_generation)
+            self.print_to_evolution_file(self.population, self.current_generation)
+        return population, logbook
+
+    def update_models_new_modules_deap(self):
+        # for pop in self.population:
+        pass
+
     def evolution_deap(self):
+        if global_vars.get('module_evolution'):
+            return self.evolution_deap_modules()
         creator.create("FitnessMax", base.Fitness, weights=(1.0,))
         creator.create("Individual", dict, fitness=creator.FitnessMax)
         self.toolbox = base.Toolbox()
@@ -350,6 +443,38 @@ class EEGNAS_evolution:
         stats.register("max", np.max)
         final_population, logbook = self.eaSimple(self.population, self.toolbox, 0.2, global_vars.get('mutation_rate'),
                                     global_vars.get('num_generations'), stats=stats, verbose=True)
+        best_model_filename = self.save_best_model(final_population)
+        self.save_final_population(final_population)
+        return best_model_filename
+
+    def evolution_deap_modules(self):
+        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+        creator.create("Individual", dict, fitness=creator.FitnessMax)
+        creator.create("Module", Module, fitness=creator.FitnessMax)
+        self.toolbox = base.Toolbox()
+        self.toolbox.register("individual", creator.Individual)
+        self.toolbox.register("module", tools.initRepeat, creator.Module, random_layer, n=global_vars.get('module_size'))
+        self.toolbox.register("model_population", tools.initRepeat, list, self.toolbox.individual)
+        self.toolbox.register("module_population", tools.initRepeat, list, self.toolbox.module)
+        self.toolbox.register("evaluate", self.evaluate_ind_deap)
+        self.toolbox.register("evaluate_module", self.evaluate_module_deap)
+        self.toolbox.register("mate", self.breed_layers_deap, 0)
+        self.toolbox.register("mutate", mutate_layers_deap)
+        self.toolbox.register("select", selTournament, tournsize=3)
+        self.population = self.toolbox.model_population(global_vars.get('pop_size'))
+        self.modules = self.toolbox.module_population(global_vars.get('module_pop_size'))
+        for idx, module in enumerate(self.modules):
+            module.module_idx = idx
+        self.current_generation = 0
+        global_vars.set('modules', self.modules)
+        initialize_deap_population(self.population, self.models_set, self.genome_set)
+        stats = tools.Statistics(key=lambda ind: ind.fitness.values)
+        stats.register("avg", np.mean)
+        stats.register("std", np.std)
+        stats.register("min", np.min)
+        stats.register("max", np.max)
+        final_population, logbook = self.eaDual(self.population, self.modules, self.toolbox, 0.2, global_vars.get('mutation_rate'),
+                                                  global_vars.get('num_generations'), stats=stats, verbose=True)
         best_model_filename = self.save_best_model(final_population)
         self.save_final_population(final_population)
         return best_model_filename

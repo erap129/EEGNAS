@@ -1,3 +1,4 @@
+import collections
 import copy
 import random
 import numpy as np
@@ -11,20 +12,29 @@ from EEGNAS.utilities.misc import get_index_of_last_layertype
 from EEGNAS.model_generation.custom_modules import _squeeze_final_output
 
 
+def flatten(l):
+    for el in l:
+        if isinstance(el, collections.Iterable) and not isinstance(el, (str, bytes)):
+            yield from flatten(el)
+        else:
+            yield el
+
+
 def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
     model = nn.Sequential()
-    if global_vars.get('channel_dim') != 'channels' or global_vars.get('exp_type') == 'target':
-        model.add_module('dimshuffle', _transpose(shape=[0, 3, 2, 1]))
-    if global_vars.get('time_factor') != -1:
-        model.add_module('stack_by_time', Expression(_stack_input_by_time))
+    if global_vars.get('module_evolution'):
+        layer_collection = list(flatten(layer_collection))
     activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
     input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_height'), global_vars.get('input_width'))
     for i in range(len(layer_collection)):
         layer = layer_collection[i]
         if i > 0:
-            out = model.forward(np_to_var(np.ones(
-                input_shape,
-                dtype=np.float32)))
+            try:
+                out = model.forward(np_to_var(np.ones(
+                    input_shape,
+                    dtype=np.float32)))
+            except Exception:
+                print
             prev_channels = out.cpu().data.numpy().shape[1]
             prev_height = out.cpu().data.numpy().shape[2]
             prev_width = out.cpu().data.numpy().shape[3]
@@ -45,7 +55,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
         elif isinstance(layer, ConvLayer):
             layer_class = nn.Conv2d
-            if layer.kernel_height == 'down_to_one' or i >= global_vars.get('num_layers'):
+            if layer.kernel_height == 'down_to_one':
                 if global_vars.get('autoencoder'):
                     layer.kernel_height = global_vars.get('input_height') - prev_height + 1
                     layer.kernel_width = global_vars.get('input_width') - prev_width + 1
@@ -96,6 +106,8 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
 
 def check_legal_model(layer_collection):
+    if global_vars.get('module_evolution'):
+        layer_collection = list(flatten(layer_collection))
     height = global_vars.get('input_height')
     width = global_vars.get('input_width')
     for layer in layer_collection:
@@ -133,17 +145,34 @@ def custom_model(layers):
 
 
 def random_layer():
-    layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
-    return layers[random.randint(0, 5)]()
+    layer_stock = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
+    return layer_stock[random.randint(0, len(layer_stock)-1)]()
+
+
+def random_layer_no_init():
+    layer_stock = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
+    return layer_stock[random.randint(0, len(layer_stock) - 1)]
+
+
+def random_module():
+    layer_stock = global_vars.get('modules')
+    module_idx = random.randint(0, len(layer_stock)-1)
+    module = layer_stock[module_idx]
+    return module
+
+
+class Module(list):
+    pass
 
 
 def random_model(n_layers):
+    if global_vars.get('module_evolution'):
+        layer_gen = random_module
+    else:
+        layer_gen = random_layer
     layer_collection = []
     for i in range(n_layers):
-        if global_vars.get('simple_start'):
-            layer_collection.append(IdentityLayer())
-        else:
-            layer_collection.append(random_layer())
+        layer_collection.append(layer_gen())
     if check_legal_model(layer_collection):
         return layer_collection
     else:
