@@ -77,10 +77,12 @@ def unison_shuffled_copies(a, b):
     return a[p], b[p]
 
 
-def calc_regression_accuracy(y_pred, y_real, threshold):
+def calc_regression_accuracy(y_pred, y_real, threshold, ignore_nan=False):
     actual = []
     predicted = []
     for yp, yr in zip(y_pred, y_real):
+        if ignore_nan and (np.isnan(yp) or np.isnan(yr)):
+            continue
         predicted.append((yp > threshold).astype('int'))
         actual.append((yr > threshold).astype('int'))
     return actual, predicted

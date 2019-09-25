@@ -201,7 +201,7 @@ class NN_Trainer:
             outputs = model(input_vars)
             if self.loss_function == F.mse_loss:
                 target_vars = target_vars.float()
-            loss = self.loss_function(outputs, target_vars)
+            loss = self.loss_function(outputs.squeeze(), target_vars)
             loss.backward()
             self.optimizer.step()
         self.monitor_epoch(datasets, model)
@@ -283,14 +283,9 @@ class NN_Trainer:
                     input_vars = input_vars.cuda()
                     target_vars = target_vars.cuda()
             outputs = model(input_vars)
-
-            if outputs.ndim == 3:
-                print
-
-
             if self.loss_function == F.mse_loss:
                 target_vars = target_vars.float()
-            loss = self.loss_function(outputs, target_vars)
+            loss = self.loss_function(outputs.squeeze(), target_vars)
             if hasattr(outputs, 'cpu'):
                 outputs = outputs.cpu().data.numpy()
             else:

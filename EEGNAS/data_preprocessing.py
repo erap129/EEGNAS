@@ -402,6 +402,10 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
         global_vars.set('n_classes', global_vars.get('steps_ahead'))
     X_train, X_test, y_train, y_test = train_test_split(X, y,
                                                         test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
+    if global_vars.get('aggregate_netflow_sum'):
+        y_train = np.sum(y_train, axis=1)
+        y_test = np.sum(y_test, axis=1)
+        global_vars.set('n_classes', 1)
     if global_vars.get('problem') == 'classification':
         X_train, y_train = turn_netflow_into_classification(X_train, y_train, global_vars.get('netflow_threshold'),
                                                             oversampling=global_vars.get('oversampling'))
