@@ -14,6 +14,7 @@ from PIL import Image
 from EEGNAS.utilities.misc import create_folder
 from sktime.utils.load_data import load_from_tsfile_to_dataframe
 import pandas as pd
+import numpy as np
 
 
 def get_dummy_input():
@@ -77,15 +78,46 @@ def unison_shuffled_copies(a, b):
     return a[p], b[p]
 
 
-def calc_regression_accuracy(y_pred, y_real, threshold, ignore_nan=False):
+def moving_average(a, n=3) :
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
+
+
+def get_moving_threshold(y_real, num_std):
+    N = int(len(y_real) / 8)
+    y_real = y_real[~np.isnan(y_real)]
+    std = y_real.std()
+    y_real = np.pad(y_real, (N // 2, N - 1 - N // 2), mode='edge')
+    return moving_average(y_real, n=N) + (num_std * std)
+
+
+def calc_regression_accuracy(y_pred, y_real, threshold, moving_threshold):
     actual = []
     predicted = []
-    for yp, yr in zip(y_pred, y_real):
-        if ignore_nan and (np.isnan(yp) or np.isnan(yr)):
+    for idx, (yp, yr) in enumerate(zip(y_pred, y_real)):
+        if np.isnan(yp) or np.isnan(yr):
             continue
-        predicted.append((yp > threshold).astype('int'))
-        actual.append((yr > threshold).astype('int'))
+        if moving_threshold is not False:
+            thresh = moving_threshold[idx]
+        else:
+            thresh = threshold
+        predicted.append((yp > thresh).astype('int'))
+        actual.append((yr > thresh).astype('int'))
     return actual, predicted
+
+
+def aggregate_accuracies(ys, agg_len):
+    ys_new = []
+    for y in ys:
+        y_new = np.zeros(int(len(y)/agg_len))
+        for i in range(0, len(y), agg_len):
+            if np.sum(y[i:i+agg_len]) > 1:
+                y_new[int(i/agg_len)] = 1
+            else:
+                y_new[int(i / agg_len)] = 0
+        ys_new.append(y_new)
+    return ys_new
 
 
 def write_dict(dict, filename):

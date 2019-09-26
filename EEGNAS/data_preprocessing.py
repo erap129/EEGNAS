@@ -393,7 +393,7 @@ def get_netflow_train_val_test(data_folder, shuffle=True, n_sequences=32):
     return train_set, valid_set, test_set
 
 
-def get_netflow_asflow_train_val_test(data_folder, shuffle=True):
+def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
     file_paths = [f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}netflow/{filename}" for filename
                   in global_vars.get('netflow_file_names')]
     X, y, _, _ = preprocess_netflow_data(file_paths, global_vars.get('input_height'), global_vars.get('steps_ahead'),
