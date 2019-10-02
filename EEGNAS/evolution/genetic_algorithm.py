@@ -441,8 +441,9 @@ class EEGNAS_evolution:
         stats.register("std", np.std)
         stats.register("min", np.min)
         stats.register("max", np.max)
-        final_population, logbook = self.eaSimple(self.population, self.toolbox, 0.2, global_vars.get('mutation_rate'),
-                                    global_vars.get('num_generations'), stats=stats, verbose=True)
+        final_population, logbook = self.eaSimple(self.population, self.toolbox, global_vars.get('breed_rate_deap'),
+                                    global_vars.get('mutation_rate'), global_vars.get('num_generations'),
+                                                  stats=stats, verbose=True)
         best_model_filename = self.save_best_model(final_population)
         self.save_final_population(final_population)
         return best_model_filename

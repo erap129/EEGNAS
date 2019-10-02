@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import numpy as np
 import logging
@@ -360,9 +362,9 @@ def load_data(fname, preproc_functions, sensor_types=['EEG']):
 
 
 def get_all_sorted_file_names_and_labels(train_or_eval):
-    normal_path = f'{global_vars.get("data_folder")}TUH//v2.0.0/edf/{train_or_eval}/normal/'
+    normal_path = f'{os.path.dirname(os.path.abspath(__file__))}/v2.0.0/edf/{train_or_eval}/normal/'
     normal_file_names = read_all_file_names(normal_path, '.edf', key='time')
-    abnormal_path = f'{global_vars.get("data_folder")}TUH//v2.0.0/edf/{train_or_eval}/abnormal/'
+    abnormal_path = f'{os.path.dirname(os.path.abspath(__file__))}/v2.0.0/edf/{train_or_eval}/abnormal/'
     abnormal_file_names = read_all_file_names(abnormal_path, '.edf', key='time')
     all_file_names = normal_file_names + abnormal_file_names
     all_file_names = sorted(all_file_names, key=time_key)

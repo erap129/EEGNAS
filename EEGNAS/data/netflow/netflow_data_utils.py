@@ -58,7 +58,7 @@ def get_whole_netflow_data(file):
     return all_data
 
 
-def get_netflow_threshold(file, stds=2):
+def get_netflow_threshold(file, stds):
     df = get_whole_netflow_data(file)
     return df['sum'].mean() + df['sum'].std() * stds
 

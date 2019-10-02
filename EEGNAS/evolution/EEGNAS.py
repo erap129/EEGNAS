@@ -7,6 +7,7 @@ from braindecode.datautil.splitters import concatenate_sets
 from braindecode.experiments.loggers import Printer
 from EEGNAS import global_vars
 from EEGNAS.data_preprocessing import get_train_val_test
+from EEGNAS.utilities.data_utils import EEG_to_TF, set_global_vars_by_dataset
 
 
 class EEGNAS:
@@ -62,4 +63,7 @@ class EEGNAS:
         if final_evaluation and global_vars.get('ensemble_iterations'):
             single_subj_dataset['train'] = concatenate_sets(
                 [single_subj_dataset['train'], single_subj_dataset['valid']])
+        if global_vars.get('time_frequency'):
+            EEG_to_TF(single_subj_dataset)
+            set_global_vars_by_dataset(single_subj_dataset['train'])
         return single_subj_dataset
