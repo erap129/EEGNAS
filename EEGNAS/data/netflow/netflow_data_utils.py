@@ -1,3 +1,5 @@
+import os
+
 import pywt
 from datetime import datetime
 import json
@@ -10,7 +12,7 @@ plt.interactive(False)
 import pandas as pd
 
 
-def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
+def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
     all_X = []
     all_y = []
     all_datetimes_X = []
@@ -19,8 +21,8 @@ def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
         all_data = get_whole_netflow_data(file)
         all_data.fillna(method='ffill', inplace=True)
         all_data.fillna(method='bfill', inplace=True)
-        sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, start_point, jumps)
-        datetimes_X, datetimes_Y = split_sequence(all_data.index, n_before, n_ahead, start_point, jumps)
+        sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, jumps, buffer)
+        datetimes_X, datetimes_Y = split_sequence(all_data.index, n_before, n_ahead, jumps, buffer)
         all_datetimes_X.extend(datetimes_X)
         all_datetimes_Y.extend(datetimes_Y)
         num_handovers = sample_list.shape[2] - 1
@@ -32,12 +34,15 @@ def preprocess_netflow_data(files, n_before, n_ahead, start_point, jumps):
     for idx in range(len(all_X)):
         if all_X[idx].shape[0] < max_handovers:
             all_X[idx] = np.pad(all_X[idx], pad_width=((max_handovers-all_X[idx].shape[0],0),(0,0)), mode='constant')
+        elif all_X[idx].shape[0] > max_handovers:
+            all_X[idx] = all_X[idx][:max_handovers]
     return np.stack(all_X, axis=0), np.stack(all_y, axis=0), \
            np.stack(all_datetimes_X, axis=0), np.stack(all_datetimes_Y, axis=0)
 
 
 def get_whole_netflow_data(file):
     orig_df = pd.read_csv(file)
+    own_as_num = os.path.basename(file).split('_')[0]
     vols = {}
     dfs = []
     for index, row in orig_df.iterrows():
@@ -53,8 +58,9 @@ def get_whole_netflow_data(file):
         dfs.append(df)
         idx += 1
     all_data = pd.concat(dfs, axis=1)
-    all_data['sum'] = all_data.sum(axis=1)
-    all_data = all_data[global_vars.get('start_point'):]
+    all_data = all_data.dropna(axis=1, how='any')
+    all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
+    all_data = all_data[np.flatnonzero(df.index.hour == global_vars.get('start_hour'))[0]:]
     return all_data
 
 

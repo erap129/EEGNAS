@@ -185,9 +185,10 @@ class EEGNAS_evolution:
                 model_stats['first_parent_index'] = pop['first_parent_index']
                 model_stats['second_parent_index'] = pop['second_parent_index']
             NAS_utils.add_model_to_stats(pop, i, model_stats)
-            for stat, val in model_stats.items():
-                if 'layer' not in stat:
-                    global_vars.get('sacred_ex').log_scalar(f'model_{i}_{stat}', val, self.current_generation)
+            if i == 0 or i==len(weighted_population) - 1:
+                for stat, val in model_stats.items():
+                    if 'layer' not in stat:
+                        global_vars.get('sacred_ex').log_scalar(f'model_{i}_{stat}', val, self.current_generation)
             self.write_to_csv(model_stats, self.current_generation+1, model=i)
         stats['unique_models'] = len(self.models_set)
         stats['unique_genomes'] = len(self.genome_set)
@@ -424,8 +425,11 @@ class EEGNAS_evolution:
     def evolution_deap(self):
         if global_vars.get('module_evolution'):
             return self.evolution_deap_modules()
-        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-        creator.create("Individual", dict, fitness=creator.FitnessMax)
+        if global_vars.get('problem') == 'classification':
+            creator.create("Fitness", base.Fitness, weights=(1.0,))
+        elif global_vars.get('problem') == 'regression':
+            creator.create("Fitness", base.Fitness, weights=(-1.0,))
+        creator.create("Individual", dict, fitness=creator.Fitness)
         self.toolbox = base.Toolbox()
         self.toolbox.register("individual", creator.Individual)
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)

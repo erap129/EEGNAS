@@ -32,29 +32,29 @@ def prepare_data_for_NN(X):
     return X
 
 
-def split_sequence(sequence, n_steps, n_steps_ahead, start_point, jumps):
+def split_sequence(sequence, n_steps, n_steps_ahead, jumps, buffer):
     X, y = list(), list()
     for i in range(len(sequence)):
         end_ix = i + n_steps
         if end_ix % jumps != 0:
             continue
-        if end_ix + n_steps_ahead - 1 > len(sequence) - 1:
+        if end_ix + n_steps_ahead + buffer - 1 > len(sequence) - 1:
             break
-        seq_x, seq_y = sequence[i:end_ix], sequence[end_ix:end_ix+n_steps_ahead]
+        seq_x, seq_y = sequence[i:end_ix], sequence[end_ix+buffer:end_ix+buffer+n_steps_ahead]
         X.append(seq_x)
         y.append(seq_y)
     return np.array(X), np.array(y)
 
 
-def split_parallel_sequences(sequences, n_steps, n_steps_ahead, start_point, jumps):
+def split_parallel_sequences(sequences, n_steps, n_steps_ahead, jumps, buffer):
     X, y = list(), list()
     for i in range(len(sequences)):
         end_ix = i + n_steps
         if end_ix % jumps != 0:
             continue
-        if end_ix + n_steps_ahead - 1 > len(sequences) - 1:
+        if end_ix + n_steps_ahead + buffer - 1 > len(sequences) - 1:
             break
-        seq_x, seq_y = sequences[i:end_ix, :], sequences[end_ix:end_ix+n_steps_ahead, :]
+        seq_x, seq_y = sequences[i:end_ix, :], sequences[end_ix+buffer:end_ix+buffer+n_steps_ahead, :]
         X.append(seq_x)
         y.append(seq_y)
     return np.array(X), np.array(y)

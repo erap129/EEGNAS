@@ -87,6 +87,10 @@ def set_params_by_dataset(params_config_path):
         global_vars.set('evaluation_metrics', global_vars.get('evaluation_metrics') + ['raw', 'target'])
         if not global_vars.get('ensemble_size'):
             global_vars.set('ensemble_size', int(global_vars.get('pop_size') / 100))
+    if global_vars.get('dataset') == 'netflow_asflow' and global_vars.get('all_netflow_files'):
+        file_paths = os.listdir(f'{os.path.dirname(os.path.abspath(__file__))}/../data/netflow/all_AS')
+        file_paths = [f for f in file_paths if (os.path.getsize(f'../eegnas/EEGNAS/data/netflow/all_AS/{f}') >> 20) > global_vars.get('min_netflow_file_size')]
+        global_vars.set('netflow_file_names', file_paths)
 
 
 def set_param_for_dataset(param_name, config_dict):
