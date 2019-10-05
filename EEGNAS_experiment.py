@@ -20,7 +20,8 @@ from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromT
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from EEGNAS.global_vars import init_config
 from EEGNAS.utilities.report_generation import add_params_to_name, generate_report
-from EEGNAS.utilities.misc import create_folder, get_oper_by_loss_function, exit_handler, listen, not_exclusively_in
+from EEGNAS.utilities.misc import create_folder, get_oper_by_loss_function, exit_handler, listen, not_exclusively_in, \
+    strfdelta
 from EEGNAS.utilities.monitors import *
 from EEGNAS.evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
@@ -234,6 +235,20 @@ def main(_config):
     return result
 
 
+def add_exp(all_exps, run):
+    all_exps['algorithm'].append(f'EEGNAS_{global_vars.get("num_layers")}_layers')
+    all_exps['architecture'].append('best')
+    all_exps['measure'].append(global_vars.get('ga_objective'))
+    all_exps['dataset'].append(global_vars.get('dataset'))
+    if global_vars.get('iterations'):
+        all_exps['iteration'].append(global_vars.get('iterations'))
+    else:
+        all_exps['iteration'].append(1)
+    all_exps['result'].append(run.result)
+    all_exps['runtime'].append(strfdelta(run.stop_time - run.start_time, '{hours}:{minutes}:{seconds}'))
+    all_exps['omniboard_id'].append(run._id)
+
+
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     init_config(args.config)
@@ -246,6 +261,7 @@ if __name__ == '__main__':
                  'leave_one_out': leave_one_out_exp}
 
     experiments = args.experiment.split(',')
+    all_exps = defaultdict(list)
     first_run = True
     for experiment in experiments:
         configurations = get_configurations(experiment, global_vars.configs)
@@ -260,12 +276,15 @@ if __name__ == '__main__':
             exp_name = f"{exp_id}_{index+1}_{experiment}"
             exp_name = add_params_to_name(exp_name, multiple_values)
             ex.config = {}
-            ex.add_config(configuration)
+            ex.add_config({**configuration, **{'tags': [exp_id]}})
             if len(ex.observers) == 0 and not args.debug_mode:
                 ex.observers.append(MongoObserver.create(url=f'mongodb://localhost/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
             global_vars.set('sacred_ex', ex)
-            ex.run(options={'--name': exp_name})
+            run = ex.run(options={'--name': exp_name})
+            add_exp(all_exps, run)
+            pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
+
 
     if args.drive == 't':
         upload_exp_to_gdrive(FOLDER_NAMES, FIRST_DATASET)

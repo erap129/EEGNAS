@@ -3,7 +3,7 @@ import random
 from EEGNAS import global_vars
 from EEGNAS.evolution.breeding import breed_layers
 from EEGNAS.utilities.NAS_utils import hash_model
-from EEGNAS.model_generation.simple_model_generation import random_model, random_layer, check_legal_model
+from EEGNAS.model_generation.simple_model_generation import random_model, random_layer, check_legal_model, random_module
 
 
 class Individual():
@@ -31,6 +31,18 @@ def mutate_layers_deap(individual):
             break
         else:
             individual[rand_layer] = prev_layer
+    return individual,
+
+
+def mutate_layers_deap_modules(individual):
+    rand_layer = random.randint(0, len(individual['model']) - 1)
+    individual['model'][rand_layer] = random_module()
+    return individual,
+
+
+def mutate_modules_deap(individual):
+    rand_layer = random.randint(0, len(individual) - 1)
+    individual[rand_layer] = random_layer()
     return individual,
 
 

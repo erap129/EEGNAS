@@ -198,3 +198,10 @@ def time_f(t_secs):
     if int(t_secs) < 0:
         res = "-%s" % res
     return res
+
+
+def strfdelta(tdelta, fmt):
+    d = {"days": tdelta.days}
+    d["hours"], rem = divmod(tdelta.seconds, 3600)
+    d["minutes"], d["seconds"] = divmod(rem, 60)
+    return fmt.format(**d)

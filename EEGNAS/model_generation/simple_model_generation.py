@@ -23,18 +23,15 @@ def flatten(l):
 def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_model=False):
     model = nn.Sequential()
     if global_vars.get('module_evolution'):
-        layer_collection = list(flatten(layer_collection))
+        layer_collection = copy.deepcopy(list(flatten(layer_collection)))
     activations = {'elu': nn.ELU, 'softmax': nn.Softmax, 'sigmoid': nn.Sigmoid}
     input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_height'), global_vars.get('input_width'))
     for i in range(len(layer_collection)):
         layer = layer_collection[i]
         if i > 0:
-            try:
-                out = model.forward(np_to_var(np.ones(
-                    input_shape,
-                    dtype=np.float32)))
-            except Exception:
-                print
+            out = model.forward(np_to_var(np.ones(
+                input_shape,
+                dtype=np.float32)))
             prev_channels = out.cpu().data.numpy().shape[1]
             prev_height = out.cpu().data.numpy().shape[2]
             prev_width = out.cpu().data.numpy().shape[3]
@@ -107,7 +104,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
 
 def check_legal_model(layer_collection):
     if global_vars.get('module_evolution'):
-        layer_collection = list(flatten(layer_collection))
+        layer_collection = copy.deepcopy(list(flatten(layer_collection)))
     height = global_vars.get('input_height')
     width = global_vars.get('input_width')
     for layer in layer_collection:

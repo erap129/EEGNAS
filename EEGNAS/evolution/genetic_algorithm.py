@@ -1,6 +1,8 @@
 import pickle
 import platform
+from copy import deepcopy
 
+import deap
 from deap.algorithms import varAnd
 from deap.tools import selTournament
 
@@ -9,7 +11,8 @@ from braindecode.experiments.loggers import Printer
 import logging
 import torch.nn.functional as F
 
-from EEGNAS.evolution.deap_tools import Individual, initialize_deap_population, mutate_layers_deap
+from EEGNAS.evolution.deap_tools import Individual, initialize_deap_population, mutate_layers_deap, mutate_modules_deap, \
+    mutate_layers_deap_modules
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
 from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer, random_layer_no_init, Module, \
@@ -85,11 +88,11 @@ class EEGNAS_evolution:
             self.current_chosen_population_sample = []
         self.mutation_rate = global_vars.get('mutation_rate')
 
-    def breed_layers_deap(self, mutation_rate, first_ind, second_ind):
-        first_child_model, first_child_state, _ = breed_layers(mutation_rate, first_ind['model'], second_ind['model'],
+    def breed_layers_deap(self, first_ind, second_ind):
+        first_child_model, first_child_state, _ = breed_layers(0, first_ind['model'], second_ind['model'],
                                                                first_model_state=first_ind['model_state'],
                                                                second_model_state=second_ind['model_state'])
-        second_child_model, second_child_state, _ = breed_layers(mutation_rate, second_ind['model'], first_ind['model'],
+        second_child_model, second_child_state, _ = breed_layers(0, second_ind['model'], first_ind['model'],
                                                                  first_model_state=second_ind['model_state'],
                                                                  second_model_state=first_ind['model_state'])
         if first_child_model is None or second_child_model is None:
@@ -99,6 +102,15 @@ class EEGNAS_evolution:
         first_child['model'], first_child['model_state'], first_child['age'] = first_child_model, first_child_state, 0
         second_child['model'], second_child['model_state'], second_child['age'] = second_child_model, second_child_state, 0
         return first_child, second_child
+
+    def breed_modules_deap(self, first_mod, second_mod):
+        cut_point = random.randint(0, len(first_mod) - 1)
+        second_mod_copy = deepcopy(second_mod)
+        for i in range(cut_point):
+            second_mod[i] = first_mod[i]
+        for i in range(cut_point+1, len(first_mod)):
+            first_mod[i] = second_mod_copy[i]
+        return first_mod, second_mod
 
     def evaluate_ind_deap(self, individual):
         finalized_model = finalize_model(individual['model'])
@@ -118,11 +130,12 @@ class EEGNAS_evolution:
         module_count = 0
         for pop in self.population:
             for other_module in pop['model']:
-                if type(other_module) == Module and other_module.module_idx == module.module_idx:
+                if type(other_module) == deap.creator.Module and other_module.module_idx == module.module_idx:
                     fitness += pop['fitness'] / len(pop['model'])
                     module_count += 1
-        fitness /= module_count
-        return fitness
+        if module_count > 0:
+            fitness /= module_count
+        return fitness,
 
     def sample_subjects(self):
         self.current_chosen_population_sample = sorted(random.sample(
@@ -190,8 +203,8 @@ class EEGNAS_evolution:
                     if 'layer' not in stat:
                         global_vars.get('sacred_ex').log_scalar(f'model_{i}_{stat}', val, self.current_generation)
             self.write_to_csv(model_stats, self.current_generation+1, model=i)
-        stats['unique_models'] = len(self.models_set)
-        stats['unique_genomes'] = len(self.genome_set)
+        stats['unique_individuals'] = len(self.models_set)
+        stats['unique_layers'] = len(self.genome_set)
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
         stats['mutation_rate'] = self.mutation_rate
         for layer_type in [DropoutLayer, ActivationLayer, ConvLayer, IdentityLayer, BatchNormLayer, PoolingLayer]:
@@ -368,6 +381,10 @@ class EEGNAS_evolution:
             # Select the next generation individuals
             offspring = toolbox.select(population, len(population))
 
+            # Change the toolbox methods for model mating
+            self.toolbox.register("mate", self.breed_layers_deap)
+            self.toolbox.register("mutate", mutate_layers_deap_modules)
+
             # Vary the pool of individuals
             offspring = varAnd(offspring, toolbox, cxpb, mutpb)
 
@@ -395,14 +412,21 @@ class EEGNAS_evolution:
             # Select the next generation modules
             module_offspring = toolbox.select(modules, len(modules))
 
+            # Change the toolbox methods for module mating
+            self.toolbox.register("mate", self.breed_modules_deap)
+            self.toolbox.register("mutate", mutate_modules_deap)
+
             # Vary the pool of modules
             module_offspring = varAnd(module_offspring, toolbox, cxpb, mutpb)
             modules[:] = module_offspring
 
             # Update models with new modules, killing if necessary
             for pop_idx, pop in enumerate(population):
-                for idx in range(len(pop)):
-                    pop[idx] = global_vars.get('modules')[pop[idx].module_idx]
+                for idx in range(len(pop['model'])):
+                    try:
+                        pop['model'][idx] = global_vars.get('modules')[pop['model'][idx].module_idx]
+                    except Exception as e:
+                        print
                 if not check_legal_model(pop):
                     population[pop_idx] = random_model()
 
@@ -434,7 +458,7 @@ class EEGNAS_evolution:
         self.toolbox.register("individual", creator.Individual)
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
         self.toolbox.register("evaluate", self.evaluate_ind_deap)
-        self.toolbox.register("mate", self.breed_layers_deap, 0)
+        self.toolbox.register("mate", self.breed_layers_deap)
         self.toolbox.register("mutate", mutate_layers_deap)
         self.toolbox.register("select", selTournament, tournsize=3)
         self.population = self.toolbox.population(global_vars.get('pop_size'))
@@ -463,8 +487,8 @@ class EEGNAS_evolution:
         self.toolbox.register("module_population", tools.initRepeat, list, self.toolbox.module)
         self.toolbox.register("evaluate", self.evaluate_ind_deap)
         self.toolbox.register("evaluate_module", self.evaluate_module_deap)
-        self.toolbox.register("mate", self.breed_layers_deap, 0)
-        self.toolbox.register("mutate", mutate_layers_deap)
+        self.toolbox.register("mate", self.breed_layers_deap)
+        self.toolbox.register("mutate", mutate_layers_deap_modules)
         self.toolbox.register("select", selTournament, tournsize=3)
         self.population = self.toolbox.model_population(global_vars.get('pop_size'))
         self.modules = self.toolbox.module_population(global_vars.get('module_pop_size'))

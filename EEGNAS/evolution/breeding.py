@@ -76,23 +76,16 @@ def breed_normal_population(weighted_population, breeding_method, eegnas):
 
 def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
     second_model = copy.deepcopy(second_model)
-    save_weights = False
-    if random.random() < global_vars.get('breed_rate'):
-        if cut_point is None:
-            cut_point = random.randint(0, len(first_model) - 1)
-        for i in range(cut_point):
-            second_model[i] = first_model[i]
-        save_weights = global_vars.get('inherit_weights_crossover') and global_vars.get('inherit_weights_normal')
+    if cut_point is None:
+        cut_point = random.randint(0, len(first_model) - 1)
+    for i in range(cut_point):
+        second_model[i] = first_model[i]
+    save_weights = global_vars.get('inherit_weights_crossover') and global_vars.get('inherit_weights_normal')
     this_module = sys.modules[__name__]
     getattr(this_module, global_vars.get('mutation_method'))(second_model, mutation_rate)
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
-        if torch.cuda.device_count() > 1 and global_vars.get('parallel_gpu'):
-            finalized_new_model.cuda()
-            with torch.cuda.device(0):
-                finalized_new_model = nn.DataParallel(finalized_new_model.cuda(), device_ids=
-                    [int(s) for s in global_vars.get('gpu_select').split(',')])
         finalized_new_model_state = finalized_new_model.state_dict()
         if None not in [first_model_state, second_model_state]:
             for i in range(cut_point):
