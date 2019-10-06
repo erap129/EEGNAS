@@ -2,6 +2,7 @@ import collections
 import copy
 import random
 import numpy as np
+from braindecode.models import deep4, shallow_fbcsp, eegnet
 from braindecode.torch_ext.util import np_to_var
 from EEGNAS.model_generation.abstract_layers import *
 from EEGNAS.model_generation.custom_modules import *
@@ -201,3 +202,16 @@ def finalize_model(layer_collection):
     flatten = FlattenLayer()
     layer_collection.append(flatten)
     return new_model_from_structure_pytorch(layer_collection)
+
+
+def target_model(model_name):
+    input_height = global_vars.get('input_height')
+    n_classes = global_vars.get('n_classes')
+    eeg_chans = global_vars.get('eeg_chans')
+    models = {'deep': deep4.Deep4Net(eeg_chans, n_classes, input_height, final_conv_length='auto'),
+              'shallow': shallow_fbcsp.ShallowFBCSPNet(eeg_chans, n_classes, input_height, final_conv_length='auto'),
+              'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_height, final_conv_length='auto')}
+    final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2}
+    final_conv_sizes = collections.defaultdict(int, final_conv_sizes)
+    global_vars.set('final_conv_size', final_conv_sizes[model_name])
+    return models[model_name].create_network()

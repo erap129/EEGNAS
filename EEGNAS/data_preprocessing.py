@@ -607,7 +607,7 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    for dataset in ["AtrialFibrillation", "BasicMotions", "CharacterTrajectories", "Cricket", "DuckDuckGeese", "EigenWorms", "Epilepsy", "ERing", "EthanolConcentration", "FaceDetection", "FingerMovements", "HandMovementDirection", "Handwriting", "Heartbeat", "InsectWingbeat", "JapaneseVowels", "Libras", "LSST", "MotorImagery", "NATOPS", "PEMS-SF", "PenDigits", "PhonemeSpectra", "RacketSports", "SelfRegulationSCP1", "SelfRegulationSCP2", "SpokenArabicDigits", "StandWalkJump", "UWaveGestureLibrary"]:
+    for dataset in ["Opportunity"]:
         global_vars.set('dataset', dataset)
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')

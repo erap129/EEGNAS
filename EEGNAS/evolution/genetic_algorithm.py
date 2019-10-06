@@ -1,3 +1,4 @@
+import pdb
 import pickle
 import platform
 from copy import deepcopy
@@ -27,7 +28,7 @@ from EEGNAS.evolution.nn_training import NN_Trainer
 from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.splitters import concatenate_sets
 from EEGNAS.evolution.evolution_misc_functions import add_parent_child_relations
-from EEGNAS.evolution.breeding import breed_population, breed_layers
+from EEGNAS.evolution.breeding import breed_population, breed_layers, breed_layers_modules
 import os
 import csv
 from torch import nn
@@ -103,6 +104,25 @@ class EEGNAS_evolution:
         second_child['model'], second_child['model_state'], second_child['age'] = second_child_model, second_child_state, 0
         return first_child, second_child
 
+    def breed_layers_modules_deap(self, first_ind, second_ind):
+        first_child_model, first_child_state, _ = breed_layers_modules(first_ind['model'], second_ind['model'],
+                                                               first_model_state=first_ind['model_state'],
+                                                               second_model_state=second_ind['model_state'])
+        second_child_model, second_child_state, _ = breed_layers_modules(second_ind['model'], first_ind['model'],
+                                                                 first_model_state=second_ind['model_state'],
+                                                                 second_model_state=first_ind['model_state'])
+        if first_child_model is not None:
+            first_child = self.toolbox.individual()
+            first_child['model'], first_child['model_state'], first_child['age'] = first_child_model, first_child_state, 0
+        else:
+            first_child = first_ind
+        if second_child_model is not None:
+            second_child = self.toolbox.individual()
+            second_child['model'], second_child['model_state'], second_child['age'] = second_child_model, second_child_state, 0
+        else:
+            second_child = second_ind
+        return first_child, second_child
+
     def breed_modules_deap(self, first_mod, second_mod):
         cut_point = random.randint(0, len(first_mod) - 1)
         second_mod_copy = deepcopy(second_mod)
@@ -113,17 +133,20 @@ class EEGNAS_evolution:
         return first_mod, second_mod
 
     def evaluate_ind_deap(self, individual):
-        finalized_model = finalize_model(individual['model'])
-        final_time, evaluations, model, model_state, num_epochs = \
-            self.activate_model_evaluation(finalized_model, individual['model_state'], subject=self.subject_id)
-        NAS_utils.add_evaluations_to_weighted_population(individual, evaluations)
-        individual['model_state'] = model_state
-        individual['train_time'] = final_time
-        individual['finalized_model'] = model
-        individual['num_epochs'] = num_epochs
-        individual['fitness'] = evaluations[global_vars.get('ga_objective')]['valid']
-        show_progress(final_time, self.exp_name)
-        return evaluations[global_vars.get('ga_objective')]['valid'],
+        try:
+            finalized_model = finalize_model(individual['model'])
+            final_time, evaluations, model, model_state, num_epochs = \
+                self.activate_model_evaluation(finalized_model, individual['model_state'], subject=self.subject_id)
+            NAS_utils.add_evaluations_to_weighted_population(individual, evaluations)
+            individual['model_state'] = model_state
+            individual['train_time'] = final_time
+            individual['finalized_model'] = model
+            individual['num_epochs'] = num_epochs
+            individual['fitness'] = evaluations[global_vars.get('ga_objective')]['valid']
+            show_progress(final_time, self.exp_name)
+            return evaluations[global_vars.get('ga_objective')]['valid'],
+        except Exception as e:
+            print
 
     def evaluate_module_deap(self, module):
         fitness = 0
@@ -382,11 +405,19 @@ class EEGNAS_evolution:
             offspring = toolbox.select(population, len(population))
 
             # Change the toolbox methods for model mating
-            self.toolbox.register("mate", self.breed_layers_deap)
+            self.toolbox.register("mate", self.breed_layers_modules_deap)
             self.toolbox.register("mutate", mutate_layers_deap_modules)
 
             # Vary the pool of individuals
             offspring = varAnd(offspring, toolbox, cxpb, mutpb)
+
+            # Check model validity, killing invalid ones
+            for pop_idx, pop in enumerate(offspring):
+                if not check_legal_model(pop['model']):
+                    offspring[pop_idx]['model'] = random_model(global_vars.get('num_layers'))
+                    offspring[pop_idx]['model_state'] = None
+                    offspring[pop_idx]['age'] = 0
+                    del offspring[pop_idx].fitness.values
 
             # Evaluate the individuals with an invalid fitness
             invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
@@ -396,6 +427,7 @@ class EEGNAS_evolution:
                 ind.fitness.values = fit
             for ind in valid_ind:
                 ind['age'] += 1
+
 
             # Update the hall of fame with the generated individuals
             if halloffame is not None:
@@ -423,23 +455,25 @@ class EEGNAS_evolution:
             # Update models with new modules, killing if necessary
             for pop_idx, pop in enumerate(population):
                 for idx in range(len(pop['model'])):
-                    try:
-                        pop['model'][idx] = global_vars.get('modules')[pop['model'][idx].module_idx]
-                    except Exception as e:
-                        print
-                if not check_legal_model(pop):
-                    population[pop_idx] = random_model()
+                    pop['model'][idx] = global_vars.get('modules')[pop['model'][idx].module_idx]
+                if not check_legal_model(pop['model']):
+                    population[pop_idx]['model'] = random_model(global_vars.get('num_layers'))
+                    population[pop_idx]['model_state'] = None
+                    population[pop_idx]['age'] = 0
+                    del population[pop_idx].fitness.values
+                    fitness = toolbox.evaluate(population[pop_idx])
+                    population[pop_idx].fitness.values = fitness
 
             # Append the current generation statistics to the logbook
             record = stats.compile(population) if stats else {}
             logbook.record(gen=gen, nevals=len(invalid_ind), **record)
             if verbose:
                 print(logbook.stream)
-            pop_stats = self.calculate_stats(self.population)
+            pop_stats = self.calculate_stats(population)
             for stat, val in pop_stats.items():
                 global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, self.current_generation)
             self.write_to_csv({k: str(v) for k, v in pop_stats.items()}, self.current_generation)
-            self.print_to_evolution_file(self.population, self.current_generation)
+            self.print_to_evolution_file(population, self.current_generation)
         return population, logbook
 
     def update_models_new_modules_deap(self):
@@ -487,7 +521,7 @@ class EEGNAS_evolution:
         self.toolbox.register("module_population", tools.initRepeat, list, self.toolbox.module)
         self.toolbox.register("evaluate", self.evaluate_ind_deap)
         self.toolbox.register("evaluate_module", self.evaluate_module_deap)
-        self.toolbox.register("mate", self.breed_layers_deap)
+        self.toolbox.register("mate", self.breed_layers_modules_deap)
         self.toolbox.register("mutate", mutate_layers_deap_modules)
         self.toolbox.register("select", selTournament, tournsize=3)
         self.population = self.toolbox.model_population(global_vars.get('pop_size'))

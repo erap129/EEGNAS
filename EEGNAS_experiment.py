@@ -212,7 +212,7 @@ def main(_config):
                             global_vars.get('cross_subject_compensation_rate'))
         start_time = time.time()
         if global_vars.get('exp_type') in ['target', 'benchmark']:
-            target_exp(exp_name, csv_file)
+            target_exp(exp_name, csv_file, subjects)
         elif global_vars.get('exp_type') == 'from_file':
             target_exp(exp_name, csv_file,
                        model_from_file=f"models/{global_vars.get('models_dir')}/{global_vars.get('model_file_name')}")
@@ -232,6 +232,7 @@ def main(_config):
         print(traceback.format_exc())
         shutil.rmtree(exp_folder)
         FOLDER_NAMES.remove(exp_name)
+        return
     return result
 
 
@@ -282,8 +283,9 @@ if __name__ == '__main__':
                                                      db_name=global_vars.get("mongodb_name")))
             global_vars.set('sacred_ex', ex)
             run = ex.run(options={'--name': exp_name})
-            add_exp(all_exps, run)
-            pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
+            if run is not None:
+                add_exp(all_exps, run)
+                pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
 
 
     if args.drive == 't':

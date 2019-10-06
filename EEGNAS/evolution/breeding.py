@@ -101,6 +101,30 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
         return None, None, None
 
 
+def breed_layers_modules(first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
+    second_model = copy.deepcopy(second_model)
+    if cut_point is None:
+        cut_point = random.randint(0, len(first_model) - 1)
+    for i in range(cut_point):
+        second_model[i] = first_model[i]
+    save_weights = global_vars.get('inherit_weights_crossover') and global_vars.get('inherit_weights_normal')
+    if check_legal_model(second_model):
+        if save_weights:
+            finalized_new_model = finalize_model(second_model)
+            finalized_new_model_state = finalized_new_model.state_dict()
+            if None not in [first_model_state, second_model_state]:
+                for i in range(cut_point):
+                    add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)
+                for i in range(cut_point+1, global_vars.get('num_layers')):
+                    add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
+        else:
+            finalized_new_model_state = None
+        return second_model, finalized_new_model_state, cut_point
+    else:
+        global_vars.set('failed_breedings', global_vars.get('failed_breedings') + 1)
+        return None, None, None
+
+
 def mutate_models(model, mutation_rate):
     if random.random() < mutation_rate:
         while True:
