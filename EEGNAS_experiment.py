@@ -232,7 +232,7 @@ def main(_config):
         print(traceback.format_exc())
         shutil.rmtree(exp_folder)
         FOLDER_NAMES.remove(exp_name)
-        return
+        raise Exception(str(e))
     return result
 
 
@@ -282,10 +282,13 @@ if __name__ == '__main__':
                 ex.observers.append(MongoObserver.create(url=f'mongodb://localhost/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
             global_vars.set('sacred_ex', ex)
-            run = ex.run(options={'--name': exp_name})
-            if run is not None:
-                add_exp(all_exps, run)
-                pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
+            try:
+                run = ex.run(options={'--name': exp_name})
+                if not args.debug_mode:
+                    add_exp(all_exps, run)
+                    pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
+            except Exception as e:
+                print(f'failed experiment {exp_id}_{index+1}, continuing...')
 
 
     if args.drive == 't':

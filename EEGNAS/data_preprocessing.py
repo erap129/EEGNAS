@@ -78,8 +78,9 @@ def get_bci_iv_2a_train_val_test(data_folder,subject_id, low_cut_hz):
     train_cnt = train_loader.load()
     test_cnt = test_loader.load()
 
-    train_cnt = train_cnt.drop_channels(['STI 014', 'EOG-left',
-                                         'EOG-central', 'EOG-right'])
+    train_cnt = train_cnt.drop_channels(['EOG-left', 'EOG-central', 'EOG-right'])
+    if len(train_cnt.ch_names) > 22:
+        train_cnt = train_cnt.drop_channels(['STI 014'])
     assert len(train_cnt.ch_names) == 22
 
     # convert measurements to millivolt
@@ -94,8 +95,9 @@ def get_bci_iv_2a_train_val_test(data_folder,subject_id, low_cut_hz):
                                                   eps=1e-4).T,
         train_cnt)
 
-    test_cnt = test_cnt.drop_channels(['STI 014', 'EOG-left',
-                                       'EOG-central', 'EOG-right'])
+    test_cnt = test_cnt.drop_channels(['EOG-left', 'EOG-central', 'EOG-right'])
+    if len(test_cnt.ch_names) > 22:
+        test_cnt = test_cnt.drop_channels(['STI 014'])
     assert len(test_cnt.ch_names) == 22
 
     # convert measurements to millivolt
