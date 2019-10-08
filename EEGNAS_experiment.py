@@ -2,8 +2,8 @@ import os
 import re
 import shutil
 from collections import defaultdict
-
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+from sshtunnel import SSHTunnelForwarder
 from sacred import Experiment
 from sacred.observers import MongoObserver
 from EEGNAS.evolution.loaded_model_evaluations import EEGNAS_from_file
@@ -252,6 +252,18 @@ def add_exp(all_exps, run):
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
+    if not args.debug_mode:
+        server = SSHTunnelForwarder(('132.72.80.61', 22),
+                                ssh_username='eladr',
+                                ssh_password='1q2w#E$R',
+                                remote_bind_address=('localhost', 27017),
+                                local_bind_address=('localhost', 27017))
+        server.daemon_forward_servers = True
+        try:
+            server.start()
+            open_tunnel = True
+        except:
+            print('ssh tunnel already open')
     init_config(args.config)
     data_folder = 'data/'
     low_cut_hz = 0
@@ -289,7 +301,7 @@ if __name__ == '__main__':
                     pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
             except Exception as e:
                 print(f'failed experiment {exp_id}_{index+1}, continuing...')
-
-
-    if args.drive == 't':
-        upload_exp_to_gdrive(FOLDER_NAMES, FIRST_DATASET)
+        if open_tunnel:
+            server.stop()
+        if args.drive == 't':
+            upload_exp_to_gdrive(FOLDER_NAMES, FIRST_DATASET)

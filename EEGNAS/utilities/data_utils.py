@@ -2,7 +2,6 @@ import os
 from copy import deepcopy
 
 import mne
-import oct2py
 import torch
 from braindecode.torch_ext.util import np_to_var
 from mne.time_frequency import tfr_morlet
