@@ -252,18 +252,6 @@ def add_exp(all_exps, run):
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
-    if not args.debug_mode:
-        server = SSHTunnelForwarder(('132.72.80.61', 22),
-                                ssh_username='eladr',
-                                ssh_password='1q2w#E$R',
-                                remote_bind_address=('localhost', 27017),
-                                local_bind_address=('localhost', 27017))
-        server.daemon_forward_servers = True
-        try:
-            server.start()
-            open_tunnel = True
-        except:
-            print('ssh tunnel already open')
     init_config(args.config)
     data_folder = 'data/'
     low_cut_hz = 0
@@ -291,7 +279,7 @@ if __name__ == '__main__':
             ex.config = {}
             ex.add_config({**configuration, **{'tags': [exp_id]}})
             if len(ex.observers) == 0 and not args.debug_mode:
-                ex.observers.append(MongoObserver.create(url=f'mongodb://localhost/{global_vars.get("mongodb_name")}',
+                ex.observers.append(MongoObserver.create(url=f'mongodb://132.72.80.61/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
             global_vars.set('sacred_ex', ex)
             try:
@@ -301,7 +289,5 @@ if __name__ == '__main__':
                     pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
             except Exception as e:
                 print(f'failed experiment {exp_id}_{index+1}, continuing...')
-        if open_tunnel:
-            server.stop()
         if args.drive == 't':
             upload_exp_to_gdrive(FOLDER_NAMES, FIRST_DATASET)
