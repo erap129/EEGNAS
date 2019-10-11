@@ -119,7 +119,7 @@ if __name__ == '__main__':
         ex.config = {}
         ex.add_config(configuration)
         if len(ex.observers) == 0 and len(sys.argv) <= 2:
-            ex.observers.append(MongoObserver.create(url=f'mongodb://localhost/{global_vars.get("mongodb_name")}',
+            ex.observers.append(MongoObserver.create(url=f'mongodb://132.72.80.61/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
         global_vars.set('sacred_ex', ex)
         ex.run(options={'--name': exp_name})
