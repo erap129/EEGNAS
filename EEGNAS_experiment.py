@@ -1,4 +1,5 @@
 import os
+import platform
 import re
 import shutil
 from collections import defaultdict
@@ -236,7 +237,7 @@ def main(_config):
     return result
 
 
-def add_exp(all_exps, run):
+def add_exp(exp_id, index, all_exps, run):
     all_exps['algorithm'].append(f'EEGNAS_{global_vars.get("num_layers")}_layers')
     all_exps['architecture'].append('best')
     all_exps['measure'].append(global_vars.get('ga_objective'))
@@ -248,6 +249,8 @@ def add_exp(all_exps, run):
     all_exps['result'].append(run.result)
     all_exps['runtime'].append(strfdelta(run.stop_time - run.start_time, '{hours}:{minutes}:{seconds}'))
     all_exps['omniboard_id'].append(run._id)
+    all_exps['machine'].append(platform.node())
+    all_exps['local_exp_id'].append(f'{exp_id}_{index}')
 
 
 if __name__ == '__main__':
@@ -279,13 +282,14 @@ if __name__ == '__main__':
             ex.config = {}
             ex.add_config({**configuration, **{'tags': [exp_id]}})
             if len(ex.observers) == 0 and not args.debug_mode:
-                ex.observers.append(MongoObserver.create(url=f'mongodb://132.72.80.61/{global_vars.get("mongodb_name")}',
+                ex.observers.append(MongoObserver.create(url=f'mongodb://{global_vars.get("mongodb_server")}'
+                                                             f'/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
             global_vars.set('sacred_ex', ex)
             try:
                 run = ex.run(options={'--name': exp_name})
                 if not args.debug_mode:
-                    add_exp(all_exps, run)
+                    add_exp(exp_id, index, all_exps, run)
                     pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
             except Exception as e:
                 print(f'failed experiment {exp_id}_{index+1}, continuing...')
