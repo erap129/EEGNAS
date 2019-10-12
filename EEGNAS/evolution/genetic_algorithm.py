@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 from EEGNAS.evolution.deap_functions import Individual, initialize_deap_population, mutate_layers_deap, \
     mutate_modules_deap, \
-    mutate_layers_deap_modules, breed_layers_deap, breed_modules_deap
+    mutate_layers_deap_modules, breed_layers_deap, breed_modules_deap, breed_layers_modules_deap
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
 from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer, Module, \
@@ -363,7 +363,7 @@ class EEGNAS_evolution:
             offspring = toolbox.select(population, len(population))
 
             # Change the toolbox methods for model mating
-            self.toolbox.register("mate", self.breed_layers_modules_deap, self.toolbox)
+            self.toolbox.register("mate", breed_layers_modules_deap, self.toolbox)
             self.toolbox.register("mutate", mutate_layers_deap_modules)
 
             # Vary the pool of individuals
@@ -461,6 +461,7 @@ class EEGNAS_evolution:
                                     global_vars.get('mutation_rate'), global_vars.get('num_generations'),
                                                   stats=stats, verbose=True)
         best_model_filename = self.save_best_model(final_population)
+        pickle.dump(self.population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
         return best_model_filename
 
     def evolution_deap_modules(self):
@@ -474,7 +475,7 @@ class EEGNAS_evolution:
         self.toolbox.register("module_population", tools.initRepeat, list, self.toolbox.module)
         self.toolbox.register("evaluate", self.evaluate_ind_deap)
         self.toolbox.register("evaluate_module", self.evaluate_module_deap)
-        self.toolbox.register("mate", self.breed_layers_modules_deap, self.toolbox)
+        self.toolbox.register("mate", breed_layers_modules_deap, self.toolbox)
         self.toolbox.register("mutate", mutate_layers_deap_modules)
         self.toolbox.register("select", selTournament, tournsize=3)
         self.population = self.toolbox.model_population(global_vars.get('pop_size'))
@@ -492,6 +493,7 @@ class EEGNAS_evolution:
         final_population, logbook = self.eaDual(self.population, self.modules, self.toolbox, 0.2, global_vars.get('mutation_rate'),
                                                   global_vars.get('num_generations'), stats=stats, verbose=True)
         best_model_filename = self.save_best_model(final_population)
+        pickle.dump(self.population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
         return best_model_filename
 
     def selection(self, weighted_population):
