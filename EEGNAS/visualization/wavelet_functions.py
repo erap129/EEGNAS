@@ -7,7 +7,7 @@ from copy import deepcopy
 plt.interactive(False)
 
 
-def get_tf_data_efficient(data, channel, srate, dB=False):
+def get_tf_data_efficient(data, channel, srate, num_frex, dB=False):
     """
     :param data: data is a [num_trials X num_channels X trial_length] array
     :param channel: the channel to perform TF analysis on
@@ -15,7 +15,6 @@ def get_tf_data_efficient(data, channel, srate, dB=False):
     """
     min_freq = 2
     max_freq = 30
-    num_frex = 40
     frex = np.linspace(min_freq, max_freq, num_frex)
     range_cycles = [4, 10]
     time_points = data.shape[2]
@@ -31,8 +30,8 @@ def get_tf_data_efficient(data, channel, srate, dB=False):
     n_conv = n_wave + n_data - 1
 
     tf = np.zeros((len(frex), time_points))
-    all_data = data.reshape(n_channels, -1)
-    data_x = np.fft.fft(all_data[channel], n_conv)
+    all_data = data[:, channel, :].reshape(1, -1)
+    data_x = np.fft.fft(all_data, n_conv).squeeze()
 
     for fi in range(len(frex)):
         wavelet = np.exp(2 * 1j * math.pi * frex[fi] * wavtime) * np.exp(-wavtime ** 2 / (2 * s[fi] ** 2))
@@ -45,7 +44,7 @@ def get_tf_data_efficient(data, channel, srate, dB=False):
         tf[fi, :] = np.mean(abs(ass) ** 2, axis=0)
 
     if dB:
-        baseline = np.mean(tf[:,:500], axis=1)
+        baseline = np.mean(tf[:,:300], axis=1)
         tf = 10*np.log10(tf/baseline[:, None])
 
     return tf

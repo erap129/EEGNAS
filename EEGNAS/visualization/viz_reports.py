@@ -181,22 +181,24 @@ def avg_class_tf_report(model, dataset, folder_name):
         class_examples.append(dataset.X[np.where(dataset.y == class_idx)])
         if global_vars.get('to_eeglab'):
             tensor_to_eeglab(class_examples[-1], f'{folder_name}/avg_class_tf/{label_by_idx(class_idx)}.mat')
-    chan_data = []
+    chan_data = np.zeros((global_vars.get('n_classes'), len(eeg_chans), global_vars.get('num_frex'), global_vars.get('input_height')))
     for class_idx in range(global_vars.get('n_classes')):
-        chan_data.append(defaultdict(list))
-        for example in class_examples[class_idx]:
-            for eeg_chan in eeg_chans:
-                chan_data[-1][eeg_chan].append(get_tf_data_efficient(example[None, :, :], eeg_chan, global_vars.get('frequency'), dB=True))
-    avg_tfs = []
-    for class_idx in range(global_vars.get('n_classes')):
-        class_tfs = []
+        # chan_data.append([])
+        # for example in class_examples[class_idx]:
         for eeg_chan in eeg_chans:
-            class_tfs.append(np.average(np.array(chan_data[class_idx][eeg_chan]), axis=0))
-        avg_tfs.append(class_tfs)
-    max_value = max(*[np.max(np.array(class_chan_avg_tf)) for class_chan_avg_tf in avg_tfs])
+            chan_data[class_idx, eeg_chan] = get_tf_data_efficient(class_examples[class_idx], eeg_chan,
+                                                 global_vars.get('frequency'), global_vars.get('num_frex'), dB=True)
+    # avg_tfs = []
+    # for class_idx in range(global_vars.get('n_classes')):
+    #     class_tfs = []
+    #     for eeg_chan in eeg_chans:
+    #         class_tfs.append(np.average(np.array(chan_data[class_idx][eeg_chan]), axis=0))
+    #     avg_tfs.append(class_tfs)
+    # max_value = max(*[np.max(np.array(class_chan_avg_tf)) for class_chan_avg_tf in avg_tfs])
+    max_value = np.max(chan_data)
     tf_plots = []
     for class_idx in range(global_vars.get('n_classes')):
-        tf_plots.append(tf_plot(avg_tfs[class_idx], f'average TF for {label_by_idx(class_idx)}', max_value))
+        tf_plots.append(tf_plot(chan_data[class_idx], f'average TF for {label_by_idx(class_idx)}', max_value))
     story = [get_image(tf) for tf in tf_plots]
     create_pdf_from_story(report_file_name, story)
     for tf in tf_plots:

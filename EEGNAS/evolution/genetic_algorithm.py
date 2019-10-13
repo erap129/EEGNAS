@@ -394,33 +394,34 @@ class EEGNAS_evolution:
             # Replace the current population by the offspring
             population[:] = offspring
 
-            # Evaluate all modules
-            module_fitnesses = toolbox.map(toolbox.evaluate_module, modules)
-            for ind, fit in zip(modules, module_fitnesses):
-                ind.fitness.values = fit
+            if global_vars.get('evolve_modules'):
+                # Evaluate all modules
+                module_fitnesses = toolbox.map(toolbox.evaluate_module, modules)
+                for ind, fit in zip(modules, module_fitnesses):
+                    ind.fitness.values = fit
 
-            # Select the next generation modules
-            module_offspring = toolbox.select(modules, len(modules))
+                # Select the next generation modules
+                module_offspring = toolbox.select(modules, len(modules))
 
-            # Change the toolbox methods for module mating
-            self.toolbox.register("mate", breed_modules_deap)
-            self.toolbox.register("mutate", mutate_modules_deap)
+                # Change the toolbox methods for module mating
+                self.toolbox.register("mate", breed_modules_deap)
+                self.toolbox.register("mutate", mutate_modules_deap)
 
-            # Vary the pool of modules
-            module_offspring = varAnd(module_offspring, toolbox, cxpb, mutpb)
-            modules[:] = module_offspring
+                # Vary the pool of modules
+                module_offspring = varAnd(module_offspring, toolbox, cxpb, mutpb)
+                modules[:] = module_offspring
 
-            # Update models with new modules, killing if necessary
-            for pop_idx, pop in enumerate(population):
-                for idx in range(len(pop['model'])):
-                    pop['model'][idx] = global_vars.get('modules')[pop['model'][idx].module_idx]
-                if not check_legal_model(pop['model']):
-                    population[pop_idx]['model'] = random_model(global_vars.get('num_layers'))
-                    population[pop_idx]['model_state'] = None
-                    population[pop_idx]['age'] = 0
-                    del population[pop_idx].fitness.values
-                    fitness = toolbox.evaluate(population[pop_idx])
-                    population[pop_idx].fitness.values = fitness
+                # Update models with new modules, killing if necessary
+                for pop_idx, pop in enumerate(population):
+                    for idx in range(len(pop['model'])):
+                        pop['model'][idx] = global_vars.get('modules')[pop['model'][idx].module_idx]
+                    if not check_legal_model(pop['model']):
+                        population[pop_idx]['model'] = random_model(global_vars.get('num_layers'))
+                        population[pop_idx]['model_state'] = None
+                        population[pop_idx]['age'] = 0
+                        del population[pop_idx].fitness.values
+                        fitness = toolbox.evaluate(population[pop_idx])
+                        population[pop_idx].fitness.values = fitness
 
             # Append the current generation statistics to the logbook
             record = stats.compile(population) if stats else {}
