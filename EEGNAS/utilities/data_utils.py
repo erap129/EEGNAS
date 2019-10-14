@@ -157,7 +157,7 @@ def export_data_to_file(dataset, format, out_folder, classes=None, transpose_tim
             savemat(f'{out_folder}/y_{segment}{class_str}.mat', {'data': y_data})
 
 
-def EEG_to_TF(dataset):
+def EEG_to_TF_mne(dataset):
     ch_names = [str(i) for i in range(global_vars.get('eeg_chans'))]
     ch_types = ['eeg' for i in range(global_vars.get('eeg_chans'))]
     info = mne.create_info(ch_names=ch_names, sfreq=global_vars.get('frequency'), ch_types=ch_types)
@@ -171,6 +171,13 @@ def EEG_to_TF(dataset):
                                 return_itc=False, decim=3, n_jobs=1)
             TF_list.append(power.data.astype(np.float32))
         dataset[segment].X = np.stack(TF_list, axis=0)
+
+
+# def EEG_to_TF_mike(dataset):
+#     for segment in dataset.keys():
+#     get_tf_data_efficient(class_examples[class_idx], eeg_chan,
+#                           global_vars.get('frequency'), global_vars.get('num_frex'),
+#                           dB=global_vars.get('db_normalization'))
 
 
 def EEG_to_TF_matlab(dataset, out_folder):

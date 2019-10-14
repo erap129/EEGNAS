@@ -4,7 +4,6 @@ import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
-import matplotlib.cm as cm
 
 from EEGNAS.utilities.misc import eeg_label_by_idx
 from EEGNAS.utilities.monitors import get_eval_function
@@ -23,7 +22,7 @@ def get_next_im_filename():
     return im_num
 
 
-def tf_plot(tf_trial_avgs, title, vmax=None, yscale='linear'):
+def tf_plot(tf_trial_avgs, title, vmax, yscale='linear'):
     matplotlib.rcParams.update({'font.size': 16})
     plt.figure(num=None, figsize=(6 * len(tf_trial_avgs), 7), dpi=80, facecolor='w', edgecolor='k')
     for index, tf in enumerate(tf_trial_avgs):
@@ -32,17 +31,14 @@ def tf_plot(tf_trial_avgs, title, vmax=None, yscale='linear'):
         if index == 0:
             ax.set_ylabel('frequency (Hz)')
         ax.set_yscale(yscale)
-        cf = ax.contourf(tf, 40, vmin=-3, vmax=3)
-        m = plt.cm.ScalarMappable(cmap=cm.coolwarm)
-        m.set_array(tf)
-        m.set_clim(-3, 3)
-        plt.colorbar(cf, orientation='vertical', boundaries=np.linspace(-3, 3, 50))
+        cf = ax.contourf(tf, 40, vmin=-3, vmax=vmax)
         try:
             ax.set_title(eeg_label_by_idx(index))
         except KeyError:
             ax.set_title(f'EEG channel {index + 1}')
     divider = make_axes_locatable(ax)
-    # cax = divider.append_axes('right', size='5%', pad=0.05)
+    cax = divider.append_axes('right', size='5%', pad=0.05)
+    plt.colorbar(cf, cax=cax, orientation='vertical')
     plt.suptitle(title)
     im_files = list(os.walk('temp'))[0][2]
     if len(im_files) == 0:

@@ -11,7 +11,7 @@ from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn
     turn_dataset_to_timefreq
 from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
 from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
-    EEG_to_TF, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime, set_global_vars_by_dataset
+    EEG_to_TF_mne, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime, set_global_vars_by_dataset
 from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -602,7 +602,7 @@ def get_dataset(subject_id):
         dataset['train'], dataset['valid'], dataset['test'] =\
             get_train_val_test(global_vars.get('data_folder'), subject_id)
     if global_vars.get('time_frequency'):
-        EEG_to_TF(dataset)
+        EEG_to_TF_mne(dataset)
         set_global_vars_by_dataset(dataset['train'])
     return dataset
 
