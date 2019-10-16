@@ -257,6 +257,8 @@ if __name__ == '__main__':
         configurations = get_configurations(experiment, global_vars.configs)
         multiple_values = get_multiple_values(configurations)
         for index, configuration in enumerate(configurations):
+            if index+1 < global_vars.get('start_exp_idx'):
+                continue
             global_vars.set_config(configuration)
             if FIRST_RUN:
                 FIRST_DATASET = global_vars.get('dataset')
