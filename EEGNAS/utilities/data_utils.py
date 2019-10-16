@@ -15,6 +15,8 @@ from sktime.utils.load_data import load_from_tsfile_to_dataframe
 import pandas as pd
 import numpy as np
 
+from EEGNAS.visualization.wavelet_functions import get_tf_data_efficient
+
 
 def get_dummy_input():
     input_shape = (2, global_vars.get('eeg_chans'), global_vars.get('input_height'), global_vars.get('input_width'))
@@ -175,9 +177,13 @@ def EEG_to_TF_mne(dataset):
 
 # def EEG_to_TF_mike(dataset):
 #     for segment in dataset.keys():
-#     get_tf_data_efficient(class_examples[class_idx], eeg_chan,
-#                           global_vars.get('frequency'), global_vars.get('num_frex'),
-#                           dB=global_vars.get('db_normalization'))
+#         TF_list = []
+#         for example in range(len(dataset[segment].X)):
+#             for channel_idx in lenexample:
+#             tf = get_tf_data_efficient(example[None, :, :], eeg_chan,
+#                               global_vars.get('frequency'), global_vars.get('num_frex'),
+#                               dB=global_vars.get('db_normalization'))
+#             TF_list.append(tf)
 
 
 def EEG_to_TF_matlab(dataset, out_folder):

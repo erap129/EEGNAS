@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import torch
 from braindecode.torch_ext.util import np_to_var
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from EEGNAS import global_vars
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
@@ -19,6 +20,7 @@ import numpy as np
 from torch import nn
 from reportlab.lib.styles import getSampleStyleSheet
 from EEGNAS.utilities.misc import label_by_idx
+import matplotlib.pyplot as plt
 
 styles = getSampleStyleSheet()
 from EEGNAS.visualization.viz_utils import pretrain_model_on_filtered_data, create_max_examples_per_channel, \
@@ -194,6 +196,40 @@ def avg_class_tf_report(model, dataset, folder_name):
     story = [get_image(tf) for tf in tf_plots]
     create_pdf_from_story(report_file_name, story)
     for tf in tf_plots:
+        os.remove(tf)
+
+
+'''
+Calculate the difference in power between classes for each frequency and each channel
+'''
+def power_diff_report(model, dataset, folder_name):
+    report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
+    dataset = unify_dataset(dataset)
+    class_examples = []
+    nyquist = int(global_vars.get('frequency') / 2) - 1
+    for class_idx in range(global_vars.get('n_classes')):
+        class_examples.append(dataset.X[np.where(dataset.y == class_idx)])
+    freqs = np.fft.fftfreq(global_vars.get('input_height'), 1 / global_vars.get('frequency'))
+    freq_idx = np.argmax(freqs >= nyquist)
+    diff_array = np.zeros((global_vars.get('eeg_chans'), freq_idx))
+    for chan in list(range(global_vars.get('eeg_chans'))):
+        first_power = np.average(np.fft.fft(class_examples[0][:, chan, :]).squeeze(), axis=0)[:freq_idx]
+        second_power = np.average(np.fft.fft(class_examples[1][:, chan, :]).squeeze(), axis=0)[:freq_idx]
+        power_diff = abs(first_power - second_power)
+        diff_array[chan] = power_diff
+    fig, ax = plt.subplots(figsize=(18, 10))
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes('right', size='5%', pad=0.05)
+    im = ax.imshow(diff_array, cmap='hot', interpolation='nearest', aspect='auto', extent=[0, nyquist, 1, global_vars.get('eeg_chans')])
+    ax.set_title('frequency diff between classes')
+    ax.set_ylabel('channel')
+    ax.set_xlabel('frequency')
+    fig.colorbar(im, cax=cax, orientation='vertical')
+    filename = f'temp/freq_diff.png'
+    plt.savefig(filename)
+    story = [get_image(tf) for tf in [filename]]
+    create_pdf_from_story(report_file_name, story)
+    for tf in [filename]:
         os.remove(tf)
 
 

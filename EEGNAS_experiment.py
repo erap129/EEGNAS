@@ -22,7 +22,7 @@ from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from EEGNAS.global_vars import init_config
 from EEGNAS.utilities.report_generation import add_params_to_name, generate_report
 from EEGNAS.utilities.misc import create_folder, get_oper_by_loss_function, exit_handler, listen, not_exclusively_in, \
-    strfdelta
+    strfdelta, get_exp_id
 from EEGNAS.utilities.monitors import *
 from EEGNAS.evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
@@ -175,20 +175,6 @@ def get_settings():
     return stop_criterion, iterator, loss_function, monitors
 
 
-def get_exp_id():
-    subdirs = [x for x in os.walk('results')]
-    if len(subdirs) == 1:
-        exp_id = 1
-    else:
-        try:
-            subdir_names = [int(x[0].split('/')[1].split('_')[0][0:]) for x in subdirs[1:]]
-        except IndexError:
-            subdir_names = [int(x[0].split('\\')[1].split('_')[0][0:]) for x in subdirs[1:]]
-        subdir_names.sort()
-        exp_id = subdir_names[-1] + 1
-    return exp_id
-
-
 @ex.main
 def main(_config):
     global FIRST_RUN, FIRST_DATASET, FOLDER_NAMES
@@ -260,7 +246,7 @@ if __name__ == '__main__':
     low_cut_hz = 0
     valid_set_fraction = 0.2
     listen()
-    exp_id = get_exp_id()
+    exp_id = get_exp_id('results')
     exp_funcs = {'per_subject': per_subject_exp,
                  'leave_one_out': leave_one_out_exp}
 

@@ -31,7 +31,8 @@ def tf_plot(tf_trial_avgs, title, vmax, yscale='linear'):
         if index == 0:
             ax.set_ylabel('frequency (Hz)')
         ax.set_yscale(yscale)
-        cf = ax.contourf(tf, 40, vmin=-3, vmax=vmax)
+        cmap = plt.get_cmap("viridis")
+        cf = ax.contourf(np.clip(tf, -3, 3), levels=np.linspace(-3, 3, 100), cmap=cmap)
         try:
             ax.set_title(eeg_label_by_idx(index))
         except KeyError:

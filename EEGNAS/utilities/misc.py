@@ -205,3 +205,17 @@ def strfdelta(tdelta, fmt):
     d["hours"], rem = divmod(tdelta.seconds, 3600)
     d["minutes"], d["seconds"] = divmod(rem, 60)
     return fmt.format(**d)
+
+
+def get_exp_id(results_folder):
+    subdirs = [x for x in os.walk(results_folder)]
+    if len(subdirs) == 1:
+        exp_id = 1
+    else:
+        try:
+            subdir_names = [int(x[0].split('/')[1].split('_')[0][0:]) for x in subdirs[1:]]
+        except IndexError:
+            subdir_names = [int(x[0].split('\\')[1].split('_')[0][0:]) for x in subdirs[1:]]
+        subdir_names.sort()
+        exp_id = subdir_names[-1] + 1
+    return exp_id
