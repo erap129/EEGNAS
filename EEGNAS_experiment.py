@@ -188,7 +188,7 @@ def main(_config):
             subjects = random.sample(range(1, global_vars.get('num_subjects')),
                                      global_vars.get('subjects_to_check'))
         exp_folder = f"results/{exp_name}"
-        atexit.register(exit_handler, exp_folder, args)
+        atexit.register(exit_handler, exp_folder, args.debug_mode)
         create_folder(exp_folder)
         FOLDER_NAMES.append(exp_name)
         write_dict(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
