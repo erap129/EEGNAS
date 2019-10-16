@@ -259,6 +259,8 @@ if __name__ == '__main__':
         for index, configuration in enumerate(configurations):
             if index+1 < global_vars.get('start_exp_idx'):
                 continue
+            if global_vars.get('exp_id'):
+                exp_id = global_vars.get('exp_id')
             global_vars.set_config(configuration)
             if FIRST_RUN:
                 FIRST_DATASET = global_vars.get('dataset')
