@@ -609,10 +609,10 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    for dataset in ["Opportunity"]:
+    for dataset in ["NER15"]:
         global_vars.set('dataset', dataset)
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
-        export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}', transpose_time=True)
+        export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}', transpose_time=False)
 

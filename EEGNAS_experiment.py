@@ -224,6 +224,13 @@ def main(_config):
 
 
 def add_exp(exp_id, index, all_exps, run):
+    algo_name = f'EEGNAS_{global_vars.get("num_layers")}_layers'
+    if global_vars.get('deap'):
+        algo_name += '_deap'
+    if global_vars.get('time_frequency'):
+        algo_name += '_TF'
+    if global_vars.get('random_search'):
+        algo_name += '_RS'
     all_exps['algorithm'].append(f'EEGNAS_{global_vars.get("num_layers")}_layers')
     all_exps['architecture'].append('best')
     all_exps['measure'].append(global_vars.get('ga_objective'))
@@ -257,11 +264,11 @@ if __name__ == '__main__':
         configurations = get_configurations(experiment, global_vars.configs)
         multiple_values = get_multiple_values(configurations)
         for index, configuration in enumerate(configurations):
+            global_vars.set_config(configuration)
             if index+1 < global_vars.get('start_exp_idx'):
                 continue
             if global_vars.get('exp_id'):
                 exp_id = global_vars.get('exp_id')
-            global_vars.set_config(configuration)
             if FIRST_RUN:
                 FIRST_DATASET = global_vars.get('dataset')
                 if global_vars.get('include_params_folder_name'):
@@ -279,7 +286,7 @@ if __name__ == '__main__':
             try:
                 run = ex.run(options={'--name': exp_name})
                 if not args.debug_mode:
-                    add_exp(exp_id, index, all_exps, run)
+                    add_exp(exp_id, index+1, all_exps, run)
                     pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
             except Exception as e:
                 print(f'failed experiment {exp_id}_{index+1}, continuing...')
