@@ -259,7 +259,11 @@ def load_values_from_config(config_file, keys):
         line_split = line.split('\t')
         configuration[line_split[0]] = line_split[1][:-1]
     for key in keys:
-        global_vars.set(key, eval(configuration[key]))
+        if key in configuration:
+            try:
+                global_vars.set(key, eval(configuration[key]))
+            except SyntaxError:
+                global_vars.set(key, configuration[key])
 
 
 

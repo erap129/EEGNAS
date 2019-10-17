@@ -225,7 +225,10 @@ class DummySignalTarget:
         self.X = np.array(X, dtype=np.float32)
         if global_vars.get('autoencoder'):
             y_type = np.float32
-        self.y = np.array(y, dtype=y_type)
+        if global_vars.get('problem') == 'regression':
+            self.y = np.array(y)
+        else:
+            self.y = np.array(y, dtype=y_type)
 
 
 def get_ner_train_val_test(data_folder):

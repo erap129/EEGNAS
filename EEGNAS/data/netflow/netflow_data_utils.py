@@ -6,6 +6,8 @@ import json
 import numpy as np
 from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+
 from EEGNAS import global_vars
 from EEGNAS.utilities.data_utils import split_parallel_sequences, unison_shuffled_copies, split_sequence
 plt.interactive(False)
@@ -21,8 +23,14 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
         all_data = get_whole_netflow_data(file)
         all_data.fillna(method='ffill', inplace=True)
         all_data.fillna(method='bfill', inplace=True)
-        sample_list, y = split_parallel_sequences(all_data.values, n_before, n_ahead, jumps, buffer)
-        datetimes_X, datetimes_Y = split_sequence(all_data.index, n_before, n_ahead, jumps, buffer)
+        values = all_data.values
+        index= all_data.index
+        if global_vars.get('normalize_netflow_data'):
+            scaler = MinMaxScaler()
+            scaler.fit(values)
+            values = scaler.transform(values)
+        sample_list, y = split_parallel_sequences(values, n_before, n_ahead, jumps, buffer)
+        datetimes_X, datetimes_Y = split_sequence(index, n_before, n_ahead, jumps, buffer)
         all_datetimes_X.extend(datetimes_X)
         all_datetimes_Y.extend(datetimes_Y)
         num_handovers = sample_list.shape[2] - 1
@@ -58,6 +66,7 @@ def get_whole_netflow_data(file):
         dfs.append(df)
         idx += 1
     all_data = pd.concat(dfs, axis=1)
+    all_data = all_data.dropna(thresh=len(all_data) - (len(all_data) / 8), axis=1)
     all_data = all_data.dropna(axis=1, how='any')
     all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
     all_data = all_data[np.flatnonzero(df.index.hour == global_vars.get('start_hour'))[0]:]
