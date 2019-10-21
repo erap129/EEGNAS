@@ -2,6 +2,7 @@ import os
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
 
+import shap
 import torch
 from braindecode.torch_ext.util import np_to_var
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -316,10 +317,30 @@ TODO - use shap to visualize model & data
 def shap_report(model, dataset, folder_name):
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
     test_data = np_to_var(dataset['test'].X[:, :, :, None])
-    e = shap.DeepExplainer(model, train_data)
-    shap_values = e.shap_values(test_data)
-    tf_plots = []
-    # for class_values in zip(shap_values):
+    test_class_examples = []
+    train_class_examples = []
+    for class_idx in range(global_vars.get('n_classes')):
+        test_class_examples.append(test_data[np.where(dataset['test'].y == class_idx)])
+        train_class_examples.append(train_data[np.where(dataset['train'].y == class_idx)])
+    e = shap.DeepExplainer(model.cpu(), train_data[np.random.choice(train_data.shape[0], 100, replace=False)])
+    shap_imgs = []
+    for class_idx in range(global_vars.get('n_classes')):
+        test_exa = test_class_examples[class_idx]
+        train_exa = train_class_examples[class_idx]
+        train_examples = train_exa[np.random.choice(train_exa.shape[0], 5, replace=False)]
+        test_examples = test_exa[np.random.choice(test_exa.shape[0], 5, replace=False)]
+        shap_values = e.shap_values(train_examples)
+        shap.image_plot(shap_values, -train_examples.numpy(), show=False)
+        shap_img_file = f'temp/train_shap_{class_idx}'
+        shap_imgs.append(shap_img_file)
+        plt.savefig(shap_img_file, dpi=300)
+        shap_values = e.shap_values(test_examples)
+        shap.image_plot(shap_values, -test_examples.numpy(), show=False)
+        shap_img_file = f'temp/test_shap_{class_idx}'
+        shap_imgs.append(shap_img_file)
+        plt.savefig(shap_img_file, dpi=300)
+        global_vars.get('sacred_ex').add_artifact(shap_img_file)
+
 
 
 

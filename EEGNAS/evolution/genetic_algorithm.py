@@ -4,8 +4,9 @@ import platform
 from copy import deepcopy
 
 import deap
+import networkx
 from deap.algorithms import varAnd
-from deap.tools import selTournament
+from deap.tools import selTournament, History
 
 from EEGNAS.data_preprocessing import get_train_val_test
 from braindecode.experiments.loggers import Printer
@@ -14,12 +15,13 @@ import torch.nn.functional as F
 
 from EEGNAS.evolution.deap_functions import Individual, initialize_deap_population, mutate_layers_deap, \
     mutate_modules_deap, \
-    mutate_layers_deap_modules, breed_layers_deap, breed_modules_deap, breed_layers_modules_deap
+    mutate_layers_deap_modules, breed_layers_deap, breed_modules_deap, breed_layers_modules_deap, hash_models_deap
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
 from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer, Module, \
     check_legal_model, random_model
-from EEGNAS.utilities.misc import time_f
+from EEGNAS.utilities.NAS_utils import remove_from_models_hash, hash_model
+from EEGNAS.utilities.misc import time_f, pretty_print_population
 from collections import OrderedDict, defaultdict
 import numpy as np
 import time
@@ -39,6 +41,9 @@ from EEGNAS.utilities.monitors import NoIncreaseDecrease
 from EEGNAS import global_vars
 from EEGNAS.utilities import NAS_utils
 from deap import creator, base, tools
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 
 
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
@@ -283,6 +288,10 @@ class EEGNAS_evolution:
 
     def eaSimple(self, population, toolbox, cxpb, mutpb, ngen, stats=None,
                  halloffame=None, verbose=__debug__):
+        history = History()
+        toolbox.decorate("mate", history.decorator)
+        toolbox.decorate("mutate", history.decorator)
+        history.update(population)
         logbook = tools.Logbook()
         logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
 
@@ -304,14 +313,15 @@ class EEGNAS_evolution:
         for gen in range(1, ngen + 1):
             self.current_generation += 1
             # Select the next generation individuals
+            old_offspring = deepcopy(population)
             offspring = toolbox.select(population, len(population))
-
             # Vary the pool of individuals
-            offspring = varAnd(offspring, toolbox, cxpb, mutpb)
+            new_offspring = varAnd(offspring, toolbox, cxpb, mutpb)
+            hash_models_deap(old_offspring, new_offspring, self.genome_set, self.models_set)
 
             # Evaluate the individuals with an invalid fitness
-            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            valid_ind = [ind for ind in offspring if ind.fitness.valid]
+            invalid_ind = [ind for ind in new_offspring if not ind.fitness.valid]
+            valid_ind = [ind for ind in new_offspring if ind.fitness.valid]
             fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
             for ind, fit in zip(invalid_ind, fitnesses):
                 ind.fitness.values = fit
@@ -320,10 +330,10 @@ class EEGNAS_evolution:
 
             # Update the hall of fame with the generated individuals
             if halloffame is not None:
-                halloffame.update(offspring)
+                halloffame.update(new_offspring)
 
             # Replace the current population by the offspring
-            population[:] = offspring
+            population[:] = new_offspring
 
             # Append the current generation statistics to the logbook
             record = stats.compile(population) if stats else {}
@@ -335,6 +345,18 @@ class EEGNAS_evolution:
                 global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, self.current_generation)
             self.write_to_csv({k: str(v) for k, v in pop_stats.items()}, self.current_generation)
             self.print_to_evolution_file(self.population, self.current_generation)
+
+        graph = networkx.DiGraph(history.genealogy_tree)
+        graph = graph.reverse()
+        colors = [toolbox.evaluate(history.genealogy_history[i])[0] for i in graph]
+        positions = networkx.drawing.nx_agraph.graphviz_layout(graph, prog="dot")
+        networkx.draw_networkx_labels(graph, positions)
+        networkx.draw(graph, positions, node_color=colors)
+        with open(f'{self.exp_folder}/{self.exp_name}_genealogy_models.txt', "w") as text_file:
+            text_file.write(pretty_print_population({idx: pop['model'] for idx, pop in history.genealogy_history.items()}))
+        plt.savefig(f'{self.exp_folder}/{self.exp_name}_genealogy.png')
+        global_vars.get('sacred_ex').add_artifact(f'{self.exp_folder}/{self.exp_name}_genealogy.png')
+        global_vars.get('sacred_ex').add_artifact(f'{self.exp_folder}/{self.exp_name}_genealogy_models.txt')
         return population, logbook
 
     def eaDual(self, population, modules, toolbox, cxpb, mutpb, ngen, stats=None,
@@ -447,7 +469,7 @@ class EEGNAS_evolution:
         self.toolbox.register("individual", creator.Individual)
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
         self.toolbox.register("evaluate", self.evaluate_ind_deap)
-        self.toolbox.register("mate", breed_layers_deap, self.toolbox)
+        self.toolbox.register("mate", breed_layers_deap)
         self.toolbox.register("mutate", mutate_layers_deap)
         self.toolbox.register("select", selTournament, tournsize=3)
         self.population = self.toolbox.population(global_vars.get('pop_size'))

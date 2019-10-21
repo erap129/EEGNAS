@@ -1,14 +1,11 @@
 import os
 import platform
-import re
 import shutil
 from collections import defaultdict
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-from sshtunnel import SSHTunnelForwarder
 from sacred import Experiment
 from sacred.observers import MongoObserver
 from EEGNAS.evolution.loaded_model_evaluations import EEGNAS_from_file
-from EEGNAS.evolution.nn_training import TimeFrequencyBatchIterator
 from EEGNAS.utilities.data_utils import write_dict
 from EEGNAS.utilities.gdrive import upload_exp_to_gdrive
 from EEGNAS.utilities.config_utils import config_to_dict, get_configurations, get_multiple_values, set_params_by_dataset, \

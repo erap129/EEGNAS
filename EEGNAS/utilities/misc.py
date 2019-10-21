@@ -219,3 +219,22 @@ def get_exp_id(results_folder):
         subdir_names.sort()
         exp_id = subdir_names[-1] + 1
     return exp_id
+
+
+def pretty_print_population(model_dict):
+    result = ''
+    for idx, model in model_dict.items():
+        result += pretty_print_model(idx, model)
+    return result
+
+
+def pretty_print_model(name, model):
+    result = f'Architecture {name}\n'
+    result += '--------------------------------------------------\n'
+    for layer in model:
+        result += f'{type(layer).__name__}:\n'
+        for param, value in layer.__dict__.items():
+            if value is not None:
+                result += f'\t{param}: {value}\n'
+    result += '\n'
+    return result
