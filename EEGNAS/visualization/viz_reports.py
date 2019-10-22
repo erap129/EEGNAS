@@ -16,7 +16,7 @@ from EEGNAS.utilities.misc import unify_dataset
 from EEGNAS.utilities.monitors import get_eval_function
 from EEGNAS.visualization.deconvolution import ConvDeconvNet
 from EEGNAS.visualization.pdf_utils import get_image, create_pdf_from_story, create_pdf
-from EEGNAS.visualization.signal_plotting import tf_plot, plot_performance_frequency
+from EEGNAS.visualization.signal_plotting import tf_plot, plot_performance_frequency, image_plot
 import numpy as np
 from torch import nn
 from reportlab.lib.styles import getSampleStyleSheet
@@ -315,31 +315,53 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
 TODO - use shap to visualize model & data
 '''
 def shap_report(model, dataset, folder_name):
+    report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
     test_data = np_to_var(dataset['test'].X[:, :, :, None])
-    test_class_examples = []
-    train_class_examples = []
+    class_examples = {'train': [], 'test': []}
     for class_idx in range(global_vars.get('n_classes')):
-        test_class_examples.append(test_data[np.where(dataset['test'].y == class_idx)])
-        train_class_examples.append(train_data[np.where(dataset['train'].y == class_idx)])
+        class_examples['test'].append(test_data[np.where(dataset['test'].y == class_idx)])
+        class_examples['train'].append(train_data[np.where(dataset['train'].y == class_idx)])
     e = shap.DeepExplainer(model.cpu(), train_data[np.random.choice(train_data.shape[0], 100, replace=False)])
     shap_imgs = []
     for class_idx in range(global_vars.get('n_classes')):
-        test_exa = test_class_examples[class_idx]
-        train_exa = train_class_examples[class_idx]
-        train_examples = train_exa[np.random.choice(train_exa.shape[0], 5, replace=False)]
-        test_examples = test_exa[np.random.choice(test_exa.shape[0], 5, replace=False)]
-        shap_values = e.shap_values(train_examples)
-        shap.image_plot(shap_values, -train_examples.numpy(), show=False)
-        shap_img_file = f'temp/train_shap_{class_idx}'
-        shap_imgs.append(shap_img_file)
-        plt.savefig(shap_img_file, dpi=300)
-        shap_values = e.shap_values(test_examples)
-        shap.image_plot(shap_values, -test_examples.numpy(), show=False)
-        shap_img_file = f'temp/test_shap_{class_idx}'
-        shap_imgs.append(shap_img_file)
-        plt.savefig(shap_img_file, dpi=300)
-        global_vars.get('sacred_ex').add_artifact(shap_img_file)
+        for segment in ['train', 'test']:
+            class_exa = class_examples[segment][class_idx]
+            segment_examples = class_exa[np.random.choice(class_exa.shape[0], 5, replace=False)]
+            shap_values = e.shap_values(segment_examples)
+            image_plot(shap_values, -segment_examples.numpy(), show=False, width=10)
+            plt.suptitle(f'SHAP values for dataset: {global_vars.get("dataset")}, segment: {segment}, class: {label_by_idx(class_idx)}')
+            shap_img_file = f'temp/train_shap_{class_idx}.png'
+            shap_imgs.append(shap_img_file)
+            plt.savefig(shap_img_file, dpi=200)
+    story = []
+    for im in shap_imgs:
+        story.append(get_image(im))
+    create_pdf_from_story(report_file_name, story)
+    global_vars.get('sacred_ex').add_artifact(report_file_name)
+    for im in shap_imgs:
+        os.remove(im)
+
+
+        #
+        #     global_vars.get('sacred_ex').add_artifact(shap_img_file)
+        #
+        #
+        # test_exa = test_class_examples[class_idx]
+        # train_exa = train_class_examples[class_idx]
+        # train_examples = train_exa[np.random.choice(train_exa.shape[0], 5, replace=False)]
+        # test_examples = test_exa[np.random.choice(test_exa.shape[0], 5, replace=False)]
+        # shap_values = e.shap_values(train_examples)
+        # image_plot(shap_values, -train_examples.numpy(), show=False, width=10)
+        # shap_img_file = f'temp/train_shap_{class_idx}'
+        # shap_imgs.append(shap_img_file)
+        # plt.savefig(shap_img_file, dpi=300)
+        # shap_values = e.shap_values(test_examples)
+        # image_plot(shap_values, -test_examples.numpy(), show=False, width=10)
+        # shap_img_file = f'temp/test_shap_{class_idx}'
+        # shap_imgs.append(shap_img_file)
+        # plt.savefig(shap_img_file, dpi=300)
+        # global_vars.get('sacred_ex').add_artifact(shap_img_file)
 
 
 

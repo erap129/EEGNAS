@@ -78,6 +78,9 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
     second_model = copy.deepcopy(second_model)
     if cut_point is None:
         cut_point = random.randint(0, len(first_model) - 1)
+        if global_vars.get('cut_point_modulo'):
+            while (cut_point+1) % global_vars.get('cut_point_modulo') != 0:
+                cut_point = random.randint(0, len(first_model) - 1)
     for i in range(cut_point):
         second_model[i] = first_model[i]
     save_weights = global_vars.get('inherit_weights_crossover') and global_vars.get('inherit_weights_normal')

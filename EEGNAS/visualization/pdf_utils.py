@@ -19,6 +19,6 @@ def create_pdf(filepath, img_paths):
 
 
 def create_pdf_from_story(filepath, story):
-    pdf = SimpleDocTemplate(filepath, rightMargin=20,
-                            leftMargin=20, topMargin=20, bottomMargin=20)
+    pdf = SimpleDocTemplate(filepath, rightMargin=3,
+                            leftMargin=3, topMargin=3, bottomMargin=3)
     pdf.build(story)
