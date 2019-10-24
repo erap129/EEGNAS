@@ -34,8 +34,13 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
         all_datetimes_X.extend(datetimes_X)
         all_datetimes_Y.extend(datetimes_Y)
         num_handovers = sample_list.shape[2] - 1
-        all_X.extend(sample_list.swapaxes(1, 2)[:, :num_handovers])
-        all_y.extend(y.swapaxes(1, 2)[:, num_handovers])
+        X = sample_list.swapaxes(1, 2)[:, :num_handovers]
+        y = y.swapaxes(1, 2)[:, num_handovers]
+        if global_vars.get('problem') == 'classification':
+            y = turn_netflow_into_classification(X, y,
+                                                 get_netflow_threshold(file, global_vars.get('netflow_threshold_std')))
+        all_X.extend(X)
+        all_y.extend(y)
     max_handovers = global_vars.get('max_handovers')
     if not max_handovers:
         max_handovers = max(x.shape[0] for x in all_X)
@@ -75,7 +80,12 @@ def get_whole_netflow_data(file):
 
 def get_netflow_threshold(file, stds):
     df = get_whole_netflow_data(file)
-    return df['sum'].mean() + df['sum'].std() * stds
+    values = df['sum'].values.reshape(-1, 1)
+    if global_vars.get('normalize_netflow_data'):
+        scaler = MinMaxScaler()
+        scaler.fit(values)
+        values = scaler.transform(values)
+    return values.mean() + values.std() * stds
 
 
 def get_time_freq(signal):
@@ -95,7 +105,7 @@ def turn_dataset_to_timefreq(X):
     return new_X
 
 
-def turn_netflow_into_classification(X, y, threshold, oversampling=True):
+def turn_netflow_into_classification(X, y, threshold, oversampling=False):
     res = []
     for example in y:
         found = False
@@ -113,7 +123,7 @@ def turn_netflow_into_classification(X, y, threshold, oversampling=True):
         X_oversample, res_oversample = ros.fit_sample(X_reshaped, res)
         X_oversample = X_oversample.reshape(-1, X.shape[1], X.shape[2])
         return unison_shuffled_copies(X_oversample, res_oversample)
-    return np.array(X), np.array(res)
+    return np.array(res)
 
 
 def count_overflows_in_data(dataset, threshold, start_idx=0, end_idx=24):
@@ -124,6 +134,26 @@ def count_overflows_in_data(dataset, threshold, start_idx=0, end_idx=24):
                 overflow_count += 1
                 break
     return overflow_count
+
+
+def moving_average(a, n=3) :
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
+
+
+def get_moving_threshold(y_real, num_std):
+    if global_vars.get('normalize_netflow_data'):
+        y_real = y_real.reshape(-1, 1)
+        scaler = MinMaxScaler()
+        scaler.fit(y_real.reshape(-1, 1))
+        y_real = scaler.transform(y_real)
+    N = int(len(y_real) / 8)
+    y_real = y_real[~np.isnan(y_real)]
+    std = y_real.std()
+    y_real = np.pad(y_real, (N // 2, N - 1 - N // 2), mode='edge')
+    return moving_average(y_real, n=N) + (num_std * std)
+
 
 
 

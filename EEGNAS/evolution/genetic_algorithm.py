@@ -256,6 +256,7 @@ class EEGNAS_evolution:
         num_generations = global_vars.get('num_generations')
         weighted_population = NAS_utils.initialize_population(self.models_set, self.genome_set, self.subject_id)
         all_architectures = []
+        start_time = time.time()
         for generation in range(num_generations):
             self.current_generation = generation
             if global_vars.get('perm_ensembles'):
@@ -279,9 +280,10 @@ class EEGNAS_evolution:
                 if global_vars.get('save_every_generation'):
                     self.save_best_model(weighted_population)
                 all_architectures.append([pop['model'] for pop in weighted_population])
-            else:  # last generation
-                best_model_filename = self.save_best_model(weighted_population)
-                pickle.dump(weighted_population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
+                if time.time() - start_time > global_vars.get('time_limit_seconds'):
+                    break
+            best_model_filename = self.save_best_model(weighted_population)
+            pickle.dump(weighted_population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(weighted_population, generation + 1)
         return best_model_filename

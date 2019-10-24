@@ -266,6 +266,7 @@ if __name__ == '__main__':
                 continue
             if global_vars.get('exp_id'):
                 exp_id = global_vars.get('exp_id')
+            configuration['DEFAULT']['exp_id'] = exp_id
             if FIRST_RUN:
                 FIRST_DATASET = global_vars.get('dataset')
                 if global_vars.get('include_params_folder_name'):

@@ -79,20 +79,6 @@ def unison_shuffled_copies(a, b):
     return a[p], b[p]
 
 
-def moving_average(a, n=3) :
-    ret = np.cumsum(a, dtype=float)
-    ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
-
-
-def get_moving_threshold(y_real, num_std):
-    N = int(len(y_real) / 8)
-    y_real = y_real[~np.isnan(y_real)]
-    std = y_real.std()
-    y_real = np.pad(y_real, (N // 2, N - 1 - N // 2), mode='edge')
-    return moving_average(y_real, n=N) + (num_std * std)
-
-
 def calc_regression_accuracy(y_pred, y_real, threshold, moving_threshold):
     actual = []
     predicted = []

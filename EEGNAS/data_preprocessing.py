@@ -414,10 +414,7 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
         y_test = np.sum(y_test, axis=1)
         global_vars.set('n_classes', 1)
     if global_vars.get('problem') == 'classification':
-        X_train, y_train = turn_netflow_into_classification(X_train, y_train, global_vars.get('netflow_threshold'),
-                                                            oversampling=global_vars.get('oversampling'))
-        X_test, y_test = turn_netflow_into_classification(X_test, y_test, global_vars.get('netflow_threshold'),
-                                                          oversampling=global_vars.get('oversampling'))
+        global_vars.set('n_classes', 2)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
                                                       shuffle=shuffle)
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
