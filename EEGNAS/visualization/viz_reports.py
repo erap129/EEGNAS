@@ -1,7 +1,6 @@
 import os
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from copy import deepcopy
-
 import shap
 import torch
 from braindecode.torch_ext.util import np_to_var
@@ -22,10 +21,9 @@ from torch import nn
 from reportlab.lib.styles import getSampleStyleSheet
 from EEGNAS.utilities.misc import label_by_idx
 import matplotlib.pyplot as plt
-
 styles = getSampleStyleSheet()
 from EEGNAS.visualization.viz_utils import pretrain_model_on_filtered_data, create_max_examples_per_channel, \
-    get_max_examples_per_channel, export_performance_frequency_to_csv
+    get_max_examples_per_channel, export_performance_frequency_to_csv, get_top_n_class_examples
 from EEGNAS.visualization.wavelet_functions import get_tf_data_efficient
 
 '''
@@ -118,7 +116,7 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
 
 '''
 for each filter in each convolutional layer perform a reconstruction of an EEG example, using deconvolution with the
-learned weights. Do this either for all the examples together or per class.
+learned weights. Do this for the top 5 examples in each class.
 '''
 def kernel_deconvolution_report(model, dataset, folder_name):
     by_class_str = ''
@@ -135,7 +133,8 @@ def kernel_deconvolution_report(model, dataset, folder_name):
     class_examples = []
     if global_vars.get('deconvolution_by_class'):
         for class_idx in range(global_vars.get('n_classes')):
-            class_examples.append(dataset['train'].X[np.where(dataset['train'].y == class_idx)])
+            # class_examples.append(dataset['train'].X[np.where(dataset['train'].y == class_idx)])
+            class_examples.append(get_top_n_class_examples(dataset['train'].X[np.where(dataset['train'].y == class_idx)], class_idx, model, 5))
     else:
         class_examples.append(dataset['train'].X)
     for layer_idx, layer in list(enumerate(model.children()))[global_vars.get('layer_idx_cutoff'):]:
@@ -158,7 +157,7 @@ def kernel_deconvolution_report(model, dataset, folder_name):
                     subj_tfs = []
                     for eeg_chan in eeg_chans:
                         subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),
-                                                              eeg_chan, global_vars.get('frequency')))
+                                                              eeg_chan, global_vars.get('num_frex'), global_vars.get('frequency')))
                     if global_vars.get('deconvolution_by_class'):
                         class_title = label_by_idx(class_idx)
                     else:
@@ -252,7 +251,7 @@ def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cut
         max_value = 0
         for chan_idx, example in enumerate(max_examples):
             for eeg_chan in eeg_chans:
-                plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example, eeg_chan, 250)
+                plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example, eeg_chan, 250, global_vars.get('num_frex'), dB=True)
                 max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
         class_str = ''
         for chan_idx, example in enumerate(max_examples):
@@ -312,7 +311,7 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
 
 
 '''
-TODO - use shap to visualize model & data
+use shap to visualize model & data
 '''
 def shap_report(model, dataset, folder_name):
     report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
@@ -341,28 +340,3 @@ def shap_report(model, dataset, folder_name):
     global_vars.get('sacred_ex').add_artifact(report_file_name)
     for im in shap_imgs:
         os.remove(im)
-
-
-        #
-        #     global_vars.get('sacred_ex').add_artifact(shap_img_file)
-        #
-        #
-        # test_exa = test_class_examples[class_idx]
-        # train_exa = train_class_examples[class_idx]
-        # train_examples = train_exa[np.random.choice(train_exa.shape[0], 5, replace=False)]
-        # test_examples = test_exa[np.random.choice(test_exa.shape[0], 5, replace=False)]
-        # shap_values = e.shap_values(train_examples)
-        # image_plot(shap_values, -train_examples.numpy(), show=False, width=10)
-        # shap_img_file = f'temp/train_shap_{class_idx}'
-        # shap_imgs.append(shap_img_file)
-        # plt.savefig(shap_img_file, dpi=300)
-        # shap_values = e.shap_values(test_examples)
-        # image_plot(shap_values, -test_examples.numpy(), show=False, width=10)
-        # shap_img_file = f'temp/test_shap_{class_idx}'
-        # shap_imgs.append(shap_img_file)
-        # plt.savefig(shap_img_file, dpi=300)
-        # global_vars.get('sacred_ex').add_artifact(shap_img_file)
-
-
-
-

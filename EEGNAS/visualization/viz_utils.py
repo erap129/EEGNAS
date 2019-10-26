@@ -6,7 +6,7 @@ from EEGNAS import global_vars
 from EEGNAS_experiment import get_normal_settings
 from EEGNAS.data_preprocessing import get_pure_cross_subject
 from EEGNAS.evolution.nn_training import NN_Trainer
-from EEGNAS.utilities.data_utils import get_dummy_input
+from EEGNAS.utilities.data_utils import get_dummy_input, prepare_data_for_NN
 from EEGNAS.visualization.cnn_layer_visualization import CNNLayerVisualization
 
 
@@ -74,3 +74,11 @@ def export_performance_frequency_to_csv(performances, retrained_performances, ba
             example_df['retrained_performance'] = [retrained_perf_freq]
             df = df.append(example_df)
     df.to_csv(f'{folder_name}/performance_frequency_{global_vars.get("band_filter").__name__}.csv')
+
+
+def get_top_n_class_examples(data, class_idx, model, n):
+    out = model(prepare_data_for_NN(data)).cpu().detach().numpy()
+    res = np.zeros((out.shape[0], out.shape[1]+1))
+    res[:, :-1] = out
+    res[:, -1] = np.arange(len(data))
+    return data[res[res[:, class_idx].argsort()][:, 2].astype(int)][-n:]

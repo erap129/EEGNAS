@@ -2,35 +2,32 @@ import configparser
 import os
 import sys
 from copy import deepcopy
-
 from sacred import Experiment
 from sacred.observers import MongoObserver
-
 sys.path.append("..")
+sys.path.append("../..")
 from EEGNAS.visualization import viz_reports
 from EEGNAS.utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations
-from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset
+from EEGNAS.utilities.misc import concat_train_val_sets
 import logging
 from EEGNAS.visualization.dsp_functions import butter_bandstop_filter, butter_bandpass_filter
-from EEGNAS.visualization.signal_plotting import plot_performance_frequency, tf_plot, plot_one_tensor
-
+from EEGNAS.visualization.signal_plotting import plot_one_tensor
 import torch
 from braindecode.torch_ext.util import np_to_var
 from EEGNAS import global_vars
-from EEGNAS.data_preprocessing import get_train_val_test, get_pure_cross_subject, get_dataset
-from EEGNAS_experiment import get_normal_settings, set_params_by_dataset
+from EEGNAS.data_preprocessing import get_dataset
+from EEGNAS_experiment import set_params_by_dataset
 import matplotlib.pyplot as plt
 from EEGNAS.utilities.misc import create_folder
-from EEGNAS.visualization.pdf_utils import create_pdf, create_pdf_from_story
+from EEGNAS.visualization.pdf_utils import create_pdf
 import numpy as np
-from EEGNAS.visualization.wavelet_functions import get_tf_data_efficient, subtract_frequency
+from EEGNAS.visualization.wavelet_functions import subtract_frequency
 from datetime import datetime
 from reportlab.lib.styles import getSampleStyleSheet
 from EEGNAS.utilities.misc import label_by_idx
 styles = getSampleStyleSheet()
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
-# matplotlib.use("TkAgg")
 plt.interactive(False)
 ex = Experiment()
 
