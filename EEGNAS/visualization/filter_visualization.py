@@ -108,7 +108,8 @@ if __name__ == '__main__':
         date_time = now.strftime("%m.%d.%Y-%H:%M")
         folder_name = f'results/{date_time}_{global_vars.get("dataset")}'
         create_folder(folder_name)
-        print(f'generating {global_vars.get("report")} report...')
+        print(f'generating {global_vars.get("report")} report for model:')
+        print(model)
         if global_vars.get('to_eeglab'):
             create_folder(f'{folder_name}/{global_vars.get("report")}')
 

@@ -30,7 +30,7 @@ def get_next_im_filename():
     return im_num
 
 
-def tf_plot(tf_trial_avgs, title, vmax, yscale='linear'):
+def tf_plot(tf_trial_avgs, title, yscale='linear'):
     matplotlib.rcParams.update({'font.size': 16})
     plt.figure(num=None, figsize=(6 * len(tf_trial_avgs), 7), dpi=80, facecolor='w', edgecolor='k')
     for index, tf in enumerate(tf_trial_avgs):
@@ -40,7 +40,8 @@ def tf_plot(tf_trial_avgs, title, vmax, yscale='linear'):
             ax.set_ylabel('frequency (Hz)')
         ax.set_yscale(yscale)
         cmap = plt.get_cmap("viridis")
-        cf = ax.contourf(np.clip(tf, -3, 3), levels=np.linspace(-3, 3, 100), cmap=cmap)
+        # cf = ax.contourf(np.clip(tf, -3, 3), levels=np.linspace(-3, 3, 100), cmap=cmap)
+        cf = ax.contourf(tf, cmap=cmap)
         try:
             ax.set_title(eeg_label_by_idx(index))
         except KeyError:

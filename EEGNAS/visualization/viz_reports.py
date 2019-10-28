@@ -259,7 +259,7 @@ def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cut
                 class_str = f', class:{label_by_idx(chan_idx)}'
             plot_imgs[(layer_idx, chan_idx)] = tf_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
                                                        f'TF plot of optimal example for layer {layer_idx},'
-                                                       f' channel {chan_idx}{class_str}', max_value)
+                                                       f' channel {chan_idx}{class_str}')
             print(f'plot gradient ascent TF for layer {layer_idx}, channel {chan_idx}')
 
     story = []

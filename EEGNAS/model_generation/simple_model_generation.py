@@ -61,6 +61,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                 else:
                     layer.kernel_height = prev_height
                     layer.kernel_width = prev_width
+                    layer.dilation_height = 1
                 conv_name = 'conv_classifier'
             else:
                 conv_name = '%s_%d' % (type(layer).__name__, i)
@@ -70,7 +71,7 @@ def new_model_from_structure_pytorch(layer_collection, applyFix=False, check_mod
                     layer.kernel_width = prev_width
             model.add_module(conv_name, layer_class(prev_channels, layer.filter_num,
                                                 (layer.kernel_height, layer.kernel_width),
-                                                stride=1))
+                                                stride=1, dilation=(layer.dilation_height, 1)))
 
         elif isinstance(layer, BatchNormLayer):
             model.add_module('%s_%d' % (type(layer).__name__, i), nn.BatchNorm2d(prev_channels,
@@ -110,7 +111,7 @@ def check_legal_model(layer_collection):
     width = global_vars.get('input_width')
     for layer in layer_collection:
         if type(layer) == ConvLayer:
-            height = (height - layer.kernel_height) + 1
+            height = (height - (layer.dilation_height * (layer.kernel_height - 1)) - 1) + 1
             width = (width - layer.kernel_width) + 1
         elif type(layer) == PoolingLayer:
             height = (height - layer.pool_height) / layer.stride_height + 1
