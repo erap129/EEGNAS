@@ -47,7 +47,7 @@ class ActivationLayer(Layer):
 
 class ConvLayer(Layer):
     # @initializer
-    def __init__(self, kernel_height=None, kernel_width=None, filter_num=None, stride=None, name=None):
+    def __init__(self, kernel_height=None, kernel_width=None, filter_num=None, stride=None, dilation_height=None, name=None):
         Layer.__init__(self, name)
         if kernel_height is None:
             kernel_height = random.randint(1, global_vars.get('kernel_height_max'))
@@ -57,10 +57,13 @@ class ConvLayer(Layer):
             filter_num = random.randint(1, global_vars.get('filter_num_max'))
         if stride is None:
             stride = random.randint(1, global_vars.get('conv_stride_max'))
+        if dilation_height is None:
+            dilation_height = random.randint(1, global_vars.get('max_diliation_height'))
         self.kernel_height = kernel_height
         self.kernel_width = kernel_width
         self.filter_num = filter_num
         self.stride = stride
+        self.dilation_height = dilation_height
 
 
 class PoolingLayer(Layer):
