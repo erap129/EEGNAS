@@ -58,7 +58,7 @@ class ConvLayer(Layer):
         if stride is None:
             stride = random.randint(1, global_vars.get('conv_stride_max'))
         if dilation_height is None:
-            dilation_height = random.randint(1, global_vars.get('max_diliation_height'))
+            dilation_height = random.randint(1, global_vars.get('max_dilation_height'))
         self.kernel_height = kernel_height
         self.kernel_width = kernel_width
         self.filter_num = filter_num
