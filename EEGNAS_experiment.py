@@ -228,7 +228,7 @@ def add_exp(exp_id, index, all_exps, run):
         algo_name += '_TF'
     if global_vars.get('random_search'):
         algo_name += '_RS'
-    all_exps['algorithm'].append(f'EEGNAS_{global_vars.get("num_layers")}_layers')
+    all_exps['algorithm'].append(algo_name)
     all_exps['architecture'].append('best')
     all_exps['measure'].append(global_vars.get('ga_objective'))
     all_exps['dataset'].append(global_vars.get('dataset'))

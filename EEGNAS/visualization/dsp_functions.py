@@ -30,3 +30,10 @@ def batch_filter_apply(filter_func, data, lowcut, highcut, fs, order=5):
         for channel_idx in range(len(data[data_idx])):
             data[data_idx, channel_idx] = filter_func(data[data_idx, channel_idx], lowcut, highcut, fs, order)
     return data
+
+
+def get_fft(signal, frequency):
+    nyquist = int(frequency / 2) - 1
+    freqs = np.fft.fftfreq(len(signal), 1 / frequency)
+    freq_idx = np.argmax(freqs >= nyquist)
+    return freqs[:freq_idx], abs(np.fft.fft(signal)[:freq_idx])

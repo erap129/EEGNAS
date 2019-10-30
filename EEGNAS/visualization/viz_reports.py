@@ -14,8 +14,9 @@ from EEGNAS.utilities.data_utils import get_dummy_input, prepare_data_for_NN, te
 from EEGNAS.utilities.misc import unify_dataset
 from EEGNAS.utilities.monitors import get_eval_function
 from EEGNAS.visualization.deconvolution import ConvDeconvNet
+from EEGNAS.visualization.dsp_functions import get_fft
 from EEGNAS.visualization.pdf_utils import get_image, create_pdf_from_story, create_pdf
-from EEGNAS.visualization.signal_plotting import tf_plot, plot_performance_frequency, image_plot
+from EEGNAS.visualization.signal_plotting import tf_plot, plot_performance_frequency, image_plot, fft_plot
 import numpy as np
 from torch import nn
 from reportlab.lib.styles import getSampleStyleSheet
@@ -133,8 +134,8 @@ def kernel_deconvolution_report(model, dataset, folder_name):
     class_examples = []
     if global_vars.get('deconvolution_by_class'):
         for class_idx in range(global_vars.get('n_classes')):
-            # class_examples.append(dataset['train'].X[np.where(dataset['train'].y == class_idx)])
-            class_examples.append(get_top_n_class_examples(dataset['train'].X[np.where(dataset['train'].y == class_idx)], class_idx, model, 5))
+            all_class_examples = dataset['train'].X[np.where(dataset['train'].y == class_idx)]
+            class_examples.append(get_top_n_class_examples(all_class_examples, class_idx, model, len(all_class_examples)))
     else:
         class_examples.append(dataset['train'].X)
     for layer_idx, layer in list(enumerate(model.children()))[global_vars.get('layer_idx_cutoff'):]:
@@ -142,31 +143,56 @@ def kernel_deconvolution_report(model, dataset, folder_name):
             for filter_idx in range(layer.out_channels):
                 for class_idx, examples in enumerate(class_examples):
                     X = prepare_data_for_NN(examples)
-                    prev_filter_val = torch.mean(get_intermediate_layer_value(model, X, layer_idx), axis=[0,2,3])
+                    # prev_filter_val = torch.mean(get_intermediate_layer_value(model, X, layer_idx), axis=[0,2,3])
                     reconstruction = conv_deconv.forward(X, layer_idx, filter_idx)
-                    after_filter_val = torch.mean(get_intermediate_layer_value(model, reconstruction, layer_idx), axis=[0,2,3])
-                    with open(f'{report_file_name[:-4]}.txt', 'a+') as f:
-                        print(f'filter values for layer {layer_idx}, filter {filter_idx}:\nPrevious:{prev_filter_val}'
-                              f'\nAfter:{after_filter_val}\nThe relevant comparison is Prev:{prev_filter_val[filter_idx]}'
-                              f' against After:{after_filter_val[filter_idx]}\n'
-                              f'Class distribution before:{get_class_distribution(model, X)}\n'
-                              f'Class distribution after:{get_class_distribution(model, reconstruction)}\n', file=f)
+                    # after_filter_val = torch.mean(get_intermediate_layer_value(model, reconstruction, layer_idx), axis=[0,2,3])
+                    dist_dict_original = get_class_distribution(model, X)
+                    dist_dict_deconv = get_class_distribution(model, reconstruction)
+                    for key in dist_dict_original.keys():
+                        try:
+                            orig_count = dist_dict_original[key]
+                        except KeyError:
+                            orig_count = 0
+                        try:
+                            deconv_count = dist_dict_deconv[key]
+                        except KeyError:
+                            deconv_count = 0
+                        global_vars.get('sacred_ex').log_scalar(f'layer_{layer_idx}_class_{class_idx}_original',
+                                                                orig_count, filter_idx)
+                        global_vars.get('sacred_ex').log_scalar(f'layer_{layer_idx}_class_{class_idx}_deconv',
+                                                                deconv_count, filter_idx)
+                    # with open(f'{report_file_name[:-4]}.txt', 'a+') as f:
+                    #     print(f'filter values for layer {layer_idx}, filter {filter_idx}, class {class_idx}:\nPrevious:{prev_filter_val}'
+                    #           f'\nAfter:{after_filter_val}\nThe relevant comparison is Prev:{prev_filter_val[filter_idx]}'
+                    #           f' against After:{after_filter_val[filter_idx]}\n'
+                    #           f'Class distribution before:{get_class_distribution(model, X)}\n'
+                    #           f'Class distribution after:{get_class_distribution(model, reconstruction)}\n', file=f)
                     if global_vars.get('to_eeglab'):
                         tensor_to_eeglab(reconstruction,
-                            f'{folder_name}/kernel_deconvolution/X_layer_{layer_idx}_filter_{filter_idx}.mat')
-                    subj_tfs = []
-                    for eeg_chan in eeg_chans:
-                        subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),
-                                                              eeg_chan, global_vars.get('num_frex'), global_vars.get('frequency')))
-                    if global_vars.get('deconvolution_by_class'):
-                        class_title = label_by_idx(class_idx)
-                    else:
-                        class_title = 'all'
-                    tf_plots.append(tf_plot(subj_tfs, f'kernel deconvolution for layer {layer_idx},'
-                                            f' filter {filter_idx}, class {class_title}'))
-    create_pdf(report_file_name, tf_plots)
-    for im in tf_plots:
-        os.remove(im)
+                            f'{folder_name}/kernel_deconvolution/X_layer_{layer_idx}_filter_{filter_idx}_class_{label_by_idx(class_idx)}.mat')
+                    if global_vars.get('plot'):
+                        subj_tfs = []
+                        for eeg_chan in eeg_chans:
+                            if global_vars.get('plot_TF'):
+                                subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),
+                                                                  eeg_chan, global_vars.get('frequency'), global_vars.get('num_frex'), dB=True))
+                                print(f'applied TF to layer {layer_idx}, class {class_idx}, channel {eeg_chan}')
+                            else:
+                                subj_tfs.append(get_fft(np.average(reconstruction.cpu().detach().numpy(), axis=0).squeeze()[eeg_chan], global_vars.get('frequency')))
+                        if global_vars.get('deconvolution_by_class'):
+                            class_title = label_by_idx(class_idx)
+                        else:
+                            class_title = 'all'
+                        if global_vars.get('plot_TF'):
+                            tf_plots.append(tf_plot(subj_tfs, f'kernel deconvolution for layer {layer_idx},'
+                                                f' filter {filter_idx}, class {class_title}'))
+                        else:
+                            tf_plots.append(fft_plot(subj_tfs,  f'kernel deconvolution for layer {layer_idx},'
+                                                f' filter {filter_idx}, class {class_title}'))
+        if global_vars.get('plot'):
+            create_pdf(report_file_name, tf_plots)
+            for im in tf_plots:
+                os.remove(im)
 
 
 '''
@@ -239,7 +265,7 @@ maximize the response of that filter. Plot the result for each filter in each co
 defined in configuration file. layer_idx_cutoff defines the starting index for the layers (defined in the 
 global variables).
 '''
-def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cutoff=0):
+def gradient_ascent_report(pretrained_model, dataset, folder_name):
     report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("gradient_ascent_steps")}_steps.pdf'
     if os.path.isfile(report_file_name):
         return
@@ -251,15 +277,23 @@ def gradient_ascent_report(pretrained_model, dataset, folder_name, layer_idx_cut
         max_value = 0
         for chan_idx, example in enumerate(max_examples):
             for eeg_chan in eeg_chans:
-                plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example, eeg_chan, 250, global_vars.get('num_frex'), dB=True)
-                max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
+                if global_vars.get('plot_TF'):
+                    plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_tf_data_efficient(example, eeg_chan, global_vars.get('frequency'), global_vars.get('num_frex'), dB=True)
+                    max_value = max(max_value, np.max(plot_dict[(layer_idx, chan_idx, eeg_chan)]))
+                else:
+                    plot_dict[(layer_idx, chan_idx, eeg_chan)] = get_fft(example.squeeze()[eeg_chan], global_vars.get('frequency'))
         class_str = ''
         for chan_idx, example in enumerate(max_examples):
             if layer_idx >= len(list(pretrained_model.children())) - 3:
                 class_str = f', class:{label_by_idx(chan_idx)}'
-            plot_imgs[(layer_idx, chan_idx)] = tf_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
+            if global_vars.get('plot_TF'):
+                plot_imgs[(layer_idx, chan_idx)] = tf_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
                                                        f'TF plot of optimal example for layer {layer_idx},'
                                                        f' channel {chan_idx}{class_str}')
+            else:
+                plot_imgs[(layer_idx, chan_idx)] = fft_plot([plot_dict[(layer_idx, chan_idx, c)] for c in eeg_chans],
+                                                            f'FFT plot of optimal example for layer {layer_idx},'
+                                                            f' channel {chan_idx}{class_str}')
             print(f'plot gradient ascent TF for layer {layer_idx}, channel {chan_idx}')
 
     story = []

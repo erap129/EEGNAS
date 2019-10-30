@@ -15,4 +15,5 @@ def get_class_distribution(model, X):
         preds = model(X)
         preds = preds.cpu().data.numpy()
         pred_labels = np.argmax(preds, axis=1).squeeze()
-    return np.bincount(pred_labels)
+    unique, counts = np.unique(pred_labels, return_counts=True)
+    return dict(zip(unique, counts))

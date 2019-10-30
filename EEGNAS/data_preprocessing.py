@@ -255,6 +255,9 @@ def get_cho_train_val_test(subject_id):
     return train_set, valid_set, test_set
 
 
+# def get_moabb_train_val_test(subject_id, dataset_name):
+
+
 def get_bci_iv_2b_train_val_test(subject_id):
     paradigm = LeftRightImagery()
     dataset = BNCI2014004()

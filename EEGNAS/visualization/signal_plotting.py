@@ -63,6 +63,34 @@ def tf_plot(tf_trial_avgs, title, yscale='linear'):
     return im_name
 
 
+def fft_plot(ffts, title, yscale='linear'):
+    matplotlib.rcParams.update({'font.size': 16})
+    plt.figure(num=None, figsize=(6 * len(ffts), 7), dpi=80, facecolor='w', edgecolor='k')
+    for index, tf in enumerate(ffts):
+        ax = plt.subplot(1, len(ffts), index+1)
+        ax.set_xlabel('frequency')
+        if index == 0:
+            ax.set_ylabel('amount')
+        ax.set_yscale(yscale)
+        ax.plot(tf[0], tf[1])
+        try:
+            ax.set_title(eeg_label_by_idx(index))
+        except KeyError:
+            ax.set_title(f'EEG channel {index + 1}')
+    plt.suptitle(title)
+    im_files = list(os.walk('temp'))[0][2]
+    if len(im_files) == 0:
+        im_num = 1
+    else:
+        im_nums = [int(x[:-4]) for x in im_files]
+        im_nums.sort()
+        im_num = im_nums[-1] + 1
+    im_name = f'temp/{im_num}.png'
+    plt.savefig(im_name, bbox_inches='tight')
+    plt.close('all')
+    return im_name
+
+
 def plot_performance_frequency(performances, baselines, legend):
     colors = ['greed', 'red', 'blue']
     im_names = []
