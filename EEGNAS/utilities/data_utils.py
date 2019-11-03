@@ -10,7 +10,7 @@ from EEGNAS import global_vars
 import numpy as np
 from scipy.io import savemat
 from PIL import Image
-from EEGNAS.utilities.misc import create_folder
+from EEGNAS.utilities.misc import create_folder, label_by_idx, unify_dataset
 from sktime.utils.load_data import load_from_tsfile_to_dataframe
 import pandas as pd
 import numpy as np
@@ -119,30 +119,34 @@ def write_dict(dict, filename):
             else:
                 f.write(f"{K}\t{global_vars.get(K)}\n")
 
-def export_data_to_file(dataset, format, out_folder, classes=None, transpose_time=False):
+def export_data_to_file(dataset, format, out_folder, classes=None, transpose_time=False, unify=False):
     create_folder(out_folder)
+    if unify:
+        dataset = unify_dataset(dataset)
+        dataset = {'all': dataset}
     for segment in dataset.keys():
         if classes is None:
-            X_data = dataset[segment].X
-            y_data = dataset[segment].y
-            class_str = ''
+            X_data = [dataset[segment].X]
+            y_data = [dataset[segment].y]
+            class_strs = ['']
         else:
             X_data = []
             y_data = []
+            class_strs = []
             for class_idx in classes:
-                X_data.extend(dataset[segment].X[np.where(dataset[segment].y == class_idx)])
-                y_data.extend(dataset[segment].y[np.where(dataset[segment].y == class_idx)])
-            class_str = f'_classes_{str(classes)}'
-            X_data, y_data = unison_shuffled_copies(np.array(X_data), np.array(y_data))
+                X_data.append(dataset[segment].X[np.where(dataset[segment].y == class_idx)])
+                y_data.append(dataset[segment].y[np.where(dataset[segment].y == class_idx)])
+                class_strs.append(f'_{label_by_idx(class_idx)}')
+        for X,y,class_str in zip(X_data, y_data, class_strs):
             if transpose_time:
-                X_data = np.transpose(X_data, (0, 2, 1))
-        if format == 'numpy':
-            np.save(f'{out_folder}/X_{segment}{class_str}', X_data)
-            np.save(f'{out_folder}/y_{segment}{class_str}', y_data)
-        elif format == 'matlab':
-            X_data = np.transpose(X_data, [1, 2, 0])
-            savemat(f'{out_folder}/x_{segment}{class_str}.mat', {'data': X_data})
-            savemat(f'{out_folder}/y_{segment}{class_str}.mat', {'data': y_data})
+                X = np.transpose(X, (0, 2, 1))
+            if format == 'numpy':
+                np.save(f'{out_folder}/X_{segment}{class_str}', X)
+                np.save(f'{out_folder}/y_{segment}{class_str}', y)
+            elif format == 'matlab':
+                X = np.transpose(X, [1, 2, 0])
+                savemat(f'{out_folder}/X_{segment}{class_str}.mat', {'data': X})
+                savemat(f'{out_folder}/y_{segment}{class_str}.mat', {'data': y})
 
 
 def EEG_to_TF_mne(dataset):

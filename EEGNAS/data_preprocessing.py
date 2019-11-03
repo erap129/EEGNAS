@@ -612,10 +612,10 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    for dataset in ["NER15"]:
+    for dataset in ["BCI_IV_2a"]:
         global_vars.set('dataset', dataset)
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
-        export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}', transpose_time=False)
+        export_data_to_file(dataset, 'matlab', f'data/export_data/{global_vars.get("dataset")}', classes=[0,1,2,3], transpose_time=False, unify=True)
 
