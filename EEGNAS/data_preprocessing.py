@@ -255,8 +255,12 @@ def get_cho_train_val_test(subject_id):
     return train_set, valid_set, test_set
 
 
-# def get_moabb_train_val_test(subject_id, dataset_name):
-
+def get_moabb_train_val_test(subject_id):
+    paradigm = MotorImagery()
+    dataset_names = [type(dataset).__name__ for dataset in paradigm.datasets]
+    dataset = paradigm.datasets[dataset_names.index(global_vars.get('dataset'))]
+    X, y, metadata = paradigm.get_data(dataset=dataset, subjects=[subject_id])
+    print
 
 def get_bci_iv_2b_train_val_test(subject_id):
     paradigm = LeftRightImagery()
@@ -592,6 +596,8 @@ def get_train_val_test(data_folder, subject_id):
         return get_cifar10(data_folder)
     elif global_vars.get('dataset') in ["ArticularyWordRecognition", "AtrialFibrillation", "BasicMotions", "CharacterTrajectories", "Cricket", "DuckDuckGeese", "EigenWorms", "Epilepsy", "ERing", "EthanolConcentration", "FaceDetection", "FingerMovements", "HandMovementDirection", "Handwriting", "Heartbeat", "InsectWingbeat", "JapaneseVowels", "Libras", "LSST", "MotorImagery", "NATOPS", "PEMS-SF", "PenDigits", "PhonemeSpectra", "RacketSports", "SelfRegulationSCP1", "SelfRegulationSCP2", "SpokenArabicDigits", "StandWalkJump", "UWaveGestureLibrary"]:
         return get_multivariate_ts(data_folder)
+    elif global_vars.get('dataset') in ["AlexMI", "BNCI2014001", "BNCI2014002", "BNCI2014004", "BNCI2015001","BNCI2015004","Cho2017","MunichMI","Ofner2017","PhysionetMI","Schirrmeister2017","Shin2017A","Shin2017B","Weibo2014","Zhou2016","SSVEPExo"]:
+        get_moabb_train_val_test(subject_id)
     else:
         return get_data_from_npy(data_folder)
 
@@ -612,10 +618,23 @@ def get_dataset(subject_id):
 
 if __name__ == '__main__':
     set_default_config('configurations/config.ini')
-    for dataset in ["BCI_IV_2a"]:
+    for dataset in ["netflow_asflow"]:
         global_vars.set('dataset', dataset)
+
+        if dataset == 'netflow_asflow':
+            global_vars.set('autonomous_systems', [20940, 16509, 15169])
+            global_vars.set('date_range', "1.7.2017-1.10.2019")
+            global_vars.set('as_to_test', 20940)
+            global_vars.set('start_hour', 15)
+            global_vars.set('input_height', 240)
+            global_vars.set('prediction_buffer', 2)
+            global_vars.set('steps_ahead', 5)
+            global_vars.set('jumps', 24)
+            global_vars.set('max_handovers', 11)
+            global_vars.set('normalize_netflow_data', True)
+
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
-        export_data_to_file(dataset, 'matlab', f'data/export_data/{global_vars.get("dataset")}', classes=[0,1,2,3], transpose_time=False, unify=True)
+        export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}', transpose_time=False, unify=False)
 

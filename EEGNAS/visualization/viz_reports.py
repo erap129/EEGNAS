@@ -1,4 +1,5 @@
 import os
+import random
 from collections import OrderedDict
 from copy import deepcopy
 import shap
@@ -7,16 +8,18 @@ from braindecode.torch_ext.util import np_to_var
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from EEGNAS import global_vars
+from EEGNAS.data.netflow.netflow_data_utils import turn_netflow_into_classification, get_netflow_threshold
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
 from EEGNAS.utilities.NN_utils import get_intermediate_layer_value, get_class_distribution
 from EEGNAS.utilities.data_utils import get_dummy_input, prepare_data_for_NN, tensor_to_eeglab
-from EEGNAS.utilities.misc import unify_dataset
+from EEGNAS.utilities.misc import unify_dataset, concat_train_val_sets, eeg_label_by_idx, write_dict
 from EEGNAS.utilities.monitors import get_eval_function
 from EEGNAS.visualization.deconvolution import ConvDeconvNet
 from EEGNAS.visualization.dsp_functions import get_fft
 from EEGNAS.visualization.pdf_utils import get_image, create_pdf_from_story, create_pdf
-from EEGNAS.visualization.signal_plotting import tf_plot, plot_performance_frequency, image_plot, fft_plot
+from EEGNAS.visualization.signal_plotting import tf_plot, plot_performance_frequency, image_plot, fft_plot, \
+    get_next_temp_image_name
 import numpy as np
 from torch import nn
 from reportlab.lib.styles import getSampleStyleSheet
@@ -135,14 +138,16 @@ def kernel_deconvolution_report(model, dataset, folder_name):
     if global_vars.get('deconvolution_by_class'):
         for class_idx in range(global_vars.get('n_classes')):
             all_class_examples = dataset['train'].X[np.where(dataset['train'].y == class_idx)]
-            class_examples.append(get_top_n_class_examples(all_class_examples, class_idx, model, len(all_class_examples)))
+            class_examples.append(get_top_n_class_examples(all_class_examples, class_idx, model, int(len(all_class_examples) * global_vars.get('deconvolution_sampling_rate'))))
     else:
-        class_examples.append(dataset['train'].X)
+        class_examples.append(np.random.choice(dataset['train'].X, int(dataset['train'].X.shape[0] * global_vars.get('deconvolution_sampling_rate')) , replace=False))
     for layer_idx, layer in list(enumerate(model.children()))[global_vars.get('layer_idx_cutoff'):]:
         if type(layer) == nn.Conv2d:
             for filter_idx in range(layer.out_channels):
                 for class_idx, examples in enumerate(class_examples):
                     X = prepare_data_for_NN(examples)
+                    if global_vars.get('avg_deconv'):
+                        X = torch.mean(X, axis=0)[None, :, :, :]
                     # prev_filter_val = torch.mean(get_intermediate_layer_value(model, X, layer_idx), axis=[0,2,3])
                     reconstruction = conv_deconv.forward(X, layer_idx, filter_idx)
                     # after_filter_val = torch.mean(get_intermediate_layer_value(model, reconstruction, layer_idx), axis=[0,2,3])
@@ -345,32 +350,110 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
 
 
 '''
-use shap to visualize model & data
+Use shap to get feature importance for each class
 '''
 def shap_report(model, dataset, folder_name):
+    if global_vars.get('dataset') == 'netflow_asflow':
+        file_path = f"{os.path.dirname(os.path.abspath(__file__))}/../data/netflow/{global_vars.get('as_to_test')}_{global_vars.get('date_range')}.csv"
+        for segment in ['train', 'test']:
+            dataset[segment].y = turn_netflow_into_classification(dataset[segment].X, dataset[segment].y, get_netflow_threshold(file_path, global_vars.get('netflow_threshold_std')))
+        global_vars.set('n_classes', 2)
     report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
-    test_data = np_to_var(dataset['test'].X[:, :, :, None])
-    class_examples = {'train': [], 'test': []}
-    for class_idx in range(global_vars.get('n_classes')):
-        class_examples['test'].append(test_data[np.where(dataset['test'].y == class_idx)])
-        class_examples['train'].append(train_data[np.where(dataset['train'].y == class_idx)])
-    e = shap.DeepExplainer(model.cpu(), train_data[np.random.choice(train_data.shape[0], 100, replace=False)])
+    print(f'training DeepExplainer on {int(train_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
+    e = shap.DeepExplainer(model.cpu(), train_data[np.random.choice(train_data.shape[0], int(train_data.shape[0] * global_vars.get('shap_sampling_rate')) , replace=False)])
     shap_imgs = []
-    for class_idx in range(global_vars.get('n_classes')):
-        for segment in ['train', 'test']:
-            class_exa = class_examples[segment][class_idx]
-            segment_examples = class_exa[np.random.choice(class_exa.shape[0], 5, replace=False)]
-            shap_values = e.shap_values(segment_examples)
-            image_plot(shap_values, -segment_examples.numpy(), show=False, width=10)
-            plt.suptitle(f'SHAP values for dataset: {global_vars.get("dataset")}, segment: {segment}, class: {label_by_idx(class_idx)}')
-            shap_img_file = f'temp/train_shap_{class_idx}.png'
-            shap_imgs.append(shap_img_file)
-            plt.savefig(shap_img_file, dpi=200)
+    for segment in ['train', 'test']:
+        segment_data = np_to_var(dataset[segment].X[:, :, :, None])
+        print(f'calculating SHAP values for {int(segment_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
+        segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(train_data.shape[0] * global_vars.get("shap_sampling_rate")), replace=False)]
+        shap_values = e.shap_values(segment_examples)
+
+        shap_val = np.array(shap_values).squeeze()
+        # shap_abs = np.absolute(shap_val)
+        shap_sum = np.sum(shap_val, axis=1)
+
+        f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
+        for idx, ax in enumerate(axes):
+            im = ax.imshow(shap_sum[idx], cmap='seismic', interpolation='nearest', aspect='auto')
+            ax.set_title(f'class: {label_by_idx(idx)}')
+            ax.set_yticks([i for i in range(global_vars.get('eeg_chans'))])
+            ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
+            if global_vars.get('dataset') == 'netflow_asflow':
+                ax.set_xticks(list(range(global_vars.get('input_height')))[::2])
+                ax.set_xticklabels([(i+global_vars.get('start_hour')) % 24 for i in range(global_vars.get('input_height'))][::2])
+            ax.tick_params(axis='both', which='major', labelsize=5)
+        f.subplots_adjust(right=0.8)
+        cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
+        f.colorbar(im, cax=cbar_ax)
+
+        plt.suptitle(f'SHAP values for dataset: {global_vars.get("dataset")}, segment: {segment}\nchannel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}', fontsize=10)
+        shap_img_file = f'temp/{get_next_temp_image_name("temp")}.png'
+        shap_imgs.append(shap_img_file)
+        plt.savefig(shap_img_file, dpi=300)
     story = []
     for im in shap_imgs:
         story.append(get_image(im))
     create_pdf_from_story(report_file_name, story)
     global_vars.get('sacred_ex').add_artifact(report_file_name)
     for im in shap_imgs:
+        os.remove(im)
+
+
+'''
+Use shap to visualize CNN gradients
+'''
+def shap_gradient_report(model, dataset, folder_name):
+    model = model.cpu()
+    report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
+    train_data = np_to_var(dataset['train'].X[:, :, :, None])
+    story = []
+    shap_imgs = []
+    all_paths = []
+    segment_examples = {}
+    segment_labels = {}
+    for segment in ['train', 'test']:
+        segment_data = np_to_var(dataset[segment].X[:, :, :, None])
+        selected_examples = np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get('shap_sampling_rate')), replace=False)
+        segment_examples[segment] = segment_data[selected_examples]
+        segment_labels[segment] = dataset[segment].y[selected_examples]
+
+    shap_rankings = {'train': OrderedDict(), 'test': OrderedDict()}
+    prev_layer = None
+    for layer_idx, layer in list(enumerate(list(model.children())))[global_vars.get('layer_idx_cutoff'):]:
+        if layer_idx > 0 and type(prev_layer) == nn.Conv2d: # we only take layers whose INPUT is a conv
+            e = shap.GradientExplainer((model, list(model.children())[layer_idx]), train_data)
+            for segment in ['train', 'test']:
+
+                plt.clf()
+                print(f'Getting shap values for {len(segment_examples[segment])} {segment} samples')
+                shap_values, indexes = e.shap_values(segment_examples[segment], ranked_outputs=2, nsamples=200)
+
+                shap_val = np.array(shap_values[0]).squeeze()
+                shap_abs = np.absolute(shap_val)
+                shap_sum = np.sum(shap_abs, axis=0) # sum on sample axis
+                if shap_sum.ndim > 1:
+                    shap_sum = np.sum(shap_sum, axis=1) # sum on time axis
+                shap_sum_idx = np.argsort(shap_sum) # sort
+                for filter_idx in shap_sum_idx:
+                    shap_rankings[segment][f'layer_{layer_idx-1}_filter_{filter_idx}'] = shap_sum[filter_idx] # we use layer_idx-1 because GradientExplainer looks at an INPUT of the layer
+
+                if global_vars.get('plot'):
+                    index_names = np.vectorize(lambda x: label_by_idx(x))(indexes)
+                    shap.image_plot(shap_values, -segment_examples[segment].numpy(), labels=index_names)
+                    plt.suptitle(f'SHAP gradient values for dataset: {global_vars.get("dataset")}, segment: {segment}, layer {layer_idx}\n'
+                                 f'segment labels:{[label_by_idx(segment_labels[segment][i]) for i in range(len(segment_labels[segment]))]}', fontsize=10)
+                    shap_img_file = f'temp/{get_next_temp_image_name("temp")}.png'
+                    shap_imgs.append(shap_img_file)
+                    plt.savefig(shap_img_file, dpi=200)
+                    story.append(get_image(shap_img_file))
+                    all_paths.append(shap_img_file)
+        prev_layer = layer
+
+    write_dict(shap_rankings['train'], f'{folder_name}/shap_rankings_train.txt')
+    write_dict(shap_rankings['test'], f'{folder_name}/shap_rankings_test.txt')
+    if global_vars.get('plot'):
+        create_pdf_from_story(report_file_name, story)
+        global_vars.get('sacred_ex').add_artifact(report_file_name)
+    for im in all_paths:
         os.remove(im)

@@ -107,7 +107,7 @@ def aggregate_accuracies(ys, agg_len):
     return ys_new
 
 
-def write_dict(dict, filename):
+def write_config(dict, filename):
     with open(filename, 'w') as f:
         all_keys = []
         for _, inner_dict in sorted(dict.items()):
@@ -209,7 +209,7 @@ def EEG_to_TF_matlab(dataset, out_folder):
 
 
 def tensor_to_eeglab(X, filepath):
-    savemat(filepath, {'data': np.transpose(X.cpu().detach().numpy().squeeze(), [1, 2, 0])})
+    savemat(filepath, {'data': np.transpose(X.cpu().detach().numpy().squeeze(axis=3), [1, 2, 0])})
 
 
 def sktime_to_numpy(file):

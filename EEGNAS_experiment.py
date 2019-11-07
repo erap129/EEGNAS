@@ -6,7 +6,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 from sacred import Experiment
 from sacred.observers import MongoObserver
 from EEGNAS.evolution.loaded_model_evaluations import EEGNAS_from_file
-from EEGNAS.utilities.data_utils import write_dict
+from EEGNAS.utilities.data_utils import write_config
 from EEGNAS.utilities.gdrive import upload_exp_to_gdrive
 from EEGNAS.utilities.config_utils import config_to_dict, get_configurations, get_multiple_values, set_params_by_dataset, \
     set_gpu, set_seeds
@@ -188,7 +188,7 @@ def main(_config):
         atexit.register(exit_handler, exp_folder, args.debug_mode)
         create_folder(exp_folder)
         FOLDER_NAMES.append(exp_name)
-        write_dict(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
+        write_config(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
         csv_file = f"{exp_folder}/{exp_name}.csv"
         report_file = f"{exp_folder}/report_{exp_name}.csv"
         if 'cross_subject' in multiple_values and not global_vars.get('cross_subject'):
@@ -205,7 +205,7 @@ def main(_config):
             for best_model_filename in best_model_filenames:
                 target_exp(exp_name, csv_file, subjects, model_from_file=best_model_filename, write_header=False)
         global_vars.set('total_time', str(time.time() - start_time))
-        write_dict(global_vars.config, f"{exp_folder}/final_config_{exp_name}.ini")
+        write_config(global_vars.config, f"{exp_folder}/final_config_{exp_name}.ini")
         result = generate_report(csv_file, report_file)
         ex.add_artifact(report_file)
     except Exception as e:

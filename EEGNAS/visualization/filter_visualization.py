@@ -4,8 +4,10 @@ import sys
 from copy import deepcopy
 from sacred import Experiment
 from sacred.observers import MongoObserver
+
 sys.path.append("..")
 sys.path.append("../..")
+from EEGNAS.evolution.nn_training import NN_Trainer
 from EEGNAS.visualization import viz_reports
 from EEGNAS.utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations
 from EEGNAS.utilities.misc import concat_train_val_sets
@@ -16,7 +18,7 @@ import torch
 from braindecode.torch_ext.util import np_to_var
 from EEGNAS import global_vars
 from EEGNAS.data_preprocessing import get_dataset
-from EEGNAS_experiment import set_params_by_dataset
+from EEGNAS_experiment import set_params_by_dataset, get_normal_settings
 import matplotlib.pyplot as plt
 from EEGNAS.utilities.misc import create_folder
 from EEGNAS.visualization.pdf_utils import create_pdf
@@ -94,19 +96,26 @@ if __name__ == '__main__':
         update_global_vars_from_config_dict(configuration)
         global_vars.set('band_filter', {'pass': butter_bandpass_filter,
                                         'stop': butter_bandstop_filter}[global_vars.get('band_filter')])
-        model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
-        model.cuda()
 
         if prev_dataset != global_vars.get('dataset'):
             set_params_by_dataset('../configurations/dataset_params.ini')
             subject_id = global_vars.get('subject_id')
             dataset = get_dataset(subject_id)
-            concat_train_val_sets(dataset)
             prev_dataset = global_vars.get('dataset')
+
+            model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
+            model.cuda()
+
+            if global_vars.get('finetune_model'):
+                stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+                trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
+                model = trainer.train_model(model, dataset, final_evaluation=True)
+
+            concat_train_val_sets(dataset)
 
         now = datetime.now()
         date_time = now.strftime("%m.%d.%Y-%H:%M")
-        folder_name = f'results/{date_time}_{global_vars.get("dataset")}'
+        folder_name = f'results/{date_time}_{global_vars.get("dataset")}_{global_vars.get("report")}'
         create_folder(folder_name)
         print(f'generating {global_vars.get("report")} report for model:')
         print(model)

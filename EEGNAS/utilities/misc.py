@@ -99,12 +99,16 @@ class RememberBest(object):
 def label_by_idx(idx):
     labels = {'BCI_IV_2a': ['Left Hand', 'Right Hand', 'Foot', 'Tongue'],
               'BCI_IV_2b': ['Left Hand', 'Right Hand'],
-              'TUH': ['Normal', 'Abnormal']}
+              'TUH': ['Normal', 'Abnormal'],
+              'netflow_asflow': ['no overflow', 'overflow']}
     return labels[global_vars.get('dataset')][idx]
 
 
 def eeg_label_by_idx(idx):
-    labels = {'BCI_IV_2b': ['C3', 'Cz', 'C4']}
+    labels = {'BCI_IV_2b': ['C3', 'Cz', 'C4'],
+              'BCI_IV_2a': ['Fz','FC3','FC1','FCz','FC2','FC4','C5','C3','C1','Cz','C2','C4','C6','CP3','CP1','CPz','CP2','CP4','P1','Pz','P2','POz'],
+              'TUH': ['A1', 'A2', 'C3', 'C4', 'CZ', 'F3', 'F4', 'F7', 'F8', 'FP1', 'FP2', 'FZ', 'O1', 'O2', 'P3', 'P4', 'PZ', 'T3', 'T4', 'T5', 'T6'],
+              'netflow_asflow': ['-101', '6461', '20940', '33891', '2914', '6762', '3257', '1299', '3356', '1273', '6453']}
     return labels[global_vars.get('dataset')][idx]
 
 
@@ -238,3 +242,9 @@ def pretty_print_model(name, model):
                 result += f'\t{param}: {value}\n'
     result += '\n'
     return result
+
+
+def write_dict(dict, filename):
+    with open(filename, 'w') as f:
+        for key, value in dict.items():
+            f.write(f"{key}:\t{value}\n")

@@ -78,17 +78,22 @@ def fft_plot(ffts, title, yscale='linear'):
         except KeyError:
             ax.set_title(f'EEG channel {index + 1}')
     plt.suptitle(title)
-    im_files = list(os.walk('temp'))[0][2]
+    im_num = get_next_im_filename()
+    im_name = f'temp/{im_num}.png'
+    plt.savefig(im_name, bbox_inches='tight')
+    plt.close('all')
+    return im_name
+
+
+def get_next_temp_image_name(folder):
+    im_files = list(os.walk(folder))[0][2]
     if len(im_files) == 0:
         im_num = 1
     else:
         im_nums = [int(x[:-4]) for x in im_files]
         im_nums.sort()
         im_num = im_nums[-1] + 1
-    im_name = f'temp/{im_num}.png'
-    plt.savefig(im_name, bbox_inches='tight')
-    plt.close('all')
-    return im_name
+    return im_num
 
 
 def plot_performance_frequency(performances, baselines, legend):
