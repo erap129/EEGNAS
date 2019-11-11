@@ -46,4 +46,4 @@ class EEGNAS_from_file(EEGNAS):
             model_name = re.findall(r'\d+', self.model_from_file)[-1]
         else:
             model_name = global_vars.get('model_name')
-        self.write_to_csv(stats, generation=1, model=model_name)
+        self.write_to_csv(stats, generation='final', model=model_name)

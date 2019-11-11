@@ -148,9 +148,7 @@ def kernel_deconvolution_report(model, dataset, folder_name):
                     X = prepare_data_for_NN(examples)
                     if global_vars.get('avg_deconv'):
                         X = torch.mean(X, axis=0)[None, :, :, :]
-                    # prev_filter_val = torch.mean(get_intermediate_layer_value(model, X, layer_idx), axis=[0,2,3])
                     reconstruction = conv_deconv.forward(X, layer_idx, filter_idx)
-                    # after_filter_val = torch.mean(get_intermediate_layer_value(model, reconstruction, layer_idx), axis=[0,2,3])
                     dist_dict_original = get_class_distribution(model, X)
                     dist_dict_deconv = get_class_distribution(model, reconstruction)
                     for key in dist_dict_original.keys():
@@ -166,12 +164,6 @@ def kernel_deconvolution_report(model, dataset, folder_name):
                                                                 orig_count, filter_idx)
                         global_vars.get('sacred_ex').log_scalar(f'layer_{layer_idx}_class_{class_idx}_deconv',
                                                                 deconv_count, filter_idx)
-                    # with open(f'{report_file_name[:-4]}.txt', 'a+') as f:
-                    #     print(f'filter values for layer {layer_idx}, filter {filter_idx}, class {class_idx}:\nPrevious:{prev_filter_val}'
-                    #           f'\nAfter:{after_filter_val}\nThe relevant comparison is Prev:{prev_filter_val[filter_idx]}'
-                    #           f' against After:{after_filter_val[filter_idx]}\n'
-                    #           f'Class distribution before:{get_class_distribution(model, X)}\n'
-                    #           f'Class distribution after:{get_class_distribution(model, reconstruction)}\n', file=f)
                     if global_vars.get('to_eeglab'):
                         tensor_to_eeglab(reconstruction,
                             f'{folder_name}/kernel_deconvolution/X_layer_{layer_idx}_filter_{filter_idx}_class_{label_by_idx(class_idx)}.mat')
@@ -366,7 +358,7 @@ def shap_report(model, dataset, folder_name):
     for segment in ['train', 'test']:
         segment_data = np_to_var(dataset[segment].X[:, :, :, None])
         print(f'calculating SHAP values for {int(segment_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
-        segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(train_data.shape[0] * global_vars.get("shap_sampling_rate")), replace=False)]
+        segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("shap_sampling_rate")), replace=False)]
         shap_values = e.shap_values(segment_examples)
 
         shap_val = np.array(shap_values).squeeze()

@@ -97,21 +97,20 @@ if __name__ == '__main__':
         global_vars.set('band_filter', {'pass': butter_bandpass_filter,
                                         'stop': butter_bandstop_filter}[global_vars.get('band_filter')])
 
-        if prev_dataset != global_vars.get('dataset'):
-            set_params_by_dataset('../configurations/dataset_params.ini')
-            subject_id = global_vars.get('subject_id')
-            dataset = get_dataset(subject_id)
-            prev_dataset = global_vars.get('dataset')
+        set_params_by_dataset('../configurations/dataset_params.ini')
+        subject_id = global_vars.get('subject_id')
+        dataset = get_dataset(subject_id)
+        prev_dataset = global_vars.get('dataset')
 
-            model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
-            model.cuda()
+        model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
+        model.cuda()
 
-            if global_vars.get('finetune_model'):
-                stop_criterion, iterator, loss_function, monitors = get_normal_settings()
-                trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-                model = trainer.train_model(model, dataset, final_evaluation=True)
+        if global_vars.get('finetune_model'):
+            stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+            trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
+            model = trainer.train_model(model, dataset, final_evaluation=True)
 
-            concat_train_val_sets(dataset)
+        concat_train_val_sets(dataset)
 
         now = datetime.now()
         date_time = now.strftime("%m.%d.%Y-%H:%M")

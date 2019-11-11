@@ -23,8 +23,6 @@ from EEGNAS import global_vars
 from torch import nn
 from EEGNAS.utilities.monitors import NoIncreaseDecrease
 import pdb
-from tensorboardX import SummaryWriter
-import random
 log = logging.getLogger(__name__)
 model_train_times = []
 
@@ -153,10 +151,6 @@ class NN_Trainer:
                                               'test': self.epochs_df.iloc[-1][f"test_{evaluation_metric}"]}
         if self.cuda:
             torch.cuda.empty_cache()
-        if global_vars.get('use_tensorboard'):
-            if self.current_model_index > 0:
-                with SummaryWriter(log_dir=f'{self.exp_folder}/tensorboard/gen_{self.current_generation}_model{self.current_model_index}') as w:
-                    w.add_graph(model, self.get_dummy_input())
         if global_vars.get('delete_finalized_models'):
             if global_vars.get('grid_as_ensemble'):
                 model_stats = {}

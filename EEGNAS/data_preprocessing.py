@@ -5,14 +5,14 @@ from copy import deepcopy
 from braindecode.datasets.bbci import BBCIDataset
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from EEGNAS.data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
 from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification, get_time_freq, \
     turn_dataset_to_timefreq
 from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
 from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
     EEG_to_TF_mne, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime, set_global_vars_by_dataset
-from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset
+from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset, MOABB_DATASETS
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from collections import OrderedDict
@@ -20,7 +20,7 @@ from braindecode.mne_ext.signalproc import mne_apply, resample_cnt
 from braindecode.datautil.splitters import split_into_two_sets
 from braindecode.datautil.signalproc import bandpass_cnt, exponential_running_standardize, highpass_cnt
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from moabb.datasets import Cho2017, BNCI2014004
 from moabb.paradigms import (LeftRightImagery, MotorImagery,
                              FilterBankMotorImagery)
@@ -260,7 +260,20 @@ def get_moabb_train_val_test(subject_id):
     dataset_names = [type(dataset).__name__ for dataset in paradigm.datasets]
     dataset = paradigm.datasets[dataset_names.index(global_vars.get('dataset'))]
     X, y, metadata = paradigm.get_data(dataset=dataset, subjects=[subject_id])
-    print
+    le = LabelEncoder()
+    le.fit(y)
+    y = le.transform(y)
+    kf = KFold(n_splits=global_vars.get('n_folds'), shuffle=False)
+    train_idxs, test_idxs = list(kf.split(list(range(len(X)))))[global_vars.get('test_fold_idx')]
+    X_train_val = X[train_idxs]
+    X_test = X[test_idxs]
+    y_train_val = y[train_idxs]
+    y_test = y[test_idxs]
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
+                                                      test_size=global_vars.get('valid_set_fraction'))
+
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
+    return train_set, valid_set, test_set
 
 def get_bci_iv_2b_train_val_test(subject_id):
     paradigm = LeftRightImagery()
@@ -557,6 +570,30 @@ def get_pure_cross_subject(data_folder, exclude=[]):
     return train_set, valid_set, test_set
 
 
+def get_leave_one_out(data_folder, test_subject_id):
+    X_train = []
+    y_train = []
+    X_test = []
+    y_test = []
+    for subject_id in global_vars.get('subjects_to_check'):
+        if subject_id != test_subject_id:
+            dataset = get_dataset(subject_id)
+            dataset = unify_dataset(dataset)
+            X_train.extend(dataset.X)
+            y_train.extend(dataset.y)
+    test_dataset = get_dataset(test_subject_id)
+    test_dataset = unify_dataset(test_dataset)
+    X_test.extend(test_dataset.X)
+    y_test.extend(test_dataset.y)
+    X_train = np.array(X_train)
+    X_test = np.array(X_test)
+    y_train = np.array(y_train)
+    y_test = np.array(y_test)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'))
+    train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
+    return train_set, valid_set, test_set
+
+
 def get_train_val_test(data_folder, subject_id):
     if global_vars.get('dataset') == 'BCI_IV_2a':
         return get_bci_iv_2a_train_val_test(f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}BCI_IV/",
@@ -596,8 +633,8 @@ def get_train_val_test(data_folder, subject_id):
         return get_cifar10(data_folder)
     elif global_vars.get('dataset') in ["ArticularyWordRecognition", "AtrialFibrillation", "BasicMotions", "CharacterTrajectories", "Cricket", "DuckDuckGeese", "EigenWorms", "Epilepsy", "ERing", "EthanolConcentration", "FaceDetection", "FingerMovements", "HandMovementDirection", "Handwriting", "Heartbeat", "InsectWingbeat", "JapaneseVowels", "Libras", "LSST", "MotorImagery", "NATOPS", "PEMS-SF", "PenDigits", "PhonemeSpectra", "RacketSports", "SelfRegulationSCP1", "SelfRegulationSCP2", "SpokenArabicDigits", "StandWalkJump", "UWaveGestureLibrary"]:
         return get_multivariate_ts(data_folder)
-    elif global_vars.get('dataset') in ["AlexMI", "BNCI2014001", "BNCI2014002", "BNCI2014004", "BNCI2015001","BNCI2015004","Cho2017","MunichMI","Ofner2017","PhysionetMI","Schirrmeister2017","Shin2017A","Shin2017B","Weibo2014","Zhou2016","SSVEPExo"]:
-        get_moabb_train_val_test(subject_id)
+    elif global_vars.get('dataset') in MOABB_DATASETS:
+        return get_moabb_train_val_test(subject_id)
     else:
         return get_data_from_npy(data_folder)
 

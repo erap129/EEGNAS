@@ -12,14 +12,14 @@ from EEGNAS.utilities.config_utils import config_to_dict, get_configurations, ge
     set_gpu, set_seeds
 import torch.nn.functional as F
 import torch
-from EEGNAS.data_preprocessing import get_train_val_test, get_pure_cross_subject, get_dataset
+from EEGNAS.data_preprocessing import get_train_val_test, get_pure_cross_subject, get_dataset, get_leave_one_out
 from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import BalancedBatchSizeIterator, CropsFromTrialsIterator
 from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from EEGNAS.global_vars import init_config
 from EEGNAS.utilities.report_generation import add_params_to_name, generate_report
 from EEGNAS.utilities.misc import create_folder, get_oper_by_loss_function, exit_handler, listen, not_exclusively_in, \
-    strfdelta, get_exp_id
+    strfdelta, get_exp_id, set_moabb_subjects
 from EEGNAS.utilities.monitors import *
 from EEGNAS.evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
@@ -113,6 +113,21 @@ def target_exp(exp_name, csv_file, subjects, model_from_file=None, write_header=
             eegnas_from_file.run_target_model()
 
 
+def target_exp_leave_one_out(exp_name, csv_file, subject_id, model_from_file):
+    stop_criterion, iterator, loss_function, monitors = get_settings()
+    train_set = {}
+    val_set = {}
+    test_set = {}
+    train_set[subject_id], val_set[subject_id], test_set[subject_id] = \
+        get_leave_one_out(data_folder, test_subject_id=subject_id)
+    eegnas_from_file = EEGNAS_from_file(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name = exp_name,
+                        train_set=train_set, val_set=val_set, test_set=test_set,
+                        stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
+                        subject_id=subject_id, fieldnames=FIELDNAMES,
+                        csv_file=csv_file, model_from_file=model_from_file)
+    eegnas_from_file.run_target_model()
+
+
 def per_subject_exp(exp_name, csv_file, subjects):
     stop_criterion, iterator, loss_function, monitors = get_settings()
     with open(csv_file, 'a', newline='') as csvfile:
@@ -139,27 +154,22 @@ def per_subject_exp(exp_name, csv_file, subjects):
             return [best_model_filename]
 
 
-def leave_one_out_exp(exp_name, csv_file, subjects):
+def leave_one_out_exp(exp_name, csv_file, subject_id):
     stop_criterion, iterator, loss_function, monitors = get_settings()
     with open(csv_file, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
-        writer.writeheader()
-    best_model_filenames = []
-    for subject_id in subjects:
         train_set = {}
         val_set = {}
         test_set = {}
         train_set[subject_id], val_set[subject_id], test_set[subject_id] =\
-            get_pure_cross_subject(data_folder, exclude=[subject_id])
-        evolution_file = '%s/subject_%d_archs.txt' % (exp_folder, subject_id)
+            get_leave_one_out(data_folder, test_subject_id=subject_id)
+        evolution_file = f'results/{exp_name}/subject_{subject_id}_archs.txt'
         eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name=exp_name,
                             train_set=train_set, val_set=val_set, test_set=test_set,
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             subject_id=subject_id, fieldnames=FIELDNAMES, strategy='per_subject',
                             evolution_file=evolution_file, csv_file=csv_file)
         best_model_filename = eegnas.evolution()
-        best_model_filenames.append(best_model_filename)
-    return best_model_filenames
+        return best_model_filename
 
 
 def get_settings():
@@ -200,6 +210,13 @@ def main(_config):
         elif global_vars.get('exp_type') == 'from_file':
             target_exp(exp_name, csv_file,
                        model_from_file=f"models/{global_vars.get('models_dir')}/{global_vars.get('model_file_name')}")
+        elif global_vars.get('exp_type') == 'leave_one_out':
+            with open(csv_file, 'a', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
+                writer.writeheader()
+            for subject in subjects:
+                best_model_filename = leave_one_out_exp(exp_name, csv_file, subject)
+                target_exp_leave_one_out(exp_name, csv_file, subject, best_model_filename)
         else:
             best_model_filenames = exp_funcs[global_vars.get('exp_type')](exp_name, csv_file, subjects)
             for best_model_filename in best_model_filenames:
@@ -262,6 +279,7 @@ if __name__ == '__main__':
         multiple_values = get_multiple_values(configurations)
         for index, configuration in enumerate(configurations):
             global_vars.set_config(configuration)
+            set_moabb_subjects()
             if index+1 < global_vars.get('start_exp_idx'):
                 continue
             if global_vars.get('exp_id'):

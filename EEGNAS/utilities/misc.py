@@ -8,6 +8,9 @@ import numpy as np
 import torch
 from braindecode.datautil.splitters import concatenate_sets
 import code, traceback, signal
+
+from moabb.paradigms import MotorImagery
+
 from EEGNAS import global_vars
 
 log = logging.getLogger(__name__)
@@ -15,6 +18,8 @@ import math
 import operator
 import torch.nn.functional as F
 
+
+MOABB_DATASETS = ['AlexMI', 'BNCI2014001', 'BNCI2014002', 'BNCI2014004', 'BNCI2015001', 'BNCI2015004', 'Cho2017', 'MunichMI', 'Ofner2017', 'PhysionetMI', 'Schirrmeister2017', 'Shin2017A', 'Weibo2014', 'Zhou2016']
 
 def create_folder(directory):
     try:
@@ -248,3 +253,15 @@ def write_dict(dict, filename):
     with open(filename, 'w') as f:
         for key, value in dict.items():
             f.write(f"{key}:\t{value}\n")
+
+
+def set_moabb_subjects():
+    if global_vars.get('dataset') in MOABB_DATASETS:
+        paradigm = MotorImagery()
+        dataset_names = [type(dataset).__name__ for dataset in paradigm.datasets]
+        dataset = paradigm.datasets[dataset_names.index(global_vars.get('dataset'))]
+        global_vars.set('subjects_to_check', dataset.subject_list)
+        X, y, metadata = paradigm.get_data(dataset=dataset, subjects=[dataset.subject_list[0]])
+        global_vars.set('eeg_chans', X.shape[1])
+        global_vars.set('input_height', X.shape[2])
+        global_vars.set('n_classes', len(np.unique(y)))
