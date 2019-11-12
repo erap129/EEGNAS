@@ -553,52 +553,6 @@ class EEGNAS_evolution:
                     weighted_population[pop]['age'] += 1
         return [pop for pop in weighted_population if pop is not None]
 
-    def ensemble_by_avg_layer(self, trained_models, subject):
-        trained_models = [nn.Sequential(*list(model.children())[:global_vars.get('num_layers') + 1]) for model in trained_models]
-        avg_model = models_generation.AveragingEnsemble(trained_models)
-        single_subj_dataset = self.get_single_subj_dataset(subject, final_evaluation=True)
-        if global_vars.get('ensemble_trained_average'):
-            _, _, avg_model, state, _ = self.activate_model_evaluation(avg_model, None, subject, final_evaluation=True)
-        else:
-            self.monitor_epoch(single_subj_dataset, avg_model)
-        new_avg_evaluations = defaultdict(dict)
-        objective_str = global_vars.get("ga_objective")
-        for dataset in ['train', 'valid', 'test']:
-            new_avg_evaluations[f'ensemble_{objective_str}'][dataset] = \
-                self.epochs_df.tail(1)[f'{dataset}_{objective_str}'].values[0]
-        return new_avg_evaluations
-
-    def ensemble_evaluate_model(self, models, states=None, subject=None, final_evaluation=False):
-        if states is None:
-            states = [None for i in range(len(models))]
-        avg_final_time = 0
-        avg_num_epochs = 0
-        avg_evaluations = {}
-        _, evaluations, _, _, _ = self.evaluate_model(models[0], states[0], subject)
-        for eval in evaluations.keys():
-            avg_evaluations[eval] = defaultdict(list)
-        trained_models = []
-        for model, state in zip(models, states):
-            if global_vars.get('ensemble_pretrain'):
-                if global_vars.get('random_subject_pretrain'):
-                    pretrain_subject = random.randint(1, global_vars.get('num_subjects'))
-                else:
-                    pretrain_subject = subject
-                _, _, model, state, _ = self.evaluate_model(model, state, pretrain_subject)
-            final_time, evaluations, model, state, num_epochs = self.evaluate_model(model, state, subject,
-                                                                                    final_evaluation, ensemble=True)
-            for key, eval in evaluations.items():
-                for inner_key, eval_spec in eval.items():
-                    avg_evaluations[key][inner_key].append(eval_spec)
-            avg_final_time += final_time
-            avg_num_epochs += num_epochs
-            states.append(state)
-            trained_models.append(model)
-        if global_vars.get('ensembling_method') == 'manual':
-            new_avg_evaluations = NAS_utils.format_manual_ensemble_evaluations(avg_evaluations)
-        elif global_vars.get('ensembling_method') == 'averaging_layer':
-            new_avg_evaluations = self.ensemble_by_avg_layer(trained_models, subject)
-        return avg_final_time, new_avg_evaluations, states, avg_num_epochs
 
     def get_single_subj_dataset(self, subject=None, final_evaluation=False):
         if subject not in self.datasets['train'].keys():

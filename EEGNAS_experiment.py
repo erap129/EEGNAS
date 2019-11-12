@@ -187,6 +187,7 @@ def main(_config):
     global FIRST_RUN, FIRST_DATASET, FOLDER_NAMES
     try:
         set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
+        set_moabb_subjects()
         set_gpu()
         set_seeds()
         if type(global_vars.get('subjects_to_check')) == list:
@@ -279,7 +280,6 @@ if __name__ == '__main__':
         multiple_values = get_multiple_values(configurations)
         for index, configuration in enumerate(configurations):
             global_vars.set_config(configuration)
-            set_moabb_subjects()
             if index+1 < global_vars.get('start_exp_idx'):
                 continue
             if global_vars.get('exp_id'):

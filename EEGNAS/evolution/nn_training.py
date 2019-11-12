@@ -10,6 +10,7 @@ import logging
 import torch.optim as optim
 
 from EEGNAS.data.netflow.netflow_data_utils import turn_dataset_to_timefreq
+from EEGNAS.model_generation.custom_modules import AveragingEnsemble
 from EEGNAS.utilities.misc import RememberBest, get_oper_by_loss_function
 import pandas as pd
 from collections import OrderedDict, defaultdict
@@ -78,6 +79,13 @@ class NN_Trainer:
         out = model(dummy_input)
         n_preds_per_input = out.cpu().data.numpy().shape[2]
         return n_preds_per_input
+
+    def train_ensemble(self, models, dataset, final_evaluation=False):
+        # for i in range(len(models)):
+        #     models[i] = self.train_model(models[i], dataset, final_evaluation=final_evaluation)
+        models = [nn.Sequential(*list(model.children())[:global_vars.get('num_layers') + 1]) for model in models] # remove the final softmax layer from each model
+        avg_model = AveragingEnsemble(models)
+        return self.train_model(avg_model, dataset, final_evaluation=final_evaluation)
 
     def train_model(self, model, dataset, state=None, final_evaluation=False, ensemble=False):
         if self.cuda:
@@ -183,8 +191,6 @@ class NN_Trainer:
         model.train()
         batch_generator = self.iterator.get_batches(datasets['train'], shuffle=True)
         for inputs, targets in batch_generator:
-            if global_vars.get('lstm'):
-                inputs = np.squeeze(inputs)
             input_vars = np_to_var(inputs, pin_memory=global_vars.get('pin_memory'))
             target_vars = np_to_var(targets, pin_memory=global_vars.get('pin_memory'))
             if self.cuda:
@@ -192,6 +198,9 @@ class NN_Trainer:
                     input_vars = input_vars.cuda()
                     target_vars = target_vars.cuda()
             self.optimizer.zero_grad()
+            if global_vars.get('evaluator') == 'rnn':
+                input_vars = input_vars.squeeze(dim=3)
+                input_vars = input_vars.permute(0, 2, 1)
             outputs = model(input_vars)
             if self.loss_function == F.mse_loss:
                 target_vars = target_vars.float()
@@ -224,8 +233,6 @@ class NN_Trainer:
             for batch in self.iterator.get_batches(dataset, shuffle=False):
                 input_vars = batch[0]
                 target_vars = batch[1]
-                if global_vars.get('lstm'):
-                    input_vars = np.squeeze(input_vars)
                 preds, loss = self.eval_on_batch(input_vars, target_vars, model)
 
                 all_preds.append(preds)
@@ -276,6 +283,8 @@ class NN_Trainer:
                 with torch.cuda.device(0):
                     input_vars = input_vars.cuda()
                     target_vars = target_vars.cuda()
+            if global_vars.get('evaluator') == 'rnn':
+                input_vars = input_vars.squeeze(dim=3)
             outputs = model(input_vars)
             if self.loss_function == F.mse_loss:
                 target_vars = target_vars.float()

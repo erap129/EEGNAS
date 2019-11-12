@@ -1,6 +1,7 @@
 import torch
 
 from torch import nn
+from torch.nn import init
 
 
 class IdentityModule(nn.Module):
@@ -56,7 +57,7 @@ class _transpose(nn.Module):
 class AveragingEnsemble(nn.Module):
     def __init__(self, models):
         super(AveragingEnsemble, self).__init__()
-        self.avg_layer = LinearWeightedAvg(globals.get('n_classes'), globals.get('ensemble_size'), true_avg=True)
+        self.avg_layer = LinearWeightedAvg(globals.get('n_classes'), len(models), true_avg=True)
         self.models = models
         self.softmax = nn.Softmax()
         self.flatten = _squeeze_final_output()
