@@ -15,7 +15,8 @@ import torch.nn.functional as F
 
 from EEGNAS.evolution.deap_functions import Individual, initialize_deap_population, mutate_layers_deap, \
     mutate_modules_deap, \
-    mutate_layers_deap_modules, breed_layers_deap, breed_modules_deap, breed_layers_modules_deap, hash_models_deap
+    mutate_layers_deap_modules, breed_layers_deap, breed_modules_deap, breed_layers_modules_deap, hash_models_deap, \
+    breed_layers_deap_one_child, selection_normal_deap, breed_normal_population_deap
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
 from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer, Module, \
@@ -252,6 +253,16 @@ class EEGNAS_evolution:
             NAS_utils.ranking_correlations(weighted_population, stats)
         return stats, weighted_population
 
+    def update_mutation_rate(self):
+        if global_vars.get('dynamic_mutation_rate'):
+            if len(self.models_set) < global_vars.get('pop_size') * global_vars.get('unique_model_threshold'):
+                self.mutation_rate *= global_vars.get('mutation_rate_increase_rate')
+            else:
+                if global_vars.get('mutation_rate_gradual_decrease'):
+                    self.mutation_rate /= global_vars.get('mutation_rate_decrease_rate')
+                else:
+                    self.mutation_rate = global_vars.get('mutation_rate')
+
     def evolution(self):
         num_generations = global_vars.get('num_generations')
         weighted_population = NAS_utils.initialize_population(self.models_set, self.genome_set, self.subject_id)
@@ -269,14 +280,7 @@ class EEGNAS_evolution:
             if generation < num_generations - 1:
                 weighted_population = self.selection(weighted_population)
                 breed_population(weighted_population, self)
-                if global_vars.get('dynamic_mutation_rate'):
-                    if len(self.models_set) < global_vars.get('pop_size') * global_vars.get('unique_model_threshold'):
-                        self.mutation_rate *= global_vars.get('mutation_rate_increase_rate')
-                    else:
-                        if global_vars.get('mutation_rate_gradual_decrease'):
-                            self.mutation_rate /= global_vars.get('mutation_rate_decrease_rate')
-                        else:
-                            self.mutation_rate = global_vars.get('mutation_rate')
+                self.update_mutation_rate()
                 if global_vars.get('save_every_generation'):
                     self.save_best_model(weighted_population)
                 all_architectures.append([pop['model'] for pop in weighted_population])
@@ -287,6 +291,54 @@ class EEGNAS_evolution:
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(weighted_population, generation + 1)
         return best_model_filename
+
+    def ea_deap(self, population, toolbox, ngen, stats=None, verbose=__debug__):
+        history = History()
+        toolbox.decorate("mate", history.decorator)
+        history.update(population)
+        logbook = tools.Logbook()
+        logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
+
+        # Evaluate all individuals
+        fitnesses = toolbox.map(toolbox.evaluate, population)
+        for ind, fit in zip(population, fitnesses):
+            ind.fitness.values = fit
+
+        record = stats.compile(population) if stats else {}
+        logbook.record(gen=0, nevals=len(population), **record)
+        if verbose:
+            print(logbook.stream)
+
+        # Begin the generational process
+        for gen in range(1, ngen + 1):
+            self.current_generation += 1
+            # Select the next generation individuals
+            old_offspring = deepcopy(population)
+            offspring = toolbox.select(population, len(population))
+            # Vary the pool of individuals
+            new_offspring = toolbox.mate(offspring, toolbox)
+            hash_models_deap(old_offspring, new_offspring, self.genome_set, self.models_set)
+            self.update_mutation_rate()
+            # Evaluate the individuals with an invalid fitness
+            fitnesses = toolbox.map(toolbox.evaluate, new_offspring)
+            for ind, fit in zip(new_offspring, fitnesses):
+                ind.fitness.values = fit
+                ind['age'] += 1
+
+            # Replace the current population by the offspring
+            population[:] = new_offspring
+
+            # Append the current generation statistics to the logbook
+            record = stats.compile(population) if stats else {}
+            logbook.record(gen=gen, nevals=len(population), **record)
+            if verbose:
+                print(logbook.stream)
+            pop_stats = self.calculate_stats(self.population)
+            for stat, val in pop_stats.items():
+                global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, self.current_generation)
+            self.write_to_csv({k: str(v) for k, v in pop_stats.items()}, self.current_generation)
+            self.print_to_evolution_file(self.population, self.current_generation)
+        return population, logbook
 
     def eaSimple(self, population, toolbox, cxpb, mutpb, ngen, stats=None,
                  halloffame=None, verbose=__debug__):
@@ -471,9 +523,9 @@ class EEGNAS_evolution:
         self.toolbox.register("individual", creator.Individual)
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
         self.toolbox.register("evaluate", self.evaluate_ind_deap)
-        self.toolbox.register("mate", breed_layers_deap)
-        self.toolbox.register("mutate", mutate_layers_deap)
-        self.toolbox.register("select", selTournament, tournsize=3)
+        self.toolbox.register("mate", breed_normal_population_deap)
+        # self.toolbox.register("mutate", mutate_layers_deap)
+        self.toolbox.register("select", selection_normal_deap)
         self.population = self.toolbox.population(global_vars.get('pop_size'))
         self.current_generation = 0
         initialize_deap_population(self.population, self.models_set, self.genome_set)
@@ -482,8 +534,7 @@ class EEGNAS_evolution:
         stats.register("std", np.std)
         stats.register("min", np.min)
         stats.register("max", np.max)
-        final_population, logbook = self.eaSimple(self.population, self.toolbox, global_vars.get('breed_rate_deap'),
-                                    global_vars.get('mutation_rate'), global_vars.get('num_generations'),
+        final_population, logbook = self.ea_deap(self.population, self.toolbox, global_vars.get('num_generations'),
                                                   stats=stats, verbose=True)
         best_model_filename = self.save_best_model(final_population)
         pickle.dump(self.population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))

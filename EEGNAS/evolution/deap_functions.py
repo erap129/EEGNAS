@@ -1,8 +1,10 @@
 import random
 from copy import deepcopy
+import numpy as np
 
 from EEGNAS import global_vars
 from EEGNAS.evolution.breeding import breed_layers, breed_layers_modules
+from EEGNAS.utilities import NAS_utils
 from EEGNAS.utilities.NAS_utils import hash_model, remove_from_models_hash
 from EEGNAS.model_generation.simple_model_generation import random_model, random_layer, check_legal_model, random_module
 
@@ -35,6 +37,17 @@ def mutate_layers_deap(individual):
     return individual,
 
 
+def selection_normal_deap(individuals, fit_attr='fitness'):
+    for index, ind in enumerate(individuals):
+        decay_functions = {'linear': lambda x: x,
+                           'log': lambda x: np.sqrt(np.log(x + 1))}
+        if random.uniform(0, 1) < decay_functions[global_vars.get('decay_function')](index / global_vars.get('pop_size')):
+            del individuals[index]
+        else:
+            ind['age'] += 1
+    return individuals
+
+
 def mutate_layers_deap_modules(individual):
     rand_layer = random.randint(0, len(individual['model']) - 1)
     individual['model'][rand_layer] = random_module()
@@ -61,7 +74,7 @@ def initialize_deap_population(population, models_set, genome_set):
         hash_model(pop['model'], models_set, genome_set)
 
 
-def breed_layers_deap(first_ind, second_ind):
+def breed_layers_deap_two_children(first_ind, second_ind):
     first_child_model, first_child_state, _ = breed_layers(0, first_ind['model'], second_ind['model'],
                                                            first_model_state=first_ind['model_state'],
                                                            second_model_state=second_ind['model_state'])
@@ -73,6 +86,28 @@ def breed_layers_deap(first_ind, second_ind):
     first_ind['model'], first_ind['model_state'], first_ind['age'] = first_child_model, first_child_state, 0
     second_ind['model'], second_ind['model_state'], second_ind['age'] = second_child_model, second_child_state, 0
     return first_ind, second_ind
+
+
+def breed_layers_deap_one_child(toolbox, first_ind, second_ind):
+    child_model, child_state, _ = breed_layers(global_vars.get('mutation_rate'), first_ind['model'], second_ind['model'],
+                                                           first_model_state=first_ind['model_state'],
+                                                           second_model_state=second_ind['model_state'])
+    child = toolbox.individual()
+    child['model'], child['model_state'], child['age'] = child_model, child_state, 0
+    return child,
+
+
+def breed_normal_population_deap(population, toolbox):
+    children = []
+    while len(population) + len(children) < global_vars.get('pop_size'):
+        breeders = random.sample(range(len(population)), 2)
+        first_breeder = population[breeders[0]]
+        second_breeder = population[breeders[1]]
+        child = breed_layers_deap_one_child(toolbox, first_breeder, second_breeder)
+        if child[0]['model'] is not None:
+            children.append(child[0])
+    population.extend(children)
+    return population
 
 
 def breed_layers_modules_deap(toolbox, first_ind, second_ind):

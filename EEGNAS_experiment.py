@@ -7,7 +7,7 @@ from sacred import Experiment
 from sacred.observers import MongoObserver
 from EEGNAS.evolution.loaded_model_evaluations import EEGNAS_from_file
 from EEGNAS.utilities.data_utils import write_config
-from EEGNAS.utilities.gdrive import upload_exp_to_gdrive
+from EEGNAS.utilities.gdrive import upload_exp_to_gdrive, upload_exp_results_to_gdrive
 from EEGNAS.utilities.config_utils import config_to_dict, get_configurations, get_multiple_values, set_params_by_dataset, \
     set_gpu, set_seeds
 import torch.nn.functional as F
@@ -241,7 +241,7 @@ def main(_config):
 def add_exp(exp_id, index, all_exps, run):
     algo_name = f'EEGNAS_{global_vars.get("num_layers")}_layers'
     if global_vars.get('deap'):
-        algo_name += '_deap'
+        algo_name += '_deap_original'
     if global_vars.get('time_frequency'):
         algo_name += '_TF'
     if global_vars.get('random_search'):
@@ -259,6 +259,7 @@ def add_exp(exp_id, index, all_exps, run):
     all_exps['omniboard_id'].append(run._id)
     all_exps['machine'].append(platform.node())
     all_exps['local_exp_id'].append(f'{exp_id}_{index}')
+    return [lst[-1] for lst in all_exps.values()]
 
 
 if __name__ == '__main__':
@@ -302,8 +303,10 @@ if __name__ == '__main__':
             try:
                 run = ex.run(options={'--name': exp_name})
                 if not args.debug_mode:
-                    add_exp(exp_id, index+1, all_exps, run)
+                    exp_line = add_exp(exp_id, index+1, all_exps, run)
                     pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
+                    if global_vars.get('add_results_to_gdrive'):
+                        upload_exp_results_to_gdrive(exp_line, 'University/Masters/Experiment Results/EEGNAS_results.xlsx')
             except Exception as e:
                 print(f'failed experiment {exp_id}_{index+1}, continuing...')
         if args.drive == 't':
