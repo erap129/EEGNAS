@@ -375,6 +375,12 @@ def shap_report(model, dataset, folder_name):
             if global_vars.get('dataset') == 'netflow_asflow':
                 ax.set_xticks(list(range(global_vars.get('input_height')))[::2])
                 ax.set_xticklabels([(i+global_vars.get('start_hour')) % 24 for i in range(global_vars.get('input_height'))][::2])
+                input_height_arr = list(range(global_vars.get('input_height')))
+                ax2 = ax.twiny()
+                ax2.set_xlim(1, int(len(input_height_arr) / 24))
+                num_days = len(list(range(int(global_vars.get('input_height') / 24))))
+                ax2.set_xticks(list(range(int(global_vars.get('input_height') / 24))))
+                ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(global_vars.get('input_height') / 24))])
             ax.tick_params(axis='both', which='major', labelsize=5)
         f.subplots_adjust(right=0.8, hspace=0.8)
         cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
