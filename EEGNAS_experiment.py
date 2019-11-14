@@ -305,8 +305,7 @@ if __name__ == '__main__':
                 if not args.debug_mode:
                     exp_line = add_exp(exp_id, index+1, all_exps, run)
                     pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
-                    if global_vars.get('add_results_to_gdrive'):
-                        upload_exp_results_to_gdrive(exp_line, 'University/Masters/Experiment Results/EEGNAS_results.xlsx')
+                    upload_exp_results_to_gdrive(exp_line, 'University/Masters/Experiment Results/EEGNAS_results.xlsx')
             except Exception as e:
                 print(f'failed experiment {exp_id}_{index+1}, continuing...')
         if args.drive == 't':
