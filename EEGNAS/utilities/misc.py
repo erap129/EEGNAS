@@ -105,7 +105,8 @@ def label_by_idx(idx):
     labels = {'BCI_IV_2a': ['Left Hand', 'Right Hand', 'Foot', 'Tongue'],
               'BCI_IV_2b': ['Left Hand', 'Right Hand'],
               'TUH': ['Normal', 'Abnormal'],
-              'netflow_asflow': ['no overflow', 'overflow']}
+              # 'netflow_asflow': ['no overflow', 'overflow']}
+              'netflow_asflow': [f'{i} hours ahead' for i in range(global_vars.get("n_classes"))]}
     return labels[global_vars.get('dataset')][idx]
 
 

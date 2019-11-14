@@ -345,11 +345,11 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
 Use shap to get feature importance for each class
 '''
 def shap_report(model, dataset, folder_name):
-    if global_vars.get('dataset') == 'netflow_asflow':
-        file_path = f"{os.path.dirname(os.path.abspath(__file__))}/../data/netflow/{global_vars.get('as_to_test')}_{global_vars.get('date_range')}.csv"
-        for segment in ['train', 'test']:
-            dataset[segment].y = turn_netflow_into_classification(dataset[segment].X, dataset[segment].y, get_netflow_threshold(file_path, global_vars.get('netflow_threshold_std')))
-        global_vars.set('n_classes', 2)
+    # if global_vars.get('dataset') == 'netflow_asflow':
+    #     file_path = f"{os.path.dirname(os.path.abspath(__file__))}/../data/netflow/{global_vars.get('as_to_test')}_{global_vars.get('date_range')}.csv"
+    #     for segment in ['train', 'test']:
+    #         dataset[segment].y = turn_netflow_into_classification(dataset[segment].X, dataset[segment].y, get_netflow_threshold(file_path, global_vars.get('netflow_threshold_std')))
+    #     global_vars.set('n_classes', 2)
     report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
     print(f'training DeepExplainer on {int(train_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
