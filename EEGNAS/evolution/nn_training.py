@@ -285,6 +285,7 @@ class NN_Trainer:
                     target_vars = target_vars.cuda()
             if global_vars.get('evaluator') == 'rnn':
                 input_vars = input_vars.squeeze(dim=3)
+                input_vars = input_vars.permute(0, 2, 1)
             outputs = model(input_vars)
             if self.loss_function == F.mse_loss:
                 target_vars = target_vars.float()
