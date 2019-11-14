@@ -88,6 +88,11 @@ class NN_Trainer:
         return self.train_model(avg_model, dataset, final_evaluation=final_evaluation)
 
     def train_model(self, model, dataset, state=None, final_evaluation=False, ensemble=False):
+        if type(model) == list:
+            model = AveragingEnsemble(model)
+            if self.cuda:
+                for mod in model.models:
+                    mod.cuda()
         if self.cuda:
             torch.cuda.empty_cache()
         if final_evaluation:
@@ -151,11 +156,6 @@ class NN_Trainer:
         return model
 
     def train_and_evaluate_model(self, model, dataset, state=None, final_evaluation=False, ensemble=False):
-        if type(model) == list:
-            model = AveragingEnsemble(model)
-            if self.cuda:
-                for mod in model.models:
-                    mod.cuda()
         self.train_model(model, dataset, state, final_evaluation, ensemble)
         evaluations = {}
         for evaluation_metric in global_vars.get('evaluation_metrics'):
