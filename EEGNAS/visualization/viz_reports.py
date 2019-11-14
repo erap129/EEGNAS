@@ -355,7 +355,8 @@ def shap_report(model, dataset, folder_name):
     print(f'training DeepExplainer on {int(train_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
     e = shap.DeepExplainer(model.cpu(), train_data[np.random.choice(train_data.shape[0], int(train_data.shape[0] * global_vars.get('shap_sampling_rate')) , replace=False)])
     shap_imgs = []
-    for segment in ['train', 'test']:
+    # for segment in ['train', 'test']:
+    for segment in ['test']:
         segment_data = np_to_var(dataset[segment].X[:, :, :, None])
         print(f'calculating SHAP values for {int(segment_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
         segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("shap_sampling_rate")), replace=False)]
@@ -367,7 +368,7 @@ def shap_report(model, dataset, folder_name):
 
         f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
         for idx, ax in enumerate(axes):
-            im = ax.imshow(shap_sum[idx], cmap='seismic', interpolation='nearest', aspect='auto')
+            im = ax.imshow(shap_sum[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.04, vmax=0.04)
             ax.set_title(f'class: {label_by_idx(idx)}')
             ax.set_yticks([i for i in range(global_vars.get('eeg_chans'))])
             ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
@@ -375,7 +376,7 @@ def shap_report(model, dataset, folder_name):
                 ax.set_xticks(list(range(global_vars.get('input_height')))[::2])
                 ax.set_xticklabels([(i+global_vars.get('start_hour')) % 24 for i in range(global_vars.get('input_height'))][::2])
             ax.tick_params(axis='both', which='major', labelsize=5)
-        f.subplots_adjust(right=0.8)
+        f.subplots_adjust(right=0.8, hspace=0.8)
         cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
         f.colorbar(im, cax=cbar_ax)
 
