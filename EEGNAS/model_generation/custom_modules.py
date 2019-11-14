@@ -3,6 +3,8 @@ import torch
 from torch import nn
 from torch.nn import init
 
+from EEGNAS import global_vars
+
 
 class IdentityModule(nn.Module):
     def forward(self, inputs):
@@ -19,11 +21,11 @@ class LinearWeightedAvg(nn.Module):
         super(LinearWeightedAvg, self).__init__()
         self.weight_inputs = []
         for network_idx in range(n_networks):
-            self.weight_inputs.append(nn.Parameter(torch.randn(1, n_neurons, 1, 1).cuda()))
+            self.weight_inputs.append(nn.Parameter(torch.randn(1, n_neurons)))
             init.xavier_uniform_(self.weight_inputs[-1], gain=1)
         if true_avg:
             for network_idx in range(n_networks):
-                self.weight_inputs[network_idx].data = torch.tensor([[0.5 for i in range(n_neurons)]]).view((1, n_neurons, 1, 1)).cuda()
+                self.weight_inputs[network_idx].data = torch.tensor([[0.5 for i in range(n_neurons)]]).view((1, n_neurons))
         self.weight_inputs = nn.ParameterList(self.weight_inputs)
 
     def forward(self, *inputs):
@@ -57,7 +59,7 @@ class _transpose(nn.Module):
 class AveragingEnsemble(nn.Module):
     def __init__(self, models):
         super(AveragingEnsemble, self).__init__()
-        self.avg_layer = LinearWeightedAvg(globals.get('n_classes'), len(models), true_avg=True)
+        self.avg_layer = LinearWeightedAvg(global_vars.get('n_classes'), len(models), true_avg=True)
         self.models = models
         self.softmax = nn.Softmax()
         self.flatten = _squeeze_final_output()
@@ -67,5 +69,6 @@ class AveragingEnsemble(nn.Module):
         for model in self.models:
             outputs.append(model(input))
         avg_output = self.avg_layer(*outputs)
-        softmaxed = self.softmax(avg_output)
-        return self.flatten(softmaxed)
+        if global_vars.get('problem') == 'classification':
+            avg_output = self.softmax(avg_output)
+        return avg_output

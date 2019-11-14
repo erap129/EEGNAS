@@ -228,6 +228,11 @@ class EEGNAS_evolution:
         subject_nums = '_'.join(str(x) for x in self.current_chosen_population_sample)
         self.model_filename = f'{self.exp_folder}/best_model_{subject_nums}.th'
         torch.save(save_model, self.model_filename)
+        if global_vars.get('test_on_ensembles'):
+            save_models = [weighted_population[i]['finalized_model'].to("cpu") for i in range(global_vars.get('ensemble_size'))]
+            self.model_filename = [f'{self.exp_folder}/best_model_{subject_nums}_{i}.th' for i in range(global_vars.get('ensemble_size'))]
+            for i, f in enumerate(self.model_filename):
+                torch.save(save_models[i], f)
         return self.model_filename
 
     def save_final_population(self, weighted_population):

@@ -107,10 +107,7 @@ def target_exp(exp_name, csv_file, subjects, model_from_file=None, write_header=
                             stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
                             subject_id=subject_id, fieldnames=FIELDNAMES,
                             csv_file=csv_file, model_from_file=model_from_file)
-        if global_vars.get('weighted_population_file'):
-            eegnas_from_file.run_target_ensemble()
-        else:
-            eegnas_from_file.run_target_model()
+        eegnas_from_file.run_target_model()
 
 
 def target_exp_leave_one_out(exp_name, csv_file, subject_id, model_from_file):

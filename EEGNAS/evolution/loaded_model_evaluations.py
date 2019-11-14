@@ -23,10 +23,10 @@ class EEGNAS_from_file(EEGNAS):
         global_vars.set('max_increase_epochs', global_vars.get('final_max_increase_epochs'))
         stats = {}
         if self.model_from_file is not None:
-            if torch.cuda.is_available():
-                model = torch.load(self.model_from_file)
+            if type(self.model_from_file) == list:
+                model = [torch.load(f) for f in self.model_from_file]
             else:
-                model = torch.load(self.model_from_file, map_location='cpu')
+                model = torch.load(self.model_from_file)
         else:
             model = target_model(global_vars.get('model_name'))
         if global_vars.get('target_pretrain'):
@@ -43,7 +43,10 @@ class EEGNAS_from_file(EEGNAS):
         stats['final_train_time'] = str(final_time)
         NAS_utils.add_evaluations_to_stats(stats, evaluations, str_prefix="final_")
         if self.model_from_file is not None:
-            model_name = re.findall(r'\d+', self.model_from_file)[-1]
+            if type(self.model_from_file) == list:
+                model_name = f'ensemble_top_{global_vars.get("ensemble_size")}'
+            else:
+                model_name = re.findall(r'\d+', self.model_from_file)[-1]
         else:
             model_name = global_vars.get('model_name')
         self.write_to_csv(stats, generation='final', model=model_name)
