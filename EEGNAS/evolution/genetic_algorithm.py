@@ -321,7 +321,7 @@ class EEGNAS_evolution:
             old_offspring = deepcopy(population)
             offspring = toolbox.select(population, len(population))
             # Vary the pool of individuals
-            new_offspring = toolbox.mate(offspring, toolbox)
+            new_offspring = toolbox.mate(deepcopy(offspring), toolbox)
             hash_models_deap(old_offspring, new_offspring, self.genome_set, self.models_set)
             self.update_mutation_rate()
             # Evaluate the individuals with an invalid fitness
