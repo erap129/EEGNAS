@@ -355,15 +355,17 @@ def shap_report(model, dataset, folder_name):
     print(f'training DeepExplainer on {int(train_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
     e = shap.DeepExplainer(model.cpu(), train_data[np.random.choice(train_data.shape[0], int(train_data.shape[0] * global_vars.get('shap_sampling_rate')) , replace=False)])
     shap_imgs = []
-    # for segment in ['train', 'test']:
-    for segment in ['test']:
-        segment_data = np_to_var(dataset[segment].X[:, :, :, None])
+    for segment in ['train', 'test', 'both']:
+        if segment == 'both':
+            dataset = unify_dataset(dataset)
+            segment_data = np_to_var(dataset.X[:, :, :, None])
+        else:
+            segment_data = np_to_var(dataset[segment].X[:, :, :, None])
         print(f'calculating SHAP values for {int(segment_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
         segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("shap_sampling_rate")), replace=False)]
         shap_values = e.shap_values(segment_examples)
 
         shap_val = np.array(shap_values).squeeze()
-        # shap_abs = np.absolute(shap_val)
         shap_sum = np.sum(shap_val, axis=1)
 
         f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
