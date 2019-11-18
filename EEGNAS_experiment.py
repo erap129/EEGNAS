@@ -19,7 +19,7 @@ from braindecode.experiments.monitors import LossMonitor, RuntimeMonitor
 from EEGNAS.global_vars import init_config
 from EEGNAS.utilities.report_generation import add_params_to_name, generate_report
 from EEGNAS.utilities.misc import create_folder, get_oper_by_loss_function, exit_handler, listen, not_exclusively_in, \
-    strfdelta, get_exp_id, set_moabb_subjects
+    strfdelta, get_exp_id, set_moabb
 from EEGNAS.utilities.monitors import *
 from EEGNAS.evolution.genetic_algorithm import EEGNAS_evolution
 from argparse import ArgumentParser
@@ -184,7 +184,7 @@ def main(_config):
     global FIRST_RUN, FIRST_DATASET, FOLDER_NAMES
     try:
         set_params_by_dataset('EEGNAS/configurations/dataset_params.ini')
-        set_moabb_subjects()
+        set_moabb()
         set_gpu()
         set_seeds()
         if type(global_vars.get('subjects_to_check')) == list:

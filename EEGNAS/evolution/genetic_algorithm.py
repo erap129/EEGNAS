@@ -295,6 +295,8 @@ class EEGNAS_evolution:
             pickle.dump(weighted_population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(weighted_population, generation + 1)
+        best_model_filename = self.save_best_model(weighted_population)
+        pickle.dump(weighted_population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
         return best_model_filename
 
     def ea_deap(self, population, toolbox, ngen, stats=None, verbose=__debug__):

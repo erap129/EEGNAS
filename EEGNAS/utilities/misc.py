@@ -256,7 +256,7 @@ def write_dict(dict, filename):
             f.write(f"{key}:\t{value}\n")
 
 
-def set_moabb_subjects():
+def set_moabb():
     if global_vars.get('dataset') in MOABB_DATASETS:
         paradigm = MotorImagery()
         dataset_names = [type(dataset).__name__ for dataset in paradigm.datasets]
@@ -266,3 +266,5 @@ def set_moabb_subjects():
         global_vars.set('eeg_chans', X.shape[1])
         global_vars.set('input_height', X.shape[2])
         global_vars.set('n_classes', len(np.unique(y)))
+        if global_vars.get('time_limit_seconds'):
+            global_vars.set('time_limit_seconds', int(global_vars.get('time_limit_seconds') / len(dataset.subject_list)))
