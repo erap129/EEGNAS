@@ -1,6 +1,7 @@
 import configparser
 import os
 import sys
+from collections import defaultdict
 from copy import deepcopy
 from sacred import Experiment
 from sacred.observers import MongoObserver
@@ -32,6 +33,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
 plt.interactive(False)
 ex = Experiment()
+SHAP_VALUES = {}
 
 
 def get_intermediate_act_map(data, select_layer, model):
@@ -44,44 +46,12 @@ def get_intermediate_act_map(data, select_layer, model):
     return act_map_avg
 
 
-def plot_avg_activation_maps(pretrained_model, dataset, date_time):
-    img_paths = []
-    class_examples = []
-    for class_idx in range(global_vars.get('n_classes')):
-        class_examples.append(dataset.X[np.where(dataset.y == class_idx)])
-    for index, layer in enumerate(list(pretrained_model.children())[:-1]):
-        act_maps = []
-        for class_idx in range(global_vars.get('n_classes')):
-            act_maps.append(plot_one_tensor(get_intermediate_act_map
-                                            (class_examples[class_idx], index, pretrained_model),
-                                            f'Layer {index}, {label_by_idx(class_idx)}'))
-        img_paths.extend(act_maps)
-    create_pdf(f'results/{date_time}_{global_vars.get("dataset")}/step2_avg_activation_maps.pdf', img_paths)
-    for im in img_paths:
-        os.remove(im)
-
-
-def frequency_correlation_single_example(pretrained_model, data, discriminating_layer, low_freq, high_freq):
-    # find the most prominent example in each class
-    # for each freq:
-    #   get probability of correct class after each perturbation
-    # plot probabilities as a function of the frequency
-    max_per_class = get_max_examples_per_channel(data, discriminating_layer, pretrained_model)
-    for chan_idx, example_idx in enumerate(max_per_class):
-        correct_class_probas = []
-        for freq in range(low_freq, high_freq+1):
-            data_to_perturb = deepcopy(data)
-            perturbed_data = subtract_frequency(data_to_perturb, freq, global_vars.get('frequency'))
-            pretrained_model.eval()
-            probas = pretrained_model(data[example_idx])
-            print
-    pass
-
-
 @ex.main
 def main():
-    getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
-
+    global SHAP_VALUES
+    res = getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
+    if global_vars.get('report') == 'shap':
+        SHAP_VALUES[(global_vars.get('model_name'), global_vars.get('iteration'))] = res
 
 if __name__ == '__main__':
     configs = configparser.ConfigParser()
@@ -133,5 +103,30 @@ if __name__ == '__main__':
                                                      db_name=global_vars.get("mongodb_name")))
         global_vars.set('sacred_ex', ex)
         ex.run(options={'--name': exp_name})
+
+    if len(SHAP_VALUES.keys()) > 0:
+        models = list(set([i for (i,j) in list(SHAP_VALUES.keys())]))
+        iterations = list(set([j for (i,j) in list(SHAP_VALUES.keys())]))
+
+        for segment in ['train', 'test', 'both']:
+            mse_avg_per_model = {}
+            for model in models:
+                model_avg = 0
+                mse_calc = []
+                for iteration in iterations:
+                    mse_calc.append(SHAP_VALUES[(model, iteration)][segment])
+                for shap_val_1 in mse_calc:
+                    for shap_val_2 in mse_calc:
+                        model_avg += (np.square(shap_val_1 - shap_val_2)).mean()
+                model_avg = model_avg / len(mse_calc)
+                with open(f"{folder_name}/shap_mse.txt", "a") as f:
+                    f.write(f'{segment}: average MSE between iterations for model {model} is {model_avg}\n')
+                mse_avg_per_model[model] = np.mean(mse_calc, axis=0)
+
+            for model1 in models:
+                for model2 in models:
+                    with open(f"{folder_name}/shap_mse.txt", "a") as f:
+                        f.write(f'{segment}: MSE between model {model1} and model {model2} is '
+                                f'{(np.square(mse_avg_per_model[model1] - mse_avg_per_model[model2])).mean()}\n')
 
 

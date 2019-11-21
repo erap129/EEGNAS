@@ -345,6 +345,7 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
 Use shap to get feature importance for each class
 '''
 def shap_report(model, dataset, folder_name):
+    SHAP_VALUES = {}
     report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
     print(f'training DeepExplainer on {int(train_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
@@ -362,7 +363,7 @@ def shap_report(model, dataset, folder_name):
 
         shap_val = np.array(shap_values).squeeze()
         shap_sum = np.sum(shap_val, axis=1)
-
+        SHAP_VALUES[segment] = np.concatenate(shap_sum, axis=0)
         f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
         for idx, ax in enumerate(axes):
             im = ax.imshow(shap_sum[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.04, vmax=0.04)
@@ -394,6 +395,7 @@ def shap_report(model, dataset, folder_name):
     global_vars.get('sacred_ex').add_artifact(report_file_name)
     for im in shap_imgs:
         os.remove(im)
+    return SHAP_VALUES
 
 
 '''
@@ -420,7 +422,6 @@ def shap_gradient_report(model, dataset, folder_name):
         if layer_idx > 0 and type(prev_layer) == nn.Conv2d: # we only take layers whose INPUT is a conv
             e = shap.GradientExplainer((model, list(model.children())[layer_idx]), train_data)
             for segment in ['train', 'test']:
-
                 plt.clf()
                 print(f'Getting shap values for {len(segment_examples[segment])} {segment} samples')
                 shap_values, indexes = e.shap_values(segment_examples[segment], ranked_outputs=2, nsamples=200)
