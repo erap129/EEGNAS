@@ -1,4 +1,5 @@
 import configparser
+import itertools
 import os
 import sys
 from collections import defaultdict
@@ -115,18 +116,16 @@ if __name__ == '__main__':
                 mse_calc = []
                 for iteration in iterations:
                     mse_calc.append(SHAP_VALUES[(model, iteration)][segment])
-                for shap_val_1 in mse_calc:
-                    for shap_val_2 in mse_calc:
+                for (shap_val_1, shap_val_2) in itertools.combinations(mse_calc, 2):
                         model_avg += (np.square(shap_val_1 - shap_val_2)).mean()
                 model_avg = model_avg / len(mse_calc)
                 with open(f"{folder_name}/shap_mse.txt", "a") as f:
                     f.write(f'{segment}: average MSE between iterations for model {model} is {model_avg}\n')
                 mse_avg_per_model[model] = np.mean(mse_calc, axis=0)
 
-            for model1 in models:
-                for model2 in models:
-                    with open(f"{folder_name}/shap_mse.txt", "a") as f:
-                        f.write(f'{segment}: MSE between model {model1} and model {model2} is '
-                                f'{(np.square(mse_avg_per_model[model1] - mse_avg_per_model[model2])).mean()}\n')
+            for (model1, model2) in itertools.combinations(models, 2):
+                with open(f"{folder_name}/shap_mse.txt", "a") as f:
+                    f.write(f'{segment}: MSE between model {model1} and model {model2} is '
+                            f'{(np.square(mse_avg_per_model[model1] - mse_avg_per_model[model2])).mean()}\n')
 
 
