@@ -4,11 +4,9 @@ import sys
 from copy import deepcopy
 from sacred import Experiment
 from sacred.observers import MongoObserver
-
-from EEGNAS.visualization.external_models import MultivariateLSTM
-
 sys.path.append("..")
 sys.path.append("../..")
+from EEGNAS.visualization.external_models import MultivariateLSTM
 from EEGNAS.evolution.nn_training import NN_Trainer
 from EEGNAS.visualization import viz_reports
 from EEGNAS.utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations
