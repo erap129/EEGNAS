@@ -11,7 +11,7 @@ import torch.optim as optim
 
 from EEGNAS.data.netflow.netflow_data_utils import turn_dataset_to_timefreq
 from EEGNAS.model_generation.custom_modules import AveragingEnsemble
-from EEGNAS.utilities.misc import RememberBest, get_oper_by_loss_function
+from EEGNAS.utilities.misc import RememberBest, get_oper_by_loss_function, reset_model_weights
 import pandas as pd
 from collections import OrderedDict, defaultdict
 import numpy as np
@@ -24,6 +24,7 @@ from EEGNAS import global_vars
 from torch import nn
 from EEGNAS.utilities.monitors import NoIncreaseDecrease
 import pdb
+from skorch import NeuralNetClassifier
 log = logging.getLogger(__name__)
 model_train_times = []
 
@@ -155,8 +156,31 @@ class NN_Trainer:
         self.num_epochs = num_epochs
         return model
 
+
+    def train_with_skorch(self, model, dataset):
+        reset_model_weights(model)
+        if dataset['train'].X.ndim == 3:
+            dataX = deepcopy(dataset['train'].X)
+            dataX = dataX[:, :, :, None]
+        else:
+            dataX = dataset['train'].X
+        net = NeuralNetClassifier(
+            model,
+            max_epochs=global_vars.get('max_epochs'),
+            lr=1e-3,
+            # Shuffle training data on each epoch
+            iterator_train__shuffle=True,
+        )
+        net.fit(dataX, dataset['train'].y)
+        return net
+
+
     def train_and_evaluate_model(self, model, dataset, state=None, final_evaluation=False, ensemble=False):
-        self.train_model(model, dataset, state, final_evaluation, ensemble)
+        if global_vars.get('train_with_skorch'):
+            model = self.train_with_skorch(model, dataset)
+            pass
+        else:
+            self.train_model(model, dataset, state, final_evaluation, ensemble)
         evaluations = {}
         for evaluation_metric in global_vars.get('evaluation_metrics'):
             evaluations[evaluation_metric] = {'train': self.epochs_df.iloc[-1][f"train_{evaluation_metric}"],

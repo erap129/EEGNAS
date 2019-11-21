@@ -206,8 +206,8 @@ def main(_config):
         if global_vars.get('exp_type') in ['target', 'benchmark']:
             target_exp(exp_name, csv_file, subjects)
         elif global_vars.get('exp_type') == 'from_file':
-            target_exp(exp_name, csv_file,
-                       model_from_file=f"models/{global_vars.get('models_dir')}/{global_vars.get('model_file_name')}")
+            target_exp(exp_name, csv_file, subjects,
+                       model_from_file=f"EEGNAS/models/{global_vars.get('models_dir')}/{global_vars.get('model_file_name')}")
         elif global_vars.get('exp_type') == 'leave_one_out':
             with open(csv_file, 'a', newline='') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
