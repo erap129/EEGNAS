@@ -57,9 +57,9 @@ class _transpose(nn.Module):
 
 
 class AveragingEnsemble(nn.Module):
-    def __init__(self, models):
+    def __init__(self, models, true_avg=True):
         super(AveragingEnsemble, self).__init__()
-        self.avg_layer = LinearWeightedAvg(global_vars.get('n_classes'), len(models), true_avg=True)
+        self.avg_layer = LinearWeightedAvg(global_vars.get('n_classes'), len(models), true_avg)
         self.models = models
         self.softmax = nn.Softmax()
         self.flatten = _squeeze_final_output()
