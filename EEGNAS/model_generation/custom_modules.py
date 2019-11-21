@@ -64,6 +64,12 @@ class AveragingEnsemble(nn.Module):
         self.softmax = nn.Softmax()
         self.flatten = _squeeze_final_output()
 
+    def freeze_model_weights(self):
+        for model in self.models:
+            for child in model.children():
+                for param in child.parameters():
+                    param.requires_grad = False
+
     def forward(self, input):
         outputs = []
         for model in self.models:
