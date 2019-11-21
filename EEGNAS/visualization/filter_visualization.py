@@ -5,6 +5,8 @@ from copy import deepcopy
 from sacred import Experiment
 from sacred.observers import MongoObserver
 
+from EEGNAS.visualization.external_models import MultivariateLSTM
+
 sys.path.append("..")
 sys.path.append("../..")
 from EEGNAS.evolution.nn_training import NN_Trainer
@@ -102,7 +104,11 @@ if __name__ == '__main__':
         dataset = get_dataset(subject_id)
         prev_dataset = global_vars.get('dataset')
 
-        model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
+        if global_vars.get('model_name') == 'rnn':
+            model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
+                                     global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
+        else:
+            model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
         model.cuda()
 
         if global_vars.get('finetune_model'):
