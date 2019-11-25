@@ -158,7 +158,6 @@ class NN_Trainer:
 
 
     def train_with_skorch(self, model, dataset):
-        reset_model_weights(model)
         if dataset['train'].X.ndim == 3:
             dataX = deepcopy(dataset['train'].X)
             dataX = dataX[:, :, :, None]

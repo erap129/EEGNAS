@@ -1,0 +1,3 @@
+[submodule "nsga_net"]
+	path = nsga_net
+	url = https://github.com/erap129/nsga_net.git
