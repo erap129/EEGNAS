@@ -1,6 +1,7 @@
 import configparser
 import itertools
 import os
+import pickle
 import sys
 from collections import defaultdict
 from copy import deepcopy
@@ -8,6 +9,9 @@ from sacred import Experiment
 from sacred.observers import MongoObserver
 sys.path.append("..")
 sys.path.append("../..")
+sys.path.append("../../nsga_net")
+from nsga_net.models.micro_models import NetworkCIFAR
+from nsga_net.search.micro_encoding import decode, convert
 from EEGNAS.visualization.external_models import MultivariateLSTM
 from EEGNAS.evolution.nn_training import NN_Trainer
 from EEGNAS.visualization import viz_reports
@@ -76,8 +80,20 @@ if __name__ == '__main__':
         if global_vars.get('model_name') == 'rnn':
             model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
                                      global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
+
+        elif 'nsga' in global_vars.get("models_dir"):
+            with open(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}', 'rb') as f:
+                genotype = pickle.load(f)
+                genotype = decode(convert(genotype))
+                model = NetworkCIFAR(24, global_vars.get('steps_ahead'), global_vars.get('max_handovers'), 11, False,
+                                     genotype)
+                model.droprate = 0.0
+                model.single_output = True
+
         else:
             model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
+
+
         model.cuda()
 
         if global_vars.get('finetune_model'):
