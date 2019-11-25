@@ -10,16 +10,17 @@ from sacred.observers import MongoObserver
 sys.path.append("..")
 sys.path.append("../..")
 sys.path.append("../../nsga_net")
+from EEGNAS.utilities.report_generation import add_params_to_name
 from nsga_net.models.micro_models import NetworkCIFAR
 from nsga_net.search.micro_encoding import decode, convert
 from EEGNAS.visualization.external_models import MultivariateLSTM
 from EEGNAS.evolution.nn_training import NN_Trainer
 from EEGNAS.visualization import viz_reports
-from EEGNAS.utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations
-from EEGNAS.utilities.misc import concat_train_val_sets
+from EEGNAS.utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations, \
+    get_multiple_values
+from EEGNAS.utilities.misc import concat_train_val_sets, get_exp_id
 import logging
 from EEGNAS.visualization.dsp_functions import butter_bandstop_filter, butter_bandpass_filter
-from EEGNAS.visualization.signal_plotting import plot_one_tensor
 import torch
 from braindecode.torch_ext.util import np_to_var
 from EEGNAS import global_vars
@@ -27,12 +28,9 @@ from EEGNAS.data_preprocessing import get_dataset
 from EEGNAS_experiment import set_params_by_dataset, get_normal_settings
 import matplotlib.pyplot as plt
 from EEGNAS.utilities.misc import create_folder
-from EEGNAS.visualization.pdf_utils import create_pdf
 import numpy as np
-from EEGNAS.visualization.wavelet_functions import subtract_frequency
 from datetime import datetime
 from reportlab.lib.styles import getSampleStyleSheet
-from EEGNAS.utilities.misc import label_by_idx
 styles = getSampleStyleSheet()
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
@@ -54,7 +52,9 @@ def get_intermediate_act_map(data, select_layer, model):
 @ex.main
 def main():
     global SHAP_VALUES
-    res = getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, folder_name)
+    exp_folder = f"results/{exp_name}"
+    create_folder(exp_folder)
+    res = getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, exp_folder)
     if global_vars.get('report') == 'shap':
         SHAP_VALUES[(global_vars.get('model_name'), global_vars.get('iteration'))] = res
 
@@ -66,8 +66,10 @@ if __name__ == '__main__':
     set_default_config('../configurations/config.ini')
     global_vars.set('cuda', True)
 
+    exp_id = get_exp_id('results')
+    multiple_values = get_multiple_values(configurations)
     prev_dataset = None
-    for configuration in configurations:
+    for index, configuration in enumerate(configurations):
         update_global_vars_from_config_dict(configuration)
         global_vars.set('band_filter', {'pass': butter_bandpass_filter,
                                         'stop': butter_bandstop_filter}[global_vars.get('band_filter')])
@@ -76,6 +78,8 @@ if __name__ == '__main__':
         subject_id = global_vars.get('subject_id')
         dataset = get_dataset(subject_id)
         prev_dataset = global_vars.get('dataset')
+        exp_name = f"{exp_id}_{index+1}_{global_vars.get('report')}"
+        exp_name = add_params_to_name(exp_name, multiple_values)
 
         if global_vars.get('model_name') == 'rnn':
             model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
@@ -105,14 +109,8 @@ if __name__ == '__main__':
 
         now = datetime.now()
         date_time = now.strftime("%m.%d.%Y-%H:%M")
-        folder_name = f'results/{date_time}_{global_vars.get("dataset")}_{global_vars.get("report")}'
-        create_folder(folder_name)
         print(f'generating {global_vars.get("report")} report for model:')
         print(model)
-        if global_vars.get('to_eeglab'):
-            create_folder(f'{folder_name}/{global_vars.get("report")}')
-
-        exp_name = f"{global_vars.get('dataset')}_{global_vars.get('report')}"
         ex.config = {}
         ex.add_config(configuration)
         if len(ex.observers) == 0 and len(sys.argv) <= 2:
