@@ -10,6 +10,7 @@ from sacred.observers import MongoObserver
 sys.path.append("..")
 sys.path.append("../..")
 sys.path.append("../../nsga_net")
+from EEGNAS.utilities.data_utils import write_config
 from EEGNAS.utilities.report_generation import add_params_to_name
 from nsga_net.models.micro_models import NetworkCIFAR
 from nsga_net.search.micro_encoding import decode, convert
@@ -57,6 +58,8 @@ def main():
     res = getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, exp_folder)
     if global_vars.get('report') == 'shap':
         SHAP_VALUES[(global_vars.get('model_name'), global_vars.get('iteration'))] = res
+    write_config(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
+
 
 if __name__ == '__main__':
     configs = configparser.ConfigParser()
@@ -78,7 +81,7 @@ if __name__ == '__main__':
         subject_id = global_vars.get('subject_id')
         dataset = get_dataset(subject_id)
         prev_dataset = global_vars.get('dataset')
-        exp_name = f"{exp_id}_{index+1}_{global_vars.get('report')}"
+        exp_name = f"{exp_id}_{index+1}_{global_vars.get('report')}_{global_vars.get('dataset')}"
         exp_name = add_params_to_name(exp_name, multiple_values)
 
         if global_vars.get('model_name') == 'rnn':
