@@ -377,8 +377,8 @@ class integrated_gradients_explainer:
         model.eval()
         self.explainer = IntegratedGradients(model)
         self.model = model
-        self.min = -0.2
-        self.max = 0.2
+        self.min = -1
+        self.max = 1
 
     def get_feature_importance(self, data):
         data.requires_grad = True
@@ -392,8 +392,8 @@ class deeplift_explainer:
         model.eval()
         self.explainer = DeepLift(model)
         self.model = model
-        self.min = -0.2
-        self.max = 0.2
+        self.min = -1
+        self.max = 1
 
     def get_feature_importance(self, data):
         data.requires_grad = True
@@ -402,7 +402,7 @@ class deeplift_explainer:
                                                             range(global_vars.get('n_classes'))], axis=0).detach()
 
 '''
-Use shap to get feature importance for each class
+Use some explainer to get feature importance for each class
 '''
 def feature_importance_report(model, dataset, folder_name):
     FEATURE_VALUES = {}
