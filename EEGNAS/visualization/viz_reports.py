@@ -377,15 +377,29 @@ class integrated_gradients_explainer:
         model.eval()
         self.explainer = IntegratedGradients(model)
         self.model = model
-        self.min = -0.1
-        self.max = 0.1
+        self.min = -0.2
+        self.max = 0.2
 
     def get_feature_importance(self, data):
         data.requires_grad = True
-        return torch.stack([attribute_image_features(self.model, self.explainer, data, 0, baselines=data * 0,
+        return torch.stack([attribute_image_features(self.model, self.explainer, data, i, baselines=data * 0,
                                                      return_convergence_delta=True)[0] for i in
                                                             range(global_vars.get('n_classes'))], axis=0).detach()
 
+
+class deeplift_explainer:
+    def __init__(self, model, train_data):
+        model.eval()
+        self.explainer = DeepLift(model)
+        self.model = model
+        self.min = -0.2
+        self.max = 0.2
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        return torch.stack([attribute_image_features(self.model, self.explainer, data, i, baselines=data * 0,
+                                                     return_convergence_delta=True)[0] for i in
+                                                            range(global_vars.get('n_classes'))], axis=0).detach()
 
 '''
 Use shap to get feature importance for each class
