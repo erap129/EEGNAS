@@ -39,6 +39,9 @@ plt.interactive(False)
 ex = Experiment()
 SHAP_VALUES = {}
 
+MODEL_ALIASES = {'cnn': ('411_1_netflow_regression_daily_normalized', 'best_model_1.th'),
+                 'rnn': ('rnn', 'rnn'),
+                 'nsga': ('nsga_micro_netflow_normalized', 'best_genome_normalized.pkl')}
 
 def get_intermediate_act_map(data, select_layer, model):
     x = np_to_var(data[:, :, :, None]).cuda()
@@ -68,12 +71,15 @@ if __name__ == '__main__':
     global_vars.init_config('configurations/config.ini')
     set_default_config('../configurations/config.ini')
     global_vars.set('cuda', True)
-
     exp_id = get_exp_id('results')
     multiple_values = get_multiple_values(configurations)
     prev_dataset = None
     for index, configuration in enumerate(configurations):
         update_global_vars_from_config_dict(configuration)
+        if global_vars.get('model_alias'):
+            alias = global_vars.get('model_alias')
+            global_vars.set('models_dir', MODEL_ALIASES[alias][0])
+            global_vars.set('model_name', MODEL_ALIASES[alias][1])
         global_vars.set('band_filter', {'pass': butter_bandpass_filter,
                                         'stop': butter_bandstop_filter}[global_vars.get('band_filter')])
 

@@ -8,7 +8,8 @@ from braindecode.torch_ext.util import np_to_var
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from EEGNAS import global_vars
-from EEGNAS.data.netflow.netflow_data_utils import turn_netflow_into_classification, get_netflow_threshold
+from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel
+from captum.attr import visualization as viz
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
 from EEGNAS.utilities.NN_utils import get_intermediate_layer_value, get_class_distribution
@@ -341,15 +342,60 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
         os.remove(im)
 
 
+def attribute_image_features(model, algorithm, input, ind, **kwargs):
+    model.zero_grad()
+    tensor_attributions = algorithm.attribute(input, target=ind, **kwargs)
+    return tensor_attributions
+
+
+class shap_deep_explainer:
+    def __init__(self, model, train_data):
+        self.explainer = shap.DeepExplainer(model, train_data[
+            np.random.choice(train_data.shape[0], int(train_data.shape[0] * global_vars.get('explainer_sampling_rate')),
+                             replace=False)])
+        self.min = -0.04
+        self.max = 0.04
+
+    def get_feature_importance(self, data):
+        return self.explainer.shap_values(data)
+
+
+class saliency_explainer:
+    def __init__(self, model, train_data):
+        model.eval()
+        self.explainer = Saliency(model)
+        self.min = 0
+        self.max = 1
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        return torch.stack([self.explainer.attribute(data, target=i) for i in range(global_vars.get('n_classes'))], axis=0)
+
+
+class integrated_gradients_explainer:
+    def __init__(self, model, train_data):
+        model.eval()
+        self.explainer = IntegratedGradients(model)
+        self.model = model
+        self.min = -0.1
+        self.max = 0.1
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        return torch.stack([attribute_image_features(self.model, self.explainer, data, 0, baselines=data * 0,
+                                                     return_convergence_delta=True)[0] for i in
+                                                            range(global_vars.get('n_classes'))], axis=0).detach()
+
+
 '''
 Use shap to get feature importance for each class
 '''
-def shap_report(model, dataset, folder_name):
-    SHAP_VALUES = {}
-    report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
+def feature_importance_report(model, dataset, folder_name):
+    FEATURE_VALUES = {}
+    report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("explainer")}.pdf'
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
-    print(f'training DeepExplainer on {int(train_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
-    e = shap.DeepExplainer(model.cpu(), train_data[np.random.choice(train_data.shape[0], int(train_data.shape[0] * global_vars.get('shap_sampling_rate')) , replace=False)])
+    print(f'training {global_vars.get("explainer")} on {int(train_data.shape[0] * global_vars.get("explainer_sampling_rate"))} samples')
+    e = globals()[f'{global_vars.get("explainer")}_explainer'](model.cpu(), train_data)
     shap_imgs = []
     for segment in ['train', 'test', 'both']:
         if segment == 'both':
@@ -357,16 +403,15 @@ def shap_report(model, dataset, folder_name):
             segment_data = np_to_var(dataset.X[:, :, :, None])
         else:
             segment_data = np_to_var(dataset[segment].X[:, :, :, None])
-        print(f'calculating SHAP values for {int(segment_data.shape[0] * global_vars.get("shap_sampling_rate"))} samples')
-        segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("shap_sampling_rate")), replace=False)]
-        shap_values = e.shap_values(segment_examples)
-
-        shap_val = np.array(shap_values).squeeze()
-        shap_sum = np.sum(shap_val, axis=1)
-        SHAP_VALUES[segment] = np.concatenate(shap_sum, axis=0)
+        print(f'calculating {global_vars.get("explainer")} values for {int(segment_data.shape[0] * global_vars.get("explainer_sampling_rate"))} samples')
+        segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("explainer_sampling_rate")), replace=False)]
+        feature_values = e.get_feature_importance(segment_examples)
+        feature_val = np.array(feature_values).squeeze()
+        feature_sum = np.sum(feature_val, axis=1)
+        FEATURE_VALUES[segment] = np.concatenate(feature_sum, axis=0)
         f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
         for idx, ax in enumerate(axes):
-            im = ax.imshow(shap_sum[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.04, vmax=0.04)
+            im = ax.imshow(feature_sum[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=e.min, vmax=e.max)
             ax.set_title(f'class: {label_by_idx(idx)}')
             ax.set_yticks([i for i in range(global_vars.get('eeg_chans'))])
             ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
@@ -383,8 +428,7 @@ def shap_report(model, dataset, folder_name):
         f.subplots_adjust(right=0.8, hspace=0.8)
         cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
         f.colorbar(im, cax=cbar_ax)
-
-        plt.suptitle(f'SHAP values for dataset: {global_vars.get("dataset")}, segment: {segment}\nchannel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}', fontsize=10)
+        plt.suptitle(f'{global_vars.get("explainer")} values for dataset: {global_vars.get("dataset")}, segment: {segment}\nchannel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}', fontsize=10)
         shap_img_file = f'temp/{get_next_temp_image_name("temp")}.png'
         shap_imgs.append(shap_img_file)
         plt.savefig(shap_img_file, dpi=300)
@@ -395,7 +439,7 @@ def shap_report(model, dataset, folder_name):
     global_vars.get('sacred_ex').add_artifact(report_file_name)
     for im in shap_imgs:
         os.remove(im)
-    return SHAP_VALUES
+    return FEATURE_VALUES
 
 
 '''
