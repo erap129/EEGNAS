@@ -34,8 +34,12 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
         all_datetimes_X.extend(datetimes_X)
         all_datetimes_Y.extend(datetimes_Y)
         num_handovers = sample_list.shape[2] - 1
-        X = sample_list.swapaxes(1, 2)[:, :num_handovers]
-        y = y.swapaxes(1, 2)[:, num_handovers]
+        if global_vars.get('per_handover_prediction'):
+            X = sample_list.swapaxes(1, 2)
+            y = y.swapaxes(1, 2).reshape(y.shape[0], -1)
+        else:
+            X = sample_list.swapaxes(1, 2)[:, :num_handovers]
+            y = y.swapaxes(1, 2)[:, num_handovers]
         if global_vars.get('problem') == 'classification':
             y = turn_netflow_into_classification(X, y,
                                                  get_netflow_threshold(file, global_vars.get('netflow_threshold_std')))
@@ -73,7 +77,8 @@ def get_whole_netflow_data(file):
     all_data = pd.concat(dfs, axis=1)
     all_data = all_data.dropna(thresh=len(all_data) - (len(all_data) / 8), axis=1)
     all_data = all_data.dropna(axis=1, how='any')
-    all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
+    if not global_vars.get('per_handover_prediction'):
+        all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
     all_data = all_data[np.flatnonzero(df.index.hour == global_vars.get('start_hour'))[0]:]
     return all_data
 

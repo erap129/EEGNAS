@@ -427,6 +427,8 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
         global_vars.set('eeg_chans', X.shape[1])
     if global_vars.get('problem') != 'classification':
         global_vars.set('n_classes', global_vars.get('steps_ahead'))
+        if global_vars.get('per_handover_prediction'):
+            global_vars.set('n_classes', global_vars.get('n_classes') * X.shape[1])
     X_train, X_test, y_train, y_test = train_test_split(X, y,
                                                         test_size=global_vars.get('valid_set_fraction'), shuffle=shuffle)
     if global_vars.get('aggregate_netflow_sum'):
