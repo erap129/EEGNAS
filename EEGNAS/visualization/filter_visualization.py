@@ -75,6 +75,8 @@ if __name__ == '__main__':
     multiple_values = get_multiple_values(configurations)
     prev_dataset = None
     for index, configuration in enumerate(configurations):
+        if index + 1 < global_vars.get('start_exp_idx'):
+            continue
         update_global_vars_from_config_dict(configuration)
         if global_vars.get('model_alias'):
             alias = global_vars.get('model_alias')
@@ -126,7 +128,14 @@ if __name__ == '__main__':
             ex.observers.append(MongoObserver.create(url=f'mongodb://132.72.80.67/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
         global_vars.set('sacred_ex', ex)
-        ex.run(options={'--name': exp_name})
+        try:
+            ex.run(options={'--name': exp_name})
+        except MemoryError as me:
+            print(f'failed experiment {exp_id}_{index+1} because of memory error, trying with sampling rate/2...')
+            global_vars.set('explainer_sampling_rate', global_vars.get('explainer_sampling_rate') / 2)
+            ex.run(options={'--name': exp_name})
+        except Exception as e:
+            print(f'failed experiment {exp_id}_{index+1}, continuing...')
 
     if len(SHAP_VALUES.keys()) > 0:
         models = list(set([i for (i,j) in list(SHAP_VALUES.keys())]))
