@@ -21,7 +21,8 @@ from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, Dro
     IdentityLayer
 from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer, Module, \
     check_legal_model, random_model
-from EEGNAS.utilities.NAS_utils import remove_from_models_hash, hash_model
+from EEGNAS.utilities.NAS_utils import remove_from_models_hash, hash_model, get_metric_strs, \
+    add_evaluations_to_weighted_population, sum_evaluations_to_weighted_population, check_age
 from EEGNAS.utilities.misc import time_f, pretty_print_population
 from collections import OrderedDict, defaultdict
 import numpy as np
@@ -86,7 +87,7 @@ class EEGNAS_evolution:
         self.fieldnames = fieldnames
         self.models_set = []
         self.genome_set = []
-        self.evo_strategy = {'per_subject': self.one_strategy}[strategy]
+        self.evo_strategy = {'per_subject': self.one_strategy, 'cross_subject': self.all_strategy}[strategy]
         self.csv_file = csv_file
         self.evolution_file = evolution_file
         self.current_model_index = -1
@@ -126,8 +127,44 @@ class EEGNAS_evolution:
 
     def sample_subjects(self):
         self.current_chosen_population_sample = sorted(random.sample(
-            [i for i in range(1, global_vars.get('num_subjects') + 1) if i not in global_vars.get('exclude_subjects')],
+            global_vars.get('subjects_to_check'),
             global_vars.get('cross_subject_sampling_rate')))
+
+    def all_strategy(self, weighted_population):
+        summed_parameters = ['train_time', 'num_epochs']
+        summed_parameters.extend(get_metric_strs())
+        if global_vars.get('cross_subject_sampling_method') == 'generation':
+            self.sample_subjects()
+        for i, pop in enumerate(weighted_population):
+            start_time = time.time()
+            if check_age(pop):
+                weighted_population[i] = weighted_population[i - 1]
+                weighted_population[i]['train_time'] = 0
+                weighted_population[i]['num_epochs'] = 0
+                continue
+            if global_vars.get('cross_subject_sampling_method') == 'model':
+                self.sample_subjects()
+            for key in summed_parameters:
+                weighted_population[i][key] = 0
+            for subject in random.sample(self.current_chosen_population_sample,
+                                         len(self.current_chosen_population_sample)):
+                finalized_model = finalize_model(pop['model'])
+                final_time, evaluations, model, model_state, num_epochs = \
+                    self.activate_model_evaluation(finalized_model, pop['model_state'], subject=subject)
+                add_evaluations_to_weighted_population(weighted_population[i], evaluations,
+                                                                str_prefix=f"{subject}_")
+                sum_evaluations_to_weighted_population(weighted_population[i], evaluations)
+                weighted_population[i]['%d_train_time' % subject] = final_time
+                weighted_population[i]['train_time'] += final_time
+                weighted_population[i]['%d_model_state' % subject] = model_state
+                weighted_population[i]['%d_num_epochs' % subject] = num_epochs
+                weighted_population[i]['num_epochs'] += num_epochs
+                end_time = time.time()
+                show_progress(end_time - start_time, self.exp_name)
+                print('trained model %d in subject %d in generation %d' % (i + 1, subject, self.current_generation))
+            weighted_population[i]['finalized_model'] = model
+            for key in summed_parameters:
+                weighted_population[i][key] /= global_vars.get('cross_subject_sampling_rate')
 
     def one_strategy(self, weighted_population):
         self.current_chosen_population_sample = [self.subject_id]
@@ -291,7 +328,6 @@ class EEGNAS_evolution:
                 all_architectures.append([pop['model'] for pop in weighted_population])
                 if time.time() - start_time > global_vars.get('time_limit_seconds'):
                     break
-            best_model_filename = self.save_best_model(weighted_population)
             pickle.dump(weighted_population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
             self.write_to_csv({k: str(v) for k, v in stats.items()}, generation + 1)
             self.print_to_evolution_file(weighted_population, generation + 1)

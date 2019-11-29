@@ -151,6 +151,29 @@ def per_subject_exp(exp_name, csv_file, subjects):
             return [best_model_filename]
 
 
+def cross_subject_exp(exp_name, csv_file, subjects):
+    stop_criterion, iterator, loss_function, monitors = get_settings()
+    if not global_vars.get('cross_subject_sampling_rate'):
+        global_vars.set('cross_subject_sampling_rate', len(subjects))
+    with open(csv_file, 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
+        writer.writeheader()
+    train_set_all = {}
+    val_set_all = {}
+    test_set_all = {}
+    for subject_id in subjects:
+        dataset = get_dataset(subject_id)
+        train_set_all[subject_id], val_set_all[subject_id], test_set_all[subject_id] = dataset['train'],\
+                                                                                       dataset['valid'], dataset['test']
+    evolution_file = f'results/{exp_name}/archs.txt'
+    eegnas = EEGNAS_evolution(iterator=iterator, exp_folder=f"results/{exp_name}", exp_name=exp_name,
+                              train_set=train_set_all, val_set=val_set_all, test_set=test_set_all,
+                              stop_criterion=stop_criterion, monitors=monitors, loss_function=loss_function,
+                              subject_id=subject_id, fieldnames=FIELDNAMES, strategy='cross_subject',
+                              evolution_file=evolution_file, csv_file=csv_file)
+    return [eegnas.evolution()]
+
+
 def leave_one_out_exp(exp_name, csv_file, subject_id):
     stop_criterion, iterator, loss_function, monitors = get_settings()
     with open(csv_file, 'a', newline='') as csvfile:
@@ -235,7 +258,7 @@ def main(_config):
     return result
 
 
-def add_exp(exp_id, index, all_exps, run):
+def add_exp(exp_name, index, all_exps, run):
     algo_name = f'EEGNAS_{global_vars.get("num_layers")}_layers'
     if global_vars.get('deap'):
         algo_name += '_deap_original'
@@ -255,7 +278,7 @@ def add_exp(exp_id, index, all_exps, run):
     all_exps['runtime'].append(strfdelta(run.stop_time - run.start_time, '{hours}:{minutes}:{seconds}'))
     all_exps['omniboard_id'].append(run._id)
     all_exps['machine'].append(platform.node())
-    all_exps['local_exp_id'].append(f'{exp_id}_{index}')
+    all_exps['local_exp_name'].append(exp_name)
     return [lst[-1] for lst in all_exps.values()]
 
 
@@ -268,7 +291,8 @@ if __name__ == '__main__':
     listen()
     exp_id = get_exp_id('results')
     exp_funcs = {'per_subject': per_subject_exp,
-                 'leave_one_out': leave_one_out_exp}
+                 'leave_one_out': leave_one_out_exp,
+                 'cross_subject': cross_subject_exp}
 
     experiments = args.experiment.split(',')
     all_exps = defaultdict(list)
@@ -300,9 +324,10 @@ if __name__ == '__main__':
             try:
                 run = ex.run(options={'--name': exp_name})
                 if not args.debug_mode:
-                    exp_line = add_exp(exp_id, index+1, all_exps, run)
+                    exp_line = add_exp(exp_name, index+1, all_exps, run)
                     pd.DataFrame(all_exps).to_csv(f'reports/{exp_id}.csv', index=False)
-                    upload_exp_results_to_gdrive(exp_line, 'University/Masters/Experiment Results/EEGNAS_results.xlsx')
+                    if global_vars.get('upload_exp_results'):
+                        upload_exp_results_to_gdrive(exp_line, 'University/Masters/Experiment Results/EEGNAS_results.xlsx')
             except Exception as e:
                 print(f'failed experiment {exp_id}_{index+1}, continuing...')
         if args.drive == 't':
