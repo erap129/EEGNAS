@@ -72,7 +72,7 @@ def get_model_state(model):
 
 def check_age(model):
     return global_vars.get('use_aging') and \
-           random.random() < 1 - 1 / (model['age'] + 1)
+           random.random() > 1 / (model['age'] + 1)
 
 
 def get_average_param(models, layer_type, attribute):

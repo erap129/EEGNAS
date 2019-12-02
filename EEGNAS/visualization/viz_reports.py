@@ -3,12 +3,15 @@ import random
 from collections import OrderedDict
 from copy import deepcopy
 import shap
+import gc
 import torch
 from braindecode.torch_ext.util import np_to_var
+from captum.insights import AttributionVisualizer
+from captum.insights.features import ImageFeature
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from EEGNAS import global_vars
-from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel
+from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance
 from captum.attr import visualization as viz
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
@@ -117,6 +120,57 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
     create_pdf_from_story(report_file_name, story)
     for tf in performance_plot_imgs:
         os.remove(tf)
+
+
+'''
+Get importance values for each data point in the dataset, for each neuron in each layer
+'''
+def neuron_importance_report(model, dataset, folder_name):
+    report_file_name = f'{folder_name}/{global_vars.get("report")}.pdf'
+    eeg_chans = list(range(global_vars.get('eeg_chans')))
+    tf_plots = []
+    test_examples = prepare_data_for_NN(dataset['test'].X)
+    for layer_idx, layer in list(enumerate(model.children()))[global_vars.get('layer_idx_cutoff'):]:
+        layer_output = get_intermediate_layer_value(model, test_examples, layer_idx)
+        neuron_cond = NeuronConductance(model, layer)
+        for filter_idx in range(layer.out_channels):
+            for class_idx in range(global_vars.get('n_classes')):
+                conductance_values = []
+                if layer_output.ndim >= 3:
+                    tensor_len = layer_output.shape[2]
+                else:
+                    tensor_len = 1
+                for len_idx in range(tensor_len):
+                    conductance_values.append(neuron_cond.attribute(random.choices(test_examples, k=len(test_examples) *
+                        global_vars.get('explainer_sampling_rate'), neuron_index=(filter_idx, len_idx), target=class_idx)))
+                conductance_values = np.mean(conductance_values, axis=0)
+                print
+                if global_vars.get('to_eeglab'):
+                    tensor_to_eeglab(reconstruction,
+                        f'{folder_name}/kernel_deconvolution/X_layer_{layer_idx}_filter_{filter_idx}_class_{label_by_idx(class_idx)}.mat')
+                if global_vars.get('plot'):
+                    subj_tfs = []
+                    for eeg_chan in eeg_chans:
+                        if global_vars.get('plot_TF'):
+                            subj_tfs.append(get_tf_data_efficient(reconstruction.cpu().detach().numpy(),
+                                                              eeg_chan, global_vars.get('frequency'), global_vars.get('num_frex'), dB=True))
+                            print(f'applied TF to layer {layer_idx}, class {class_idx}, channel {eeg_chan}')
+                        else:
+                            subj_tfs.append(get_fft(np.average(reconstruction.cpu().detach().numpy(), axis=0).squeeze()[eeg_chan], global_vars.get('frequency')))
+                    if global_vars.get('deconvolution_by_class'):
+                        class_title = label_by_idx(class_idx)
+                    else:
+                        class_title = 'all'
+                    if global_vars.get('plot_TF'):
+                        tf_plots.append(tf_plot(subj_tfs, f'kernel deconvolution for layer {layer_idx},'
+                                            f' filter {filter_idx}, class {class_title}'))
+                    else:
+                        tf_plots.append(fft_plot(subj_tfs,  f'kernel deconvolution for layer {layer_idx},'
+                                            f' filter {filter_idx}, class {class_title}'))
+    if global_vars.get('plot'):
+        create_pdf(report_file_name, tf_plots)
+        for im in tf_plots:
+            os.remove(im)
 
 
 '''
@@ -364,8 +418,6 @@ class saliency_explainer:
     def __init__(self, model, train_data):
         model.eval()
         self.explainer = Saliency(model)
-        self.min = 0
-        self.max = 1
 
     def get_feature_importance(self, data):
         data.requires_grad = True
@@ -377,8 +429,11 @@ class integrated_gradients_explainer:
         model.eval()
         self.explainer = IntegratedGradients(model)
         self.model = model
-        self.min = -1
-        self.max = 1
+
+        if global_vars.get('model_alias') == 'nsga':
+            global_vars.set('explainer_sampling_rate', 0.03)
+        elif global_vars.get('model_alias') == 'rnn':
+            global_vars.set('explainer_sampling_rate', 0.1)
 
     def get_feature_importance(self, data):
         data.requires_grad = True
@@ -386,14 +441,11 @@ class integrated_gradients_explainer:
                                                      return_convergence_delta=True)[0] for i in
                                                             range(global_vars.get('n_classes'))], axis=0).detach()
 
-
 class deeplift_explainer:
     def __init__(self, model, train_data):
         model.eval()
         self.explainer = DeepLift(model)
         self.model = model
-        self.min = -1
-        self.max = 1
 
     def get_feature_importance(self, data):
         data.requires_grad = True
@@ -406,12 +458,16 @@ Use some explainer to get feature importance for each class
 '''
 def feature_importance_report(model, dataset, folder_name):
     FEATURE_VALUES = {}
+    feature_mean = {}
+    vmin = np.inf
+    vmax = -np.inf
     report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("explainer")}.pdf'
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
-    print(f'training {global_vars.get("explainer")} on {int(train_data.shape[0] * global_vars.get("explainer_sampling_rate"))} samples')
+    # print(f'training {global_vars.get("explainer")} on {int(train_data.shape[0] * global_vars.get("explainer_sampling_rate"))} samples')
     e = globals()[f'{global_vars.get("explainer")}_explainer'](model.cpu(), train_data)
     shap_imgs = []
     for segment in ['train', 'test', 'both']:
+    # for segment in ['train', 'test']:
         if segment == 'both':
             dataset = unify_dataset(dataset)
             segment_data = np_to_var(dataset.X[:, :, :, None])
@@ -421,11 +477,18 @@ def feature_importance_report(model, dataset, folder_name):
         segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("explainer_sampling_rate")), replace=False)]
         feature_values = e.get_feature_importance(segment_examples)
         feature_val = np.array(feature_values).squeeze()
-        feature_sum = np.sum(feature_val, axis=1)
-        FEATURE_VALUES[segment] = np.concatenate(feature_sum, axis=0)
+        feature_mean[segment] = np.mean(feature_val, axis=1)
+        feature_value = np.concatenate(feature_mean[segment], axis=0)
+        feature_value = (feature_value - np.mean(feature_value)) / np.std(feature_value)
+        FEATURE_VALUES[segment] = feature_value
+        if feature_mean[segment].min() < vmin:
+            vmin = feature_mean[segment].min()
+        if feature_mean[segment].max() > vmax:
+            vmax = feature_mean[segment].max()
+    for segment in ['train', 'test', 'both']:
         f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
         for idx, ax in enumerate(axes):
-            im = ax.imshow(feature_sum[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=e.min, vmax=e.max)
+            im = ax.imshow(feature_mean[segment][idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=vmin, vmax=vmax)
             ax.set_title(f'class: {label_by_idx(idx)}')
             ax.set_yticks([i for i in range(global_vars.get('eeg_chans'))])
             ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
@@ -442,10 +505,14 @@ def feature_importance_report(model, dataset, folder_name):
         f.subplots_adjust(right=0.8, hspace=0.8)
         cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
         f.colorbar(im, cax=cbar_ax)
-        plt.suptitle(f'{global_vars.get("explainer")} values for dataset: {global_vars.get("dataset")}, segment: {segment}\nchannel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}', fontsize=10)
+        plt.suptitle(f'{global_vars.get("explainer")} values for dataset: {global_vars.get("dataset")}, segment: {segment}\n'
+                     f'channel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}\n'
+                     f'Model - {global_vars.get("model_alias")}\n'
+                     f'Samples used - {int(len(dataset.X) * global_vars.get("explainer_sampling_rate"))}', fontsize=10)
         shap_img_file = f'temp/{get_next_temp_image_name("temp")}.png'
         shap_imgs.append(shap_img_file)
         plt.savefig(shap_img_file, dpi=300)
+        plt.clf()
     story = []
     for im in shap_imgs:
         story.append(get_image(im))
@@ -453,9 +520,34 @@ def feature_importance_report(model, dataset, folder_name):
     global_vars.get('sacred_ex').add_artifact(report_file_name)
     for im in shap_imgs:
         os.remove(im)
+    gc.collect()
     return FEATURE_VALUES
 
 
+'''
+open a captum insights GUI in browser
+'''
+def captum_insights_report(model, dataset, folder_name):
+    def formatted_data_iter():
+        dataset = dataset['train'].X
+        dataloader = iter(
+            torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, num_workers=2)
+        )
+        while True:
+            images, labels = next(dataloader)
+            yield Batch(inputs=images, labels=labels)
+
+    visualizer = AttributionVisualizer(
+        models=[model],
+        score_func=lambda o: torch.nn.functional.softmax(o, 1),
+        classes=["1", "2", "3", "4", "5"],
+        features=[
+            ImageFeature(
+                "TS"
+            )
+        ],
+        dataset=dataset['train'].X,
+    )
 '''
 Use shap to visualize CNN gradients
 '''

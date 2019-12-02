@@ -3,10 +3,13 @@ import itertools
 import os
 import pickle
 import sys
-from collections import defaultdict
+import traceback
+from collections import defaultdict, OrderedDict
 from copy import deepcopy
+import gc
 from sacred import Experiment
 from sacred.observers import MongoObserver
+
 sys.path.append("..")
 sys.path.append("../..")
 sys.path.append("../../nsga_net")
@@ -30,6 +33,8 @@ from EEGNAS_experiment import set_params_by_dataset, get_normal_settings
 import matplotlib.pyplot as plt
 from EEGNAS.utilities.misc import create_folder
 import numpy as np
+import pandas as pd
+import seaborn as sns
 from datetime import datetime
 from reportlab.lib.styles import getSampleStyleSheet
 styles = getSampleStyleSheet()
@@ -37,8 +42,8 @@ logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
 plt.interactive(False)
 ex = Experiment()
-SHAP_VALUES = {}
-
+FEATURE_VALUES = OrderedDict()
+LAST_EXP_FOLDER = ''
 MODEL_ALIASES = {'cnn': ('411_1_netflow_regression_daily_normalized', 'best_model_1.th'),
                  'rnn': ('rnn', 'rnn'),
                  'nsga': ('nsga_micro_netflow_normalized', 'best_genome_normalized.pkl')}
@@ -53,15 +58,21 @@ def get_intermediate_act_map(data, select_layer, model):
     return act_map_avg
 
 
+def matrix_mse(a, b):
+    return np.square(a - b).mean()
+
+
 @ex.main
 def main():
-    global SHAP_VALUES
+    global FEATURE_VALUES, LAST_EXP_FOLDER
     exp_folder = f"results/{exp_name}"
     create_folder(exp_folder)
     res = getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, exp_folder)
-    if global_vars.get('report') == 'shap':
-        SHAP_VALUES[(global_vars.get('model_name'), global_vars.get('iteration'))] = res
+    if global_vars.get('report') == 'feature_importance':
+        for segment in ['train', 'test', 'both']:
+            FEATURE_VALUES[(global_vars.get('model_alias'), global_vars.get('explainer'), global_vars.get('iteration'), segment)] = res[segment]
     write_config(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
+    LAST_EXP_FOLDER = exp_folder
 
 
 if __name__ == '__main__':
@@ -75,9 +86,11 @@ if __name__ == '__main__':
     multiple_values = get_multiple_values(configurations)
     prev_dataset = None
     for index, configuration in enumerate(configurations):
+        update_global_vars_from_config_dict(configuration)
         if index + 1 < global_vars.get('start_exp_idx'):
             continue
-        update_global_vars_from_config_dict(configuration)
+        if global_vars.get('model_alias') == 'nsga' and global_vars.get('explainer') == 'integrated_gradients':
+            continue
         if global_vars.get('model_alias'):
             alias = global_vars.get('model_alias')
             global_vars.set('models_dir', MODEL_ALIASES[alias][0])
@@ -125,39 +138,65 @@ if __name__ == '__main__':
         ex.config = {}
         ex.add_config(configuration)
         if len(ex.observers) == 0 and len(sys.argv) <= 2:
-            ex.observers.append(MongoObserver.create(url=f'mongodb://132.72.80.67/{global_vars.get("mongodb_name")}',
+            ex.observers.append(MongoObserver.create(url=f'mongodb://{global_vars.get("mongodb_server")}/{global_vars.get("mongodb_name")}',
                                                      db_name=global_vars.get("mongodb_name")))
         global_vars.set('sacred_ex', ex)
         try:
             ex.run(options={'--name': exp_name})
-        except MemoryError as me:
+            gc.collect()
+        except (MemoryError, RuntimeError) as me:
             print(f'failed experiment {exp_id}_{index+1} because of memory error, trying with sampling rate/2...')
             global_vars.set('explainer_sampling_rate', global_vars.get('explainer_sampling_rate') / 2)
             ex.run(options={'--name': exp_name})
         except Exception as e:
+            print('experiment failed. Exception message: %s' % (str(e)))
+            print(traceback.format_exc())
             print(f'failed experiment {exp_id}_{index+1}, continuing...')
 
-    if len(SHAP_VALUES.keys()) > 0:
-        models = list(set([i for (i,j) in list(SHAP_VALUES.keys())]))
-        iterations = list(set([j for (i,j) in list(SHAP_VALUES.keys())]))
 
-        for segment in ['train', 'test', 'both']:
-            mse_avg_per_model = {}
-            for model in models:
-                model_avg = 0
-                mse_calc = []
-                for iteration in iterations:
-                    mse_calc.append(SHAP_VALUES[(model, iteration)][segment])
-                for (shap_val_1, shap_val_2) in itertools.combinations(mse_calc, 2):
-                        model_avg += (np.square(shap_val_1 - shap_val_2)).mean()
-                model_avg = model_avg / len(mse_calc)
-                with open(f"{folder_name}/shap_mse.txt", "a") as f:
-                    f.write(f'{segment}: average MSE between iterations for model {model} is {model_avg}\n')
-                mse_avg_per_model[model] = np.mean(mse_calc, axis=0)
-
-            for (model1, model2) in itertools.combinations(models, 2):
-                with open(f"{folder_name}/shap_mse.txt", "a") as f:
-                    f.write(f'{segment}: MSE between model {model1} and model {model2} is '
-                            f'{(np.square(mse_avg_per_model[model1] - mse_avg_per_model[model2])).mean()}\n')
-
-
+    if len(FEATURE_VALUES.keys()) > 0:
+        # models = list(set([i for (i,j,k) in list(FEATURE_VALUES.keys())]))
+        # iterations = list(set([j for (i,j,k) in list(FEATURE_VALUES.keys())]))
+        # explainers = list(set([k for (i,j,k) in list(FEATURE_VALUES.keys())]))
+        # for segment in ['train', 'test', 'both']:
+        #     mse_avg_per_model = {}
+        #     for model in models:
+        #         for explainer in explainers:
+        #             model_avg = 0
+        #             mse_calc = []
+        #             for iteration in iterations:
+        #                 mse_calc.append(FEATURE_VALUES[(model, iteration, explainer)][segment])
+        #             for (feature_val_1, feature_val_2) in itertools.combinations(mse_calc, 2):
+        #                     model_avg += (np.square(feature_val_1 - feature_val_2)).mean()
+        #             model_avg = model_avg / len(mse_calc)
+        #             with open(f"{folder_name}/feature_mse.txt", "a") as f:
+        #                 f.write(f'{segment}: average MSE between iterations for model {model} for explainer {explainer} is {model_avg}\n')
+        #             mse_avg_per_model[model] = np.mean(mse_calc, axis=0)
+        #
+        #     for (model1, model2) in itertools.combinations(models, 2):
+        #         with open(f"{folder_name}/feature_mse.txt", "a") as f:
+        #             f.write(f'{segment}: MSE between model {model1} and model {model2} is '
+        #                     f'{(np.square(mse_avg_per_model[model1] - mse_avg_per_model[model2])).mean()}\n')
+        # df = pd.DataFrame.from_dict(FEATURE_VALUES)
+        l = len(FEATURE_VALUES.keys())
+        results = np.zeros((l, l))
+        for i, ac in enumerate(FEATURE_VALUES.values()):
+            for j, bc in enumerate(FEATURE_VALUES.values()):
+                results[j, i] = matrix_mse(ac, bc)
+        corr = pd.DataFrame(results, index=list(FEATURE_VALUES.keys()), columns=list(FEATURE_VALUES.keys()))
+        plt.clf()
+        ax = sns.heatmap(
+            corr,
+            vmin=corr.min().min(), vmax=corr.max().max(),
+            cmap=sns.diverging_palette(20, 220, n=200),
+            square=True
+        )
+        ax.set_xticklabels(
+            ax.get_xticklabels(),
+            rotation=90,
+            horizontalalignment='right'
+        )
+        ax.tick_params(axis='both', which='major', labelsize=6)
+        ax.tick_params(axis='both', which='minor', labelsize=6)
+        plt.tight_layout()
+        plt.savefig(f"{LAST_EXP_FOLDER}/feature_correlations.png", dpi=300)
