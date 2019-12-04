@@ -661,7 +661,7 @@ if __name__ == '__main__':
         global_vars.set('dataset', dataset)
 
         if dataset == 'netflow_asflow':
-            global_vars.set('autonomous_systems', [20940])
+            global_vars.set('autonomous_systems', [20940, 16509, 15169])
             global_vars.set('date_range', "1.7.2017-1.10.2019")
             global_vars.set('as_to_test', 20940)
             global_vars.set('start_hour', 15)
@@ -672,6 +672,7 @@ if __name__ == '__main__':
             global_vars.set('max_handovers', 11)
             global_vars.set('normalize_netflow_data', True)
             global_vars.set('per_handover_prediction', True)
+            global_vars.set('max_handovers', 11)
 
         set_params_by_dataset('configurations/dataset_params.ini')
         dataset = get_dataset('all')

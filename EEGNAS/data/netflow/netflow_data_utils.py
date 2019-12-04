@@ -53,6 +53,13 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
             all_X[idx] = np.pad(all_X[idx], pad_width=((max_handovers-all_X[idx].shape[0],0),(0,0)), mode='constant')
         elif all_X[idx].shape[0] > max_handovers:
             all_X[idx] = all_X[idx][:max_handovers]
+    if global_vars.get('per_handover_prediction'):
+        for idx in range(len(all_y)):
+            if all_y[idx].shape[0] < max_handovers * global_vars.get('steps_ahead'):
+                all_y[idx] = np.pad(all_y[idx], pad_width=((max_handovers * global_vars.get('steps_ahead') - all_y[idx].shape[0], 0)),
+                                    mode='constant')
+            elif all_y[idx].shape[0] < max_handovers * global_vars.get('steps_ahead'):
+                all_y[idx] = all_y[idx][:max_handovers * global_vars.get('steps_ahead')]
     return np.stack(all_X, axis=0), np.stack(all_y, axis=0), \
            np.stack(all_datetimes_X, axis=0), np.stack(all_datetimes_Y, axis=0)
 
@@ -83,9 +90,9 @@ def get_whole_netflow_data(file):
     return all_data
 
 
-def get_netflow_threshold(file, stds):
+def get_netflow_threshold(file, stds, handover='sum'):
     df = get_whole_netflow_data(file)
-    values = df['sum'].values.reshape(-1, 1)
+    values = df[handover].values.reshape(-1, 1)
     if global_vars.get('normalize_netflow_data'):
         scaler = MinMaxScaler()
         scaler.fit(values)
