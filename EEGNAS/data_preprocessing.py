@@ -435,7 +435,7 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
         y_train = np.sum(y_train, axis=1)
         y_test = np.sum(y_test, axis=1)
         global_vars.set('n_classes', 1)
-    if global_vars.get('problem') == 'classification':
+    if global_vars.get('problem') == 'classification' and not global_vars.get('highest_handover_overflow'):
         global_vars.set('n_classes', 2)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'),
                                                       shuffle=shuffle)

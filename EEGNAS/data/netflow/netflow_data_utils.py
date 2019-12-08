@@ -40,7 +40,7 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
         else:
             X = sample_list.swapaxes(1, 2)[:, :num_handovers]
             y = y.swapaxes(1, 2)[:, num_handovers]
-        if global_vars.get('problem') == 'classification':
+        if global_vars.get('problem') == 'classification' and not global_vars.get('highest_handover_overflow'):
             y = turn_netflow_into_classification(X, y,
                                                  get_netflow_threshold(file, global_vars.get('netflow_threshold_std')))
         all_X.extend(X)
