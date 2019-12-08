@@ -100,6 +100,11 @@ def get_netflow_threshold(file, stds, handover='sum'):
     return values.mean() + values.std() * stds
 
 
+def get_netflow_handovers(file):
+    df = get_whole_netflow_data(file)
+    return df.columns
+
+
 def get_time_freq(signal):
     scales = range(1, 64)
     waveletname = 'morl'

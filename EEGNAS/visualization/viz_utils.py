@@ -3,6 +3,7 @@ import numpy as np
 from braindecode.torch_ext.util import np_to_var
 import pandas as pd
 from EEGNAS import global_vars
+from EEGNAS.utilities.misc import reset_model_weights
 from EEGNAS_experiment import get_normal_settings
 from EEGNAS.data_preprocessing import get_pure_cross_subject
 from EEGNAS.evolution.nn_training import NN_Trainer
@@ -20,11 +21,12 @@ def pretrain_model_on_filtered_data(pretrained_model, low_freq, high_freq):
     pure_cross_subj_dataset_copy = deepcopy(pure_cross_subj_dataset)
     for freq in range(low_freq, high_freq + 1):
         pretrained_model_copy = deepcopy(pretrained_model)
+        reset_model_weights(pretrained_model_copy)
         for section in ['train', 'valid', 'test']:
             pure_cross_subj_dataset_copy[section].X = global_vars.get('band_filter')\
                 (pure_cross_subj_dataset_copy[section].X, max(1, freq - 1), freq + 1, global_vars.get('frequency')).astype(np.float32)
         nn_trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-        _, _, model, _, _ = nn_trainer.train_and_evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy)
+        _, _, model, _, _ = nn_trainer.train_and_evaluate_model(pretrained_model_copy, pure_cross_subj_dataset_copy, final_evaluation=True)
         freq_models[freq] = model
     return freq_models
 
