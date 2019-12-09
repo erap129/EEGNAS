@@ -58,7 +58,7 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
             if all_y[idx].shape[0] < max_handovers * global_vars.get('steps_ahead'):
                 all_y[idx] = np.pad(all_y[idx], pad_width=((max_handovers * global_vars.get('steps_ahead') - all_y[idx].shape[0], 0)),
                                     mode='constant')
-            elif all_y[idx].shape[0] < max_handovers * global_vars.get('steps_ahead'):
+            elif all_y[idx].shape[0] > max_handovers * global_vars.get('steps_ahead'):
                 all_y[idx] = all_y[idx][:max_handovers * global_vars.get('steps_ahead')]
     return np.stack(all_X, axis=0), np.stack(all_y, axis=0), \
            np.stack(all_datetimes_X, axis=0), np.stack(all_datetimes_Y, axis=0)

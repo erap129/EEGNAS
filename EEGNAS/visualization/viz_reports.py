@@ -100,8 +100,7 @@ def performance_frequency_report(pretrained_model, dataset, folder_name):
     baselines.append(np.average(baselines, axis=0))
     all_performances.append(np.average(all_performances, axis=0))
     all_performances_freq.append(np.average(all_performances_freq, axis=0))
-    if global_vars.get('to_csv'):
-        export_performance_frequency_to_csv(all_performances, all_performances_freq, baselines, folder_name)
+    export_performance_frequency_to_csv(all_performances, all_performances_freq, baselines, folder_name)
     performance_plot_imgs = plot_performance_frequency([all_performances, all_performances_freq], baselines,
                                                        legend=['no retraining', 'with retraining', 'unperturbed'])
     for subj_idx in range(len(all_performances)):
