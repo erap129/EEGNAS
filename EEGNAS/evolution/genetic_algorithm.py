@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from EEGNAS.evolution.deap_functions import Individual, initialize_deap_population, mutate_layers_deap, \
     mutate_modules_deap, \
     mutate_layers_deap_modules, breed_layers_deap, breed_modules_deap, breed_layers_modules_deap, hash_models_deap, \
-    breed_layers_deap_one_child, selection_normal_deap, breed_normal_population_deap
+    breed_layers_deap_one_child, selection_normal_deap, breed_normal_population_deap, breed_layers_deap_two_children
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer, DropoutLayer, ActivationLayer, BatchNormLayer, \
     IdentityLayer
 from EEGNAS.model_generation.simple_model_generation import finalize_model, random_layer, Module, \
@@ -566,9 +566,9 @@ class EEGNAS_evolution:
         self.toolbox.register("individual", creator.Individual)
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
         self.toolbox.register("evaluate", self.evaluate_ind_deap)
-        self.toolbox.register("mate", breed_normal_population_deap)
-        # self.toolbox.register("mutate", mutate_layers_deap)
-        self.toolbox.register("select", selection_normal_deap)
+        self.toolbox.register("mate", breed_layers_deap_two_children)
+        self.toolbox.register("mutate", mutate_layers_deap)
+        self.toolbox.register("select", selTournament, tournsize=3)
         self.population = self.toolbox.population(global_vars.get('pop_size'))
         self.current_generation = 0
         initialize_deap_population(self.population, self.models_set, self.genome_set)
@@ -577,7 +577,8 @@ class EEGNAS_evolution:
         stats.register("std", np.std)
         stats.register("min", np.min)
         stats.register("max", np.max)
-        final_population, logbook = self.ea_deap(self.population, self.toolbox, global_vars.get('num_generations'),
+        final_population, logbook = self.eaSimple(self.population, self.toolbox, global_vars.get('breed_rate_deap'),
+                                                  global_vars.get('mutation_rate'), global_vars.get('num_generations'),
                                                   stats=stats, verbose=True)
         best_model_filename = self.save_best_model(final_population)
         pickle.dump(self.population, open(f'{self.exp_folder}/{self.exp_name}_architectures.p', 'wb'))
