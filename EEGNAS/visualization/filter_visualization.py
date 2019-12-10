@@ -85,6 +85,7 @@ if __name__ == '__main__':
     exp_id = get_exp_id('results')
     multiple_values = get_multiple_values(configurations)
     prev_dataset = None
+    prev_model_alias = None
     for index, configuration in enumerate(configurations):
         update_global_vars_from_config_dict(configuration)
         if index + 1 < global_vars.get('start_exp_idx'):
@@ -105,29 +106,28 @@ if __name__ == '__main__':
         exp_name = f"{exp_id}_{index+1}_{global_vars.get('report')}_{global_vars.get('dataset')}"
         exp_name = add_params_to_name(exp_name, multiple_values)
 
-        if global_vars.get('model_name') == 'rnn':
-            model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
-                                     global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
 
-        elif 'nsga' in global_vars.get("models_dir"):
-            with open(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}', 'rb') as f:
-                genotype = pickle.load(f)
-                genotype = decode(convert(genotype))
-                model = NetworkCIFAR(24, global_vars.get('steps_ahead'), global_vars.get('max_handovers'), 11, False,
-                                     genotype)
-                model.droprate = 0.0
-                model.single_output = True
+        if not(global_vars.get('model_alias') and global_vars.get('model_alias') == prev_model_alias):
+            if global_vars.get('model_name') == 'rnn':
+                model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
+                                         global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
+            elif 'nsga' in global_vars.get("models_dir"):
+                with open(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}', 'rb') as f:
+                    genotype = pickle.load(f)
+                    genotype = decode(convert(genotype))
+                    model = NetworkCIFAR(24, global_vars.get('steps_ahead'), global_vars.get('max_handovers'), 11, False,
+                                         genotype)
+                    model.droprate = 0.0
+                    model.single_output = True
 
-        else:
-            model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
-
-
-        model.cuda()
-
-        if global_vars.get('finetune_model'):
-            stop_criterion, iterator, loss_function, monitors = get_normal_settings()
-            trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
-            model = trainer.train_model(model, dataset, final_evaluation=True)
+            else:
+                model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
+            model.cuda()
+            if global_vars.get('finetune_model'):
+                stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+                trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
+                model = trainer.train_model(model, dataset, final_evaluation=True)
+            prev_model_alias = global_vars.get('model_alias')
 
         concat_train_val_sets(dataset)
 
@@ -155,29 +155,6 @@ if __name__ == '__main__':
 
 
     if len(FEATURE_VALUES.keys()) > 0:
-        # models = list(set([i for (i,j,k) in list(FEATURE_VALUES.keys())]))
-        # iterations = list(set([j for (i,j,k) in list(FEATURE_VALUES.keys())]))
-        # explainers = list(set([k for (i,j,k) in list(FEATURE_VALUES.keys())]))
-        # for segment in ['train', 'test', 'both']:
-        #     mse_avg_per_model = {}
-        #     for model in models:
-        #         for explainer in explainers:
-        #             model_avg = 0
-        #             mse_calc = []
-        #             for iteration in iterations:
-        #                 mse_calc.append(FEATURE_VALUES[(model, iteration, explainer)][segment])
-        #             for (feature_val_1, feature_val_2) in itertools.combinations(mse_calc, 2):
-        #                     model_avg += (np.square(feature_val_1 - feature_val_2)).mean()
-        #             model_avg = model_avg / len(mse_calc)
-        #             with open(f"{folder_name}/feature_mse.txt", "a") as f:
-        #                 f.write(f'{segment}: average MSE between iterations for model {model} for explainer {explainer} is {model_avg}\n')
-        #             mse_avg_per_model[model] = np.mean(mse_calc, axis=0)
-        #
-        #     for (model1, model2) in itertools.combinations(models, 2):
-        #         with open(f"{folder_name}/feature_mse.txt", "a") as f:
-        #             f.write(f'{segment}: MSE between model {model1} and model {model2} is '
-        #                     f'{(np.square(mse_avg_per_model[model1] - mse_avg_per_model[model2])).mean()}\n')
-        # df = pd.DataFrame.from_dict(FEATURE_VALUES)
         l = len(FEATURE_VALUES.keys())
         results = np.zeros((l, l))
         for i, ac in enumerate(FEATURE_VALUES.values()):

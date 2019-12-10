@@ -9,8 +9,6 @@ import torch
 from braindecode.datautil.splitters import concatenate_sets
 import code, traceback, signal
 
-from moabb.paradigms import MotorImagery
-
 from EEGNAS import global_vars
 
 log = logging.getLogger(__name__)

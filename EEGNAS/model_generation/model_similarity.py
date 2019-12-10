@@ -53,21 +53,21 @@ def network_similarity(layer_collection1, layer_collection2):
     output = ['-' * 50]
     output.append(format_alignment(*alignment))
     score = alignment[2]
-    # str1_orders = defaultdict(lambda:0)
-    # str2_orders = defaultdict(lambda:0)
-    # for x,y in (zip(alignment[0], alignment[1])):
-    #     str1_orders[x] += 1
-    #     str2_orders[y] += 1
-    #     if x == y == 'c':
-    #         score += layer_comparison(ConvLayer, str1_orders['c'], str2_orders['c'],
-    #                                   layer_collection1, layer_collection2,
-    #                                   ['kernel_eeg_chan', 'filter_num', 'kernel_time'], output)
-    #     if x == y == 'p':
-    #         score += layer_comparison(PoolingLayer, str1_orders['p'], str2_orders['p'],
-    #                                   layer_collection1, layer_collection2,
-    #                                   ['pool_time', 'stride_time'], output)
-    # output.append(f"final similarity: {score:.3f}")
-    # output.append('-' * 50)
+    str1_orders = defaultdict(lambda:0)
+    str2_orders = defaultdict(lambda:0)
+    for x,y in (zip(alignment[0], alignment[1])):
+        str1_orders[x] += 1
+        str2_orders[y] += 1
+        if x == y == 'c':
+            score += layer_comparison(ConvLayer, str1_orders['c'], str2_orders['c'],
+                                      layer_collection1, layer_collection2,
+                                      ['kernel_height', 'filter_num', 'kernel_width'], output)
+        if x == y == 'p':
+            score += layer_comparison(PoolingLayer, str1_orders['p'], str2_orders['p'],
+                                      layer_collection1, layer_collection2,
+                                      ['pool_height', 'stride_height'], output)
+    output.append(f"final similarity: {score:.3f}")
+    output.append('-' * 50)
     return score
 
 
