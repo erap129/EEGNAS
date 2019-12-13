@@ -25,13 +25,25 @@ class LinearWeightedAvg(nn.Module):
             init.xavier_uniform_(self.weight_inputs[-1], gain=1)
         if true_avg:
             for network_idx in range(n_networks):
-                self.weight_inputs[network_idx].data = torch.tensor([[0.5 for i in range(n_neurons)]]).view((1, n_neurons))
+                self.weight_inputs[network_idx].data = torch.tensor([[1/n_networks for i in range(n_neurons)]]).view((1, n_neurons))
         self.weight_inputs = nn.ParameterList(self.weight_inputs)
 
     def forward(self, *inputs):
         res = 0
         for inp_idx, input in enumerate(inputs):
             res += input * self.weight_inputs[inp_idx]
+        return res
+
+
+class BasicEnsemble(nn.Module):
+    def __init__(self, networks, out_size):
+        super(BasicEnsemble, self).__init__()
+        self.networks = networks
+        self.linear = torch.nn.Linear(out_size * len(networks), out_size)
+
+    def forward(self, X):
+        concat_out = torch.concat([model(X) for model in self.networks])
+        res = self.linear(concat_out)
         return res
 
 

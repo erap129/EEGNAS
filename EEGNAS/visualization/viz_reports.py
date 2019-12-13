@@ -140,8 +140,8 @@ def neuron_importance_report(model, dataset, folder_name):
                 else:
                     tensor_len = 1
                 for len_idx in range(tensor_len):
-                    conductance_values.append(neuron_cond.attribute(random.choices(test_examples, k=len(test_examples) *
-                        global_vars.get('explainer_sampling_rate'), neuron_index=(filter_idx, len_idx), target=class_idx)))
+                    conductance_values.append(neuron_cond.attribute(random.choices(test_examples, k=int(len(test_examples) *
+                        global_vars.get('explainer_sampling_rate'))), neuron_index=(filter_idx, len_idx), target=class_idx))
                 conductance_values = np.mean(conductance_values, axis=0)
                 print
                 if global_vars.get('to_eeglab'):

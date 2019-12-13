@@ -1,5 +1,6 @@
 import collections
 import copy
+import pickle
 import random
 import numpy as np
 from braindecode.models import deep4, shallow_fbcsp, eegnet
@@ -216,3 +217,9 @@ def target_model(model_name):
     final_conv_sizes = collections.defaultdict(int, final_conv_sizes)
     global_vars.set('final_conv_size', final_conv_sizes[model_name])
     return models[model_name].create_network()
+
+
+def create_ensemble_from_population_file(path, size, true_avg=True):
+    weighted_population = pickle.load(open(path, 'rb'))
+    models = [weighted_population[i]['finalized_model'] for i in size]
+    return AveragingEnsemble(models, true_avg)
