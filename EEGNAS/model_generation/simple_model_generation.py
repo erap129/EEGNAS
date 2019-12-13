@@ -221,5 +221,5 @@ def target_model(model_name):
 
 def create_ensemble_from_population_file(path, size, true_avg=True):
     weighted_population = pickle.load(open(path, 'rb'))
-    models = [weighted_population[i]['finalized_model'] for i in size]
+    models = [weighted_population[i]['finalized_model'] for i in range(size)]
     return AveragingEnsemble(models, true_avg)
