@@ -130,10 +130,12 @@ def get_index_of_last_layertype(model, layertype):
 def get_oper_by_loss_function(loss_func, equals=False):
     if not equals:
         loss_func_opers = {F.nll_loss: operator.gt,
-                           F.mse_loss: operator.lt}
+                           F.mse_loss: operator.lt,
+                           torch.nn.CrossEntropyLoss: operator.gt}
     else:
         loss_func_opers = {F.nll_loss: operator.ge,
-                           F.mse_loss: operator.le}
+                           F.mse_loss: operator.le,
+                           torch.nn.CrossEntropyLoss: operator.gt}
     return loss_func_opers[loss_func]
 
 
