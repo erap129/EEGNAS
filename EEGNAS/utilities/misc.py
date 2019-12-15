@@ -131,11 +131,13 @@ def get_oper_by_loss_function(loss_func, equals=False):
     if not equals:
         loss_func_opers = {F.nll_loss: operator.gt,
                            F.mse_loss: operator.lt,
-                           torch.nn.modules.loss.CrossEntropyLoss: operator.gt}
+                           torch.nn.modules.loss.CrossEntropyLoss: operator.gt,
+                           F.cross_entropy: operator.gt}
     else:
         loss_func_opers = {F.nll_loss: operator.ge,
                            F.mse_loss: operator.le,
-                           torch.nn.modules.loss.CrossEntropyLoss: operator.gt}
+                           torch.nn.modules.loss.CrossEntropyLoss: operator.gt,
+                           F.cross_entropy: operator.gt}
     return loss_func_opers[loss_func]
 
 
