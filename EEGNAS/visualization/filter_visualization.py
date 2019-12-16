@@ -17,7 +17,7 @@ from EEGNAS.utilities.data_utils import write_config
 from EEGNAS.utilities.report_generation import add_params_to_name
 from nsga_net.models.micro_models import NetworkCIFAR
 from nsga_net.search.micro_encoding import decode, convert
-from EEGNAS.visualization.external_models import MultivariateLSTM
+from EEGNAS.visualization.external_models import MultivariateLSTM, MHANetModel, LSTNetModel
 from EEGNAS.evolution.nn_training import NN_Trainer
 from EEGNAS.visualization import viz_reports
 from EEGNAS.utilities.config_utils import set_default_config, update_global_vars_from_config_dict, get_configurations, \
@@ -46,7 +46,9 @@ FEATURE_VALUES = OrderedDict()
 LAST_EXP_FOLDER = ''
 MODEL_ALIASES = {'cnn': ('411_1_netflow_regression_daily_normalized', 'best_model_1.th'),
                  'rnn': ('rnn', 'rnn'),
-                 'nsga': ('nsga_micro_netflow_normalized', 'best_genome_normalized.pkl')}
+                 'nsga': ('nsga_micro_netflow_normalized', 'best_genome_normalized.pkl'),
+                 'MHANet': ('MHANet', 'MHANet'),
+                 'LSTNet': ('LSTNet', 'MHANet')}
 
 def get_intermediate_act_map(data, select_layer, model):
     x = np_to_var(data[:, :, :, None]).cuda()
@@ -111,6 +113,10 @@ if __name__ == '__main__':
             if global_vars.get('model_name') == 'rnn':
                 model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
                                          global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
+            elif global_vars.get('model_name') == 'MHANet':
+                model = MHANetModel(dataset['train'].X.shape[1], global_vars.get('n_classes'))
+            elif global_vars.get('model_name') == 'LSTNet':
+                model = LSTNetModel(dataset['train'].X.shape[1], global_vars.get('n_classes'))
             elif 'nsga' in global_vars.get("models_dir"):
                 with open(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}', 'rb') as f:
                     genotype = pickle.load(f)

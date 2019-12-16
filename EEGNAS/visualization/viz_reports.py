@@ -11,7 +11,7 @@ from captum.insights.features import ImageFeature
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from EEGNAS import global_vars
-from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance
+from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance, GradientShap
 from captum.attr import visualization as viz
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
@@ -451,6 +451,20 @@ class deeplift_explainer:
         return torch.stack([attribute_image_features(self.model, self.explainer, data, i, baselines=data * 0,
                                                      return_convergence_delta=True)[0] for i in
                                                             range(global_vars.get('n_classes'))], axis=0).detach()
+
+class gradientshap_explainer:
+    def __init__(self, model, train_data):
+        model.eval()
+        self.explainer = GradientShap(model)
+        self.model = model
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        baseline_dist = torch.randn(data.shape) * 0.001
+        return torch.stack([self.explainer.attribute(data, stdevs=0.09, n_samples=4, baselines=baseline_dist,
+                                           target=i, return_convergence_delta=True)[0] for i in
+                                                range(global_vars.get('n_classes'))], axis=0).detach()
+
 
 '''
 Use some explainer to get feature importance for each class
