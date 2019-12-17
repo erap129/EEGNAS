@@ -36,10 +36,10 @@ class LinearWeightedAvg(nn.Module):
 
 
 class BasicEnsemble(nn.Module):
-    def __init__(self, networks, out_size):
+    def __init__(self, models, out_size):
         super(BasicEnsemble, self).__init__()
-        self.networks = networks
-        self.linear = torch.nn.Linear(out_size * len(networks), out_size)
+        self.models = models
+        self.linear = torch.nn.Linear(out_size * len(models), out_size)
 
     def forward(self, X):
         concat_out = torch.cat((model(X) for model in self.networks), dim=0)
