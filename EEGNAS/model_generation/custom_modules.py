@@ -42,7 +42,7 @@ class BasicEnsemble(nn.Module):
         self.linear = torch.nn.Linear(out_size * len(networks), out_size)
 
     def forward(self, X):
-        concat_out = torch.concat([model(X) for model in self.networks])
+        concat_out = torch.cat((model(X) for model in self.networks), dim=0)
         res = self.linear(concat_out)
         return res
 
