@@ -42,9 +42,14 @@ class BasicEnsemble(nn.Module):
         self.linear = torch.nn.Linear(out_size * len(models), out_size)
 
     def forward(self, X):
-        concat_out = torch.cat((model(X) for model in self.networks), dim=0)
+        concat_out = torch.cat((model(X) for model in self.models), dim=0)
         res = self.linear(concat_out)
         return res
+
+    def freeze_child_models(self, frz):
+        for model in self.models:
+            for param in model.parameters():
+                param.requires_grad = frz
 
 
 class _squeeze_final_output(nn.Module):
