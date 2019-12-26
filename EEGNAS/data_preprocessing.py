@@ -7,8 +7,9 @@ from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import SignalAndTarget
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from EEGNAS.data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
-from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification, get_time_freq, \
-    turn_dataset_to_timefreq
+from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification, \
+    get_time_freq, \
+    turn_dataset_to_timefreq, get_whole_netflow_data
 from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
 from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
     EEG_to_TF_mne, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime, set_global_vars_by_dataset
@@ -675,7 +676,16 @@ if __name__ == '__main__':
             global_vars.set('max_handovers', 11)
 
         set_params_by_dataset('configurations/dataset_params.ini')
-        dataset = get_dataset('all')
-        concat_train_val_sets(dataset)
-        export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}_per_handover', transpose_time=False, unify=False)
+        file_paths = [f"{os.path.dirname(os.path.abspath(__file__))}/data/netflow/{ats}_" \
+                      f"{global_vars.get('date_range')}.csv" for ats in global_vars.get('autonomous_systems')]
+        for AS_name, file_path in zip(global_vars.get('autonomous_systems'), file_paths):
+            all_data = get_whole_netflow_data(file_path)
+            all_data.to_csv(f'data/export_data/{global_vars.get("dataset")}/raw/{AS_name}.csv')
+
+
+        # dataset = get_dataset('all')
+        # concat_train_val_sets(dataset)
+        # export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}_per_handover', transpose_time=False, unify=False)
+
+
 

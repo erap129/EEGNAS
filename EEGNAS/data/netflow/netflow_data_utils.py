@@ -14,6 +14,16 @@ plt.interactive(False)
 import pandas as pd
 
 
+def get_netflow_minmax_scaler(file):
+    all_data = get_whole_netflow_data(file)
+    all_data.fillna(method='ffill', inplace=True)
+    all_data.fillna(method='bfill', inplace=True)
+    values = all_data.values
+    scaler = MinMaxScaler()
+    scaler.fit(values)
+    return scaler
+
+
 def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
     all_X = []
     all_y = []
