@@ -540,8 +540,9 @@ def get_multivariate_ts(data_folder):
 def get_MTS_benchmark_train_val_test(data_folder):
     Data = Data_utility(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}MTS_benchmarks/'
                         f'{global_vars.get("dataset")}.txt', 0.6, 0.2, device='cpu', window=24*7, horizon=12)
-    train_set, valid_set, test_set = makeDummySignalTargets(Data.train[0], Data.train[1], Data.valid[0], Data.valid[1],
-                                                            Data.test[0], Data.test[1])
+    train_set, valid_set, test_set = makeDummySignalTargets(np.swapaxes(Data.train[0], 1, 2), Data.train[1],
+                                                            np.swapaxes(Data.valid[0], 1, 2), Data.valid[1],
+                                                            np.swapaxes(Data.test[0], 1, 2), Data.test[1])
     global_vars.set('eeg_chans', train_set.X.shape[1])
     global_vars.set('input_height', train_set.X.shape[2])
     global_vars.set('n_classes', train_set.y.shape[1])
