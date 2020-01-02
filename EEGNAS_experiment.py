@@ -259,13 +259,16 @@ def main(_config):
 
 
 def add_exp(exp_name, index, all_exps, run):
-    algo_name = f'EEGNAS_{global_vars.get("num_layers")}_layers'
-    if global_vars.get('deap'):
-        algo_name += '_deap_original'
-    if global_vars.get('time_frequency'):
-        algo_name += '_TF'
-    if global_vars.get('random_search'):
-        algo_name += '_RS'
+    if global_vars.get('model_name'):
+        algo_name = global_vars.get('model_name')
+    else:
+        algo_name = f'EEGNAS_{global_vars.get("num_layers")}_layers'
+        if global_vars.get('deap'):
+            algo_name += '_deap_original'
+        if global_vars.get('time_frequency'):
+            algo_name += '_TF'
+        if global_vars.get('random_search'):
+            algo_name += '_RS'
     all_exps['algorithm'].append(algo_name)
     all_exps['architecture'].append('best')
     all_exps['measure'].append(global_vars.get('ga_objective'))

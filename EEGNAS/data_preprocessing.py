@@ -1,4 +1,5 @@
 import sys
+
 sys.path.append('..')
 import os
 from copy import deepcopy
@@ -14,7 +15,7 @@ from EEGNAS.utilities.config_utils import set_default_config, set_params_by_data
 from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
     EEG_to_TF_mne, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime, set_global_vars_by_dataset
 from EEGNAS.utilities.misc import concat_train_val_sets, unify_dataset, MOABB_DATASETS
-
+from EEGNAS.data.MTS_benchmarks.MTS_utils import Data_utility
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from collections import OrderedDict
 from braindecode.mne_ext.signalproc import mne_apply, resample_cnt
@@ -536,6 +537,17 @@ def get_multivariate_ts(data_folder):
     return train_set, valid_set, test_set
 
 
+def get_MTS_benchmark_train_val_test(data_folder):
+    Data = Data_utility(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}MTS_benchmarks/'
+                        f'{global_vars.get("dataset")}.txt', 0.6, 0.2, device='cpu', window=24*7, horizon=12)
+    train_set, valid_set, test_set = makeDummySignalTargets(Data.train[0], Data.train[1], Data.valid[0], Data.valid[1],
+                                                            Data.test[0], Data.test[1])
+    global_vars.set('eeg_chans', train_set.X.shape[1])
+    global_vars.set('input_height', train_set.X.shape[2])
+    global_vars.set('n_classes', train_set.y.shape[1])
+    return train_set, valid_set, test_set
+
+
 def get_data_from_npy(data_folder):
     X_train = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/X_train.npy')
     X_test = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/X_test.npy')
@@ -638,6 +650,8 @@ def get_train_val_test(data_folder, subject_id):
         return get_multivariate_ts(data_folder)
     elif global_vars.get('dataset') in MOABB_DATASETS:
         return get_moabb_train_val_test(subject_id)
+    elif global_vars.get('dataset') in ['solar', 'stock', 'traffic']:
+        return get_MTS_benchmark_train_val_test(data_folder)
     else:
         return get_data_from_npy(data_folder)
 

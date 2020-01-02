@@ -12,6 +12,7 @@ from torch.nn import init
 from EEGNAS.utilities.misc import get_index_of_last_layertype
 
 from EEGNAS.model_generation.custom_modules import _squeeze_final_output
+from model_impls.LSTNet import LSTNetModel
 
 
 def flatten(l):
@@ -212,11 +213,15 @@ def target_model(model_name):
     eeg_chans = global_vars.get('eeg_chans')
     models = {'deep': deep4.Deep4Net(eeg_chans, n_classes, input_height, final_conv_length='auto'),
               'shallow': shallow_fbcsp.ShallowFBCSPNet(eeg_chans, n_classes, input_height, final_conv_length='auto'),
-              'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_height, final_conv_length='auto')}
-    final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2}
-    final_conv_sizes = collections.defaultdict(int, final_conv_sizes)
-    global_vars.set('final_conv_size', final_conv_sizes[model_name])
-    return models[model_name].create_network()
+              'eegnet': eegnet.EEGNet(eeg_chans, n_classes, input_time_length=input_height, final_conv_length='auto'),
+              'LSTNet': LSTNetModel(eeg_chans, n_classes, input_height, output_fun='softmax')}
+    if model_name in ['deep', 'shallow', 'eegnet']:
+        final_conv_sizes = {'deep': 2, 'shallow': 30, 'eegnet': 2}
+        final_conv_sizes = collections.defaultdict(int, final_conv_sizes)
+        global_vars.set('final_conv_size', final_conv_sizes[model_name])
+        return models[model_name].create_network()
+    else:
+        return models[model_name]
 
 
 def create_ensemble_from_population_file(path, size, true_avg=True):
