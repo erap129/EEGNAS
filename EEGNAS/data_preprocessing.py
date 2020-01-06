@@ -651,7 +651,7 @@ def get_train_val_test(data_folder, subject_id):
         return get_multivariate_ts(data_folder)
     elif global_vars.get('dataset') in MOABB_DATASETS:
         return get_moabb_train_val_test(subject_id)
-    elif global_vars.get('dataset') in ['solar', 'stock', 'traffic']:
+    elif global_vars.get('dataset') in ['solar', 'exchange_rate', 'traffic']:
         return get_MTS_benchmark_train_val_test(data_folder)
     else:
         return get_data_from_npy(data_folder)
