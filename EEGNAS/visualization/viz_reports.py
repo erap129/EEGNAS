@@ -8,8 +8,11 @@ import torch
 from braindecode.torch_ext.util import np_to_var
 from captum.insights import AttributionVisualizer
 from captum.insights.features import ImageFeature
+from matplotlib.colors import LogNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
+from sklearn.preprocessing import MinMaxScaler
+
 from EEGNAS import global_vars
 from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance, GradientShap
 from captum.attr import visualization as viz
@@ -670,5 +673,8 @@ def shap_gradient_report(model, dataset, folder_name):
 
 
 if __name__ == '__main__':
-    features = np.load('results/140_1_feature_importance_netflow_asflow_as_to_test_20940/deeplift_test.npy')
+    features = np.load('results/145_1_feature_importance_netflow_asflow_repetition_1_as_to_test_20940_explainer_deeplift/deeplift_test.npy')
+    for f_idx in range(len(features)):
+        features[f_idx] = features[f_idx] - features[f_idx].mean()
+        features[f_idx] = features[f_idx] / features[f_idx].max()
     plot_feature_importance_netflow('/home/user/Documents/eladr/EEGNAS/EEGNAS/visualization/results', features, 17, 'netflow_asflow', 'test', 'deeplift')
