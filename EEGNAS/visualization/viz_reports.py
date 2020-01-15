@@ -466,6 +466,39 @@ class gradientshap_explainer:
                                                 range(global_vars.get('n_classes'))], axis=0).detach()
 
 
+def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_name, segment, viz_method):
+    f, axes = plt.subplots(len(features), figsize=(20, 10))
+    for idx, ax in enumerate(axes):
+        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=features.min(),
+                       vmax=features.max())
+        ax.set_title(f'prediction for: {label_by_idx(idx, dataset_name)}')
+        ax.set_yticks([i for i in range(features[0].shape[0])])
+        # ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
+        ax.set_xticks(list(range(features[0].shape[1]))[::3])
+        ax.set_xticklabels([(i + start_hour) % 24 for i in range(features[0].shape[1])][::2])
+        input_height_arr = list(range(features[0].shape[1]))
+        ax2 = ax.twiny()
+        ax2.set_xlim(1, int(len(input_height_arr) / 24))
+        num_days = len(list(range(int(features[0].shape[1] / 24))))
+        ax2.set_xticks(list(range(int(features[0].shape[1] / 24))))
+        ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(features[0].shape[1] / 24))])
+        ax.tick_params(axis='x', which='major', labelsize=8)
+        ax.tick_params(axis='y', which='major', labelsize=6)
+        ax.set_xlabel('hour of day')
+        ax.set_ylabel('handover')
+    f.subplots_adjust(right=0.8, hspace=1.2)
+    cbar_ax = f.add_axes([0.83, 0.15, 0.02, 0.7])
+    cbar = f.colorbar(im, cax=cbar_ax)
+    cbar.ax.set_title(f'{viz_method} values', fontsize=12)
+    plt.suptitle(
+        f'{viz_method} values for dataset: {dataset_name}, segment: {segment}\n'
+        f'channel order: {[eeg_label_by_idx(i, dataset_name) for i in range(features[0].shape[0])]}\n', fontsize=10)
+    shap_img_file = f'{folder_name}/{dataset_name}_{segment}_{viz_method}.png'
+    plt.savefig(shap_img_file, dpi=300)
+    plt.clf()
+    return shap_img_file
+
+
 '''
 Use some explainer to get feature importance for each class
 '''
@@ -476,11 +509,20 @@ def feature_importance_report(model, dataset, folder_name):
     vmax = -np.inf
     report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("explainer")}.pdf'
     train_data = np_to_var(dataset['train'].X[:, :, :, None])
-    # print(f'training {global_vars.get("explainer")} on {int(train_data.shape[0] * global_vars.get("explainer_sampling_rate"))} samples')
-    e = globals()[f'{global_vars.get("explainer")}_explainer'](model.cpu(), train_data)
+    model.cpu()
+    if 'Ensemble' in type(model).__name__:
+        for mod in model.models:
+            if 'Ensemble' in type(mod).__name__:
+                for inner_mod in mod.models:
+                    inner_mod.cpu()
+                    inner_mod.eval()
+            mod.cpu()
+            mod.eval()
+    e = globals()[f'{global_vars.get("explainer")}_explainer'](model, train_data)
     shap_imgs = []
-    for segment in ['train', 'test', 'both']:
-    # for segment in ['train', 'test']:
+    num_samples = len(dataset['train'].X)
+    # for segment in ['train', 'test', 'both']:
+    for segment in ['test']:
         if segment == 'both':
             dataset = unify_dataset(dataset)
             segment_data = np_to_var(dataset.X[:, :, :, None])
@@ -491,6 +533,10 @@ def feature_importance_report(model, dataset, folder_name):
         feature_values = e.get_feature_importance(segment_examples)
         feature_val = np.array(feature_values).squeeze()
         feature_mean[segment] = np.mean(feature_val, axis=1)
+        np.save(f'{folder_name}/{global_vars.get("explainer")}_{segment}.npy', feature_mean[segment])
+        # for idx in range(len(feature_mean[segment])):
+        #     np.savetxt(f'{folder_name}/{global_vars.get("explainer")}_{segment}_{idx+17}.csv',
+        #                feature_mean[segment][idx], delimiter=",")
         feature_value = np.concatenate(feature_mean[segment], axis=0)
         feature_value = (feature_value - np.mean(feature_value)) / np.std(feature_value)
         FEATURE_VALUES[segment] = feature_value
@@ -498,34 +544,38 @@ def feature_importance_report(model, dataset, folder_name):
             vmin = feature_mean[segment].min()
         if feature_mean[segment].max() > vmax:
             vmax = feature_mean[segment].max()
-    for segment in ['train', 'test', 'both']:
-        f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
-        for idx, ax in enumerate(axes):
-            im = ax.imshow(feature_mean[segment][idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=vmin, vmax=vmax)
-            ax.set_title(f'class: {label_by_idx(idx)}')
-            ax.set_yticks([i for i in range(global_vars.get('eeg_chans'))])
-            ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
-            if global_vars.get('dataset') == 'netflow_asflow':
-                ax.set_xticks(list(range(global_vars.get('input_height')))[::2])
-                ax.set_xticklabels([(i+global_vars.get('start_hour')) % 24 for i in range(global_vars.get('input_height'))][::2])
-                input_height_arr = list(range(global_vars.get('input_height')))
-                ax2 = ax.twiny()
-                ax2.set_xlim(1, int(len(input_height_arr) / 24))
-                num_days = len(list(range(int(global_vars.get('input_height') / 24))))
-                ax2.set_xticks(list(range(int(global_vars.get('input_height') / 24))))
-                ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(global_vars.get('input_height') / 24))])
-            ax.tick_params(axis='both', which='major', labelsize=5)
-        f.subplots_adjust(right=0.8, hspace=0.8)
-        cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
-        f.colorbar(im, cax=cbar_ax)
-        plt.suptitle(f'{global_vars.get("explainer")} values for dataset: {global_vars.get("dataset")}, segment: {segment}\n'
-                     f'channel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}\n'
-                     f'Model - {global_vars.get("model_alias")}\n'
-                     f'Samples used - {int(len(dataset.X) * global_vars.get("explainer_sampling_rate"))}', fontsize=10)
-        shap_img_file = f'temp/{get_next_temp_image_name("temp")}.png'
-        shap_imgs.append(shap_img_file)
-        plt.savefig(shap_img_file, dpi=300)
-        plt.clf()
+    # for segment in ['train', 'test', 'both']:
+    for segment in ['test']:
+        img_file = plot_feature_importance_netflow(folder_name, feature_mean[segment], global_vars.get('start_hour'),
+                                        global_vars.get('dataset'), segment, global_vars.get('explainer'))
+        # f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
+        # for idx, ax in enumerate(axes):
+        #     im = ax.imshow(feature_mean[segment][idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=vmin, vmax=vmax)
+        #     ax.set_title(f'class: {label_by_idx(idx)}')
+        #     ax.set_yticks([i for i in range(global_vars.get('eeg_chans'))])
+        #     ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
+        #     if global_vars.get('dataset') == 'netflow_asflow':
+        #         ax.set_xticks(list(range(global_vars.get('input_height')))[::2])
+        #         ax.set_xticklabels([(i+global_vars.get('start_hour')) % 24 for i in range(global_vars.get('input_height'))][::2])
+        #         input_height_arr = list(range(global_vars.get('input_height')))
+        #         ax2 = ax.twiny()
+        #         ax2.set_xlim(1, int(len(input_height_arr) / 24))
+        #         num_days = len(list(range(int(global_vars.get('input_height') / 24))))
+        #         ax2.set_xticks(list(range(int(global_vars.get('input_height') / 24))))
+        #         ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(global_vars.get('input_height') / 24))])
+        #     ax.tick_params(axis='both', which='major', labelsize=5)
+        # f.subplots_adjust(right=0.8, hspace=0.8)
+        # cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
+        # f.colorbar(im, cax=cbar_ax)
+        # plt.suptitle(f'{global_vars.get("explainer")} values for dataset: {global_vars.get("dataset")}, segment: {segment}\n'
+        #              f'channel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}\n'
+        #              f'Model - {global_vars.get("model_alias")}\n'
+        #              f'Samples used - {int(len(dataset[segment].X) * global_vars.get("explainer_sampling_rate"))}', fontsize=10)
+        # shap_img_file = f'temp/{get_next_temp_image_name("temp")}.png'
+        # shap_imgs.append(shap_img_file)
+        # plt.savefig(shap_img_file, dpi=300)
+        # plt.clf()
+        shap_imgs.append(img_file)
     story = []
     for im in shap_imgs:
         story.append(get_image(im))
@@ -617,3 +667,8 @@ def shap_gradient_report(model, dataset, folder_name):
         global_vars.get('sacred_ex').add_artifact(report_file_name)
     for im in all_paths:
         os.remove(im)
+
+
+if __name__ == '__main__':
+    features = np.load('results/140_1_feature_importance_netflow_asflow_as_to_test_20940/deeplift_test.npy')
+    plot_feature_importance_netflow('/home/user/Documents/eladr/EEGNAS/EEGNAS/visualization/results', features, 17, 'netflow_asflow', 'test', 'deeplift')

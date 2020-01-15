@@ -37,6 +37,9 @@ import pandas as pd
 import seaborn as sns
 from datetime import datetime
 from reportlab.lib.styles import getSampleStyleSheet
+from EEGNAS.visualization.netflow_ensemble import get_fold_idxs, get_data_by_balanced_folds, get_dataset_from_folds, \
+    train_model_for_netflow, get_evaluator, get_pretrained_model, get_model_filename_kfold
+
 styles = getSampleStyleSheet()
 logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                     level=logging.DEBUG, stream=sys.stdout)
@@ -48,7 +51,8 @@ MODEL_ALIASES = {'cnn': ('411_1_netflow_regression_daily_normalized', 'best_mode
                  'rnn': ('rnn', 'rnn'),
                  'nsga': ('nsga_micro_netflow_normalized', 'best_genome_normalized.pkl'),
                  'MHANet': ('MHANet', 'MHANet'),
-                 'LSTNet': ('LSTNet', 'MHANet')}
+                 'LSTNet': ('LSTNet', 'MHANet'),
+                 'Ensemble': ('Ensemble', 'Ensemble')}
 
 def get_intermediate_act_map(data, select_layer, model):
     x = np_to_var(data[:, :, :, None]).cuda()
@@ -71,7 +75,8 @@ def main():
     create_folder(exp_folder)
     res = getattr(viz_reports, f'{global_vars.get("report")}_report')(model, dataset, exp_folder)
     if global_vars.get('report') == 'feature_importance':
-        for segment in ['train', 'test', 'both']:
+        # for segment in ['train', 'test', 'both']:
+        for segment in ['test']:
             FEATURE_VALUES[(global_vars.get('model_alias'), global_vars.get('explainer'), global_vars.get('iteration'), segment)] = res[segment]
     write_config(global_vars.config, f"{exp_folder}/config_{exp_name}.ini")
     LAST_EXP_FOLDER = exp_folder
@@ -103,13 +108,15 @@ if __name__ == '__main__':
 
         set_params_by_dataset('../configurations/dataset_params.ini')
         subject_id = global_vars.get('subject_id')
-        dataset = get_dataset(subject_id)
-        prev_dataset = global_vars.get('dataset')
+        if global_vars.get('model_alias') != 'Ensemble':
+            dataset = get_dataset(subject_id)
+            prev_dataset = global_vars.get('dataset')
         exp_name = f"{exp_id}_{index+1}_{global_vars.get('report')}_{global_vars.get('dataset')}"
         exp_name = add_params_to_name(exp_name, multiple_values)
+        stop_criterion, iterator, loss_function, monitors = get_normal_settings()
+        trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
 
-
-        if not(global_vars.get('model_alias') and global_vars.get('model_alias') == prev_model_alias):
+        if global_vars.get('model_alias') != 'Ensemble' or global_vars.get('model_alias') != prev_model_alias:
             if global_vars.get('model_name') == 'rnn':
                 model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
                                          global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
@@ -126,16 +133,32 @@ if __name__ == '__main__':
                     model.droprate = 0.0
                     model.single_output = True
 
+            elif global_vars.get('model_alias') == 'Ensemble':
+                fold_idxs = get_fold_idxs(global_vars.get('as_to_test'))
+                folds_target = get_data_by_balanced_folds \
+                    ([global_vars.get('as_to_test')], fold_idxs)
+                folds = get_data_by_balanced_folds(global_vars.get('autonomous_systems'), fold_idxs)
+                fold_samples = folds[len(list(folds.keys())) - 1]
+                fold_samples_test = folds_target[len(list(folds_target.keys())) - 1]
+                dataset = get_dataset_from_folds(fold_samples)
+                dataset_target = get_dataset_from_folds(fold_samples_test)
+                dataset['test'] = dataset_target['test']
+                filename = get_model_filename_kfold('kfold_models', 1)
+                model = get_pretrained_model(filename)
+                if model is None:
+                    model = get_evaluator(global_vars.get('evaluator'))
+                    train_model_for_netflow(model, dataset, trainer)
+                    torch.save(model, filename)
+
             else:
                 model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
             model.cuda()
             if global_vars.get('finetune_model'):
-                stop_criterion, iterator, loss_function, monitors = get_normal_settings()
-                trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
                 model = trainer.train_model(model, dataset, final_evaluation=True)
             prev_model_alias = global_vars.get('model_alias')
 
-        concat_train_val_sets(dataset)
+        if global_vars.get('model_alias') != 'Ensemble':
+            concat_train_val_sets(dataset)
 
         now = datetime.now()
         date_time = now.strftime("%m.%d.%Y-%H:%M")
