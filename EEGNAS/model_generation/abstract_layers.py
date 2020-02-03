@@ -2,7 +2,7 @@ import random
 from EEGNAS import global_vars
 
 
-class Layer():
+class Layer:
     def __init__(self, name=None):
         self.name = name
 
@@ -11,6 +11,14 @@ class Layer():
 
     def __ne__(self, other):
         return self.__dict__ != other.__dict__
+
+    def __str__(self):
+        rep = type(self).__name__
+        if type(self) == ConvLayer:
+            rep += f' ({self.kernel_height},{self.kernel_width})_{self.filter_num}'
+        elif type(self) == PoolingLayer:
+            rep += f' ({self.pool_height},{self.pool_width})_({self.stride_height},{self.stride_width})'
+        return rep
 
 
 class InputLayer(Layer):
@@ -112,7 +120,7 @@ class AveragingLayer(Layer):
 
 
 class LayerBlock(Layer):
-    def __init_(self, length):
+    def __init__(self, length):
         layers = [DropoutLayer, BatchNormLayer, ActivationLayer, ConvLayer, PoolingLayer, IdentityLayer]
         Layer.__init__(self)
         self.layers = [layers[random.randint(0, 5)]() for i in range(length)]

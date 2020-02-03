@@ -308,6 +308,10 @@ class EEGNAS_evolution:
     def evolution(self):
         num_generations = global_vars.get('num_generations')
         weighted_population = NAS_utils.initialize_population(self.models_set, self.genome_set, self.subject_id)
+        if global_vars.get('puzzle_algo'):
+            bb_population = [{'bb': b, 'fitness': 0} for b in NAS_utils.initialize_bb_population(weighted_population)]
+        else:
+            bb_population = None
         all_architectures = []
         start_time = time.time()
         for generation in range(num_generations):
@@ -317,11 +321,15 @@ class EEGNAS_evolution:
             if global_vars.get('inject_dropout') and generation == int((num_generations / 2) - 1):
                 NAS_utils.inject_dropout(weighted_population)
             stats, weighted_population = self.evaluate_and_sort(weighted_population)
+            if global_vars.get('puzzle_algo'):
+                NAS_utils.rank_bbs_by_weighted_population(bb_population, weighted_population)
             for stat, val in stats.items():
                 global_vars.get('sacred_ex').log_scalar(f'avg_{stat}', val, generation)
             if generation < num_generations - 1:
                 weighted_population = self.selection(weighted_population)
-                breed_population(weighted_population, self)
+                breed_population(weighted_population, self, bb_population)
+                if bb_population is not None:
+                    NAS_utils.maintain_bb_population(bb_population, weighted_population)
                 self.update_mutation_rate()
                 if global_vars.get('save_every_generation'):
                     self.save_best_model(weighted_population)

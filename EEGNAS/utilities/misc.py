@@ -273,3 +273,16 @@ def set_moabb():
         global_vars.set('n_classes', len(np.unique(y)))
         if global_vars.get('time_limit_seconds'):
             global_vars.set('time_limit_seconds', int(global_vars.get('time_limit_seconds') / len(dataset.subject_list)))
+
+
+def is_sublist(sblst, lst):
+    for item_idx, item in enumerate(lst):
+        if sblst[0] == item and len(lst) - (item_idx) >= len(sblst):
+            result = True
+            for sblst_idx, sblst_item in enumerate(sblst):
+                if sblst_item != lst[item_idx+sblst_idx]:
+                    result = False
+            if result:
+                return result, item_idx
+    return False, -1
+

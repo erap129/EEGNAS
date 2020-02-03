@@ -472,8 +472,8 @@ class gradientshap_explainer:
 def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_name, segment, viz_method):
     f, axes = plt.subplots(len(features), figsize=(20, 10))
     for idx, ax in enumerate(axes):
-        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=features.min(),
-                       vmax=features.max())
+        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.5,
+                       vmax=1)
         ax.set_title(f'prediction for: {label_by_idx(idx, dataset_name)}')
         ax.set_yticks([i for i in range(features[0].shape[0])])
         # ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
@@ -673,7 +673,8 @@ def shap_gradient_report(model, dataset, folder_name):
 
 
 if __name__ == '__main__':
-    features = np.load('results/145_1_feature_importance_netflow_asflow_repetition_1_as_to_test_20940_explainer_deeplift/deeplift_test.npy')
+    features = np.load('results/140_1_feature_importance_netflow_asflow_as_to_test_20940/deeplift_test.npy')
+    # features = np.load('results/145_1_feature_importance_netflow_asflow_repetition_1_as_to_test_20940_explainer_deeplift/deeplift_test.npy')
     for f_idx in range(len(features)):
         features[f_idx] = features[f_idx] - features[f_idx].mean()
         features[f_idx] = features[f_idx] / features[f_idx].max()

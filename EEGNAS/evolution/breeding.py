@@ -12,9 +12,10 @@ import copy
 
 from EEGNAS.model_generation.simple_model_generation import new_model_from_structure_pytorch, add_layer_to_state, \
     check_legal_model, random_layer, finalize_model
+from EEGNAS.utilities.misc import is_sublist
 
 
-def breed_population(weighted_population, eegnas):
+def breed_population(weighted_population, eegnas, bb_population=None):
     if global_vars.get('grid'):
         breeding_method = models_generation.breed_grid
     else:
@@ -22,7 +23,7 @@ def breed_population(weighted_population, eegnas):
     if global_vars.get('perm_ensembles'):
         breed_perm_ensembles(weighted_population, breeding_method, eegnas)
     else:
-        breed_normal_population(weighted_population, breeding_method, eegnas)
+        breed_normal_population(weighted_population, breeding_method, eegnas, bb_population)
 
 
 def breed_perm_ensembles(weighted_population, breeding_method, eegnas):
@@ -53,7 +54,7 @@ def breed_perm_ensembles(weighted_population, breeding_method, eegnas):
     weighted_population.extend(children)
 
 
-def breed_normal_population(weighted_population, breeding_method, eegnas):
+def breed_normal_population(weighted_population, breeding_method, eegnas, bb_population):
     children = []
     while len(weighted_population) + len(children) < global_vars.get('pop_size'):
         breeders = random.sample(range(len(weighted_population)), 2)
@@ -65,7 +66,8 @@ def breed_normal_population(weighted_population, breeding_method, eegnas):
                                                                 first_model=first_breeder['model'],
                                                                 second_model=second_breeder['model'],
                                                                 first_model_state=first_model_state,
-                                                                second_model_state=second_model_state)
+                                                                second_model_state=second_model_state,
+                                                                bb_population=bb_population)
         if new_model is not None:
             children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
                              'parents': [first_breeder, second_breeder], 'cut_point': cut_point,
@@ -74,7 +76,29 @@ def breed_normal_population(weighted_population, breeding_method, eegnas):
     weighted_population.extend(children)
 
 
-def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None):
+def choose_cutpoint_by_bb(bb_population, first_model, second_model):
+    loci = np.mean(np.array([calc_recombination_loci(bb_population, first_model),
+                            calc_recombination_loci(bb_population, second_model)]),
+                    axis=0)
+    min_val = loci.min()
+    indices = np.where(loci == min_val)
+    return random.choice(indices)[0]
+
+
+def calc_recombination_loci(bb_population, model):
+    recombination_loci = [0 for i in range(len(model))]
+    for bb in bb_population:
+        is_sblst, sblst_idx = is_sublist(bb['bb'], model)
+        if is_sblst:
+            for idx in range(sblst_idx, sblst_idx+len(bb['bb'])):
+                recombination_loci[idx] = max(recombination_loci[idx], bb['fitness'])
+    return recombination_loci
+
+
+def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None, bb_population=None):
+    if bb_population is not None:
+        if random.random() < global_vars.get('puzzle_usage_rate'):
+            cut_point = choose_cutpoint_by_bb(bb_population, first_model, second_model)
     second_model = copy.deepcopy(second_model)
     if cut_point is None:
         cut_point = random.randint(0, len(first_model) - 1)

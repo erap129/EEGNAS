@@ -16,6 +16,7 @@ from scipy.stats import spearmanr
 from EEGNAS.model_generation.abstract_layers import ConvLayer, PoolingLayer
 from EEGNAS.model_generation.grid_model_generation import random_grid_model
 from EEGNAS.model_generation.simple_model_generation import random_model, finalize_model
+from EEGNAS.utilities.misc import is_sublist
 
 
 def get_metric_strs():
@@ -186,6 +187,68 @@ def initialize_population(models_set, genome_set, subject_id):
     for i in range(global_vars.get('pop_size')):
         hash_model(weighted_population[i]['model'], models_set, genome_set)
     return weighted_population
+
+
+def initialize_bb_population(weighted_population):
+    bb_population = []
+    while len(bb_population) < global_vars.get('bb_population_size'):
+        rand_pop = random.choice(weighted_population)['model']
+        rand_idx = random.randint(0, len(rand_pop) - 2)
+        bb = rand_pop[rand_idx:rand_idx+2]
+        bb_population.append(bb)
+    return bb_population
+
+
+def rank_bbs_by_weighted_population(bb_population, weighted_population):
+    for bb in bb_population:
+        bb['count'] = 0
+        for pop in weighted_population:
+            if is_sublist(bb['bb'], pop['model'])[0]:
+                bb['fitness'] += pop['fitness']
+                bb['count'] += 1
+        bb['fitness'] /= bb['count']
+        # try:
+        #     bb['fitness'] /= bb['count']
+        # except Exception as e:
+        #     print
+        #     is_sublist(bb['bb'], weighted_population[0]['model'])
+        #     is_sublist(bb['bb'], weighted_population[1]['model'])
+        #     is_sublist(bb['bb'], weighted_population[2]['model'])
+        #     is_sublist(bb['bb'], weighted_population[3]['model'])
+        #     is_sublist(bb['bb'], weighted_population[4]['model'])
+
+
+def maintain_bb_population(bb_population, weighted_population):
+    for bb_idx, bb in enumerate(bb_population):
+        found = False
+        for pop in weighted_population:
+            if is_sublist(bb['bb'], pop['model'])[0]:
+                found = True
+                break
+        if not found:
+            rand_pop = random.choice(weighted_population)['model']
+            rand_idx = random.randint(0, len(rand_pop) - 2)
+            bb = rand_pop[rand_idx:rand_idx + 2]
+            bb_population[bb_idx] = {'bb': bb, 'fitness': 0}
+        else:
+            if random.random() < global_vars.get('puzzle_expansion_rate'):
+                for pop in weighted_population:
+                    sblst, sblst_idx = is_sublist(bb['bb'], pop['model'])
+                    if sblst:
+                        if random.random() < 0.5:
+                            if sblst_idx < len(pop['model']) - len(bb['bb']):
+                                bb['bb'].append(pop['model'][sblst_idx + len(bb['bb'])])
+                        else:
+                            if sblst_idx > 0:
+                                bb['bb'].insert(0, pop['model'][sblst_idx - 1])
+                        break
+            if random.random() < global_vars.get('puzzle_replacement_rate'):
+                rand_pop = random.choice(weighted_population)['model']
+                rand_idx = random.randint(0, len(rand_pop) - 2)
+                bb = rand_pop[rand_idx:rand_idx + 2]
+                bb_population[bb_idx] = {'bb': bb, 'fitness': 0}
+    for elem in [[str(bbi) for bbi in bb['bb']] for bb in bb_population]:
+        print(elem)
 
 
 def ranking_correlations(weighted_population, stats):
