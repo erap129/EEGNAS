@@ -63,15 +63,17 @@ def breed_normal_population(weighted_population, breeding_method, eegnas, bb_pop
         first_model_state = NAS_utils.get_model_state(first_breeder)
         second_model_state = NAS_utils.get_model_state(second_breeder)
         new_model, new_model_state, cut_point = breeding_method(mutation_rate=eegnas.mutation_rate,
-                                                                first_model=first_breeder['model'],
-                                                                second_model=second_breeder['model'],
+                                                                first_individual=first_breeder,
+                                                                second_individual=second_breeder,
                                                                 first_model_state=first_model_state,
                                                                 second_model_state=second_model_state,
                                                                 bb_population=bb_population)
         if new_model is not None:
             children.append({'model': new_model, 'model_state': new_model_state, 'age': 0,
                              'parents': [first_breeder, second_breeder], 'cut_point': cut_point,
-                             'first_parent_index': breeders[0], 'second_parent_index': breeders[1]})
+                             'first_parent_index': breeders[0], 'second_parent_index': breeders[1],
+                             'weight_inheritance_alpha': first_breeder['weight_inheritance_alpha'] * 0.5 +
+                             second_breeder['weight_inheritance_alpha'] * 0.5})
             EEGNAS.utilities.NAS_utils.hash_model(new_model, eegnas.models_set, eegnas.genome_set)
     weighted_population.extend(children)
 
@@ -95,7 +97,9 @@ def calc_recombination_loci(bb_population, model):
     return recombination_loci
 
 
-def breed_layers(mutation_rate, first_model, second_model, first_model_state=None, second_model_state=None, cut_point=None, bb_population=None):
+def breed_layers(mutation_rate, first_individual, second_individual, first_model_state=None, second_model_state=None, cut_point=None, bb_population=None):
+    first_model = first_individual['model']
+    second_model = second_individual['model']
     if bb_population is not None:
         if random.random() < global_vars.get('puzzle_usage_rate'):
             cut_point = choose_cutpoint_by_bb(bb_population, first_model, second_model)
@@ -109,16 +113,20 @@ def breed_layers(mutation_rate, first_model, second_model, first_model_state=Non
         second_model[i] = first_model[i]
     save_weights = global_vars.get('inherit_weights_crossover') and global_vars.get('inherit_weights_normal')
     this_module = sys.modules[__name__]
-    getattr(this_module, global_vars.get('mutation_method'))(second_model, mutation_rate)
+    if type(global_vars.get('mutation_method')) == list:
+        mutation_method = random.choice(global_vars.get('mutation_method'))
+    else:
+        mutation_method = global_vars.get('mutation_method')
+    getattr(this_module, mutation_method)(second_model, mutation_rate)
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
         finalized_new_model_state = finalized_new_model.state_dict()
         if None not in [first_model_state, second_model_state]:
             for i in range(cut_point):
-                add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state)
+                add_layer_to_state(finalized_new_model_state, second_model[i], i, first_model_state, first_individual['weight_inheritance_alpha'])
             for i in range(cut_point+1, global_vars.get('num_layers')):
-                add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state)
+                add_layer_to_state(finalized_new_model_state, second_model[i-cut_point], i, second_model_state, second_individual['weight_inheritance_alpha'])
     else:
         finalized_new_model_state = None
     if check_legal_model(new_model):
@@ -150,6 +158,13 @@ def breed_layers_modules(first_model, second_model, first_model_state=None, seco
     else:
         global_vars.set('failed_breedings', global_vars.get('failed_breedings') + 1)
         return None, None, None
+
+
+def mutate_weight_inheritance_alpha(model, mutation_rate):
+    if random.random() < mutation_rate:
+        model['weight_inheritance_alpha'] += random.uniform(-1, 1) * 0.1
+        model['weight_inheritance_alpha'] = min(model['weight_inheritance_alpha'], 1)
+        model['weight_inheritance_alpha'] = max(model['weight_inheritance_alpha'], 0)
 
 
 def mutate_models(model, mutation_rate):

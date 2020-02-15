@@ -183,7 +183,12 @@ def initialize_population(models_set, genome_set, subject_id):
         weighted_population = []
         for i in range(global_vars.get('pop_size')):
             new_rand_model = model_init(global_vars.get('num_layers'))
-            weighted_population.append({'model': new_rand_model, 'model_state': None, 'age': 0})
+            new_individual = {'model': new_rand_model, 'model_state': None, 'age': 0}
+            if global_vars.get('weight_inheritance_alpha'):
+                new_individual['weight_inheritance_alpha'] = random.random()
+            else:
+                new_individual['weight_inheritance_alpha'] = 1
+            weighted_population.append(new_individual)
     for i in range(global_vars.get('pop_size')):
         hash_model(weighted_population[i]['model'], models_set, genome_set)
     return weighted_population

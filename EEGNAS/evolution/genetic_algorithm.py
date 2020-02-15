@@ -221,6 +221,7 @@ class EEGNAS_evolution:
                 model_stats['cut_point'] = pop['cut_point']
                 model_stats['first_parent_index'] = pop['first_parent_index']
                 model_stats['second_parent_index'] = pop['second_parent_index']
+            model_stats['weight_inheritance_alpha'] = pop['weight_inheritance_alpha']
             NAS_utils.add_model_to_stats(pop, i, model_stats)
             if i == 0 or i==len(weighted_population) - 1:
                 for stat, val in model_stats.items():

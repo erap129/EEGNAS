@@ -180,12 +180,14 @@ def random_model(n_layers):
         return random_model(n_layers)
 
 
-def add_layer_to_state(new_model_state, layer, index, old_model_state):
+def add_layer_to_state(new_model_state, layer, index, old_model_state, weight_inheritance_alpha):
+    if global_vars.get('override_weight_inheritance_alpha'):
+        weight_inheritance_alpha = global_vars.get('override_weight_inheritance_alpha')
     if type(layer).__name__ in ['BatchNormLayer', 'ConvLayer', 'PoolingLayer']:
         for k, v in old_model_state.items():
             if '%s_%d' % (type(layer).__name__, index) in k and \
                     k in new_model_state.keys() and new_model_state[k].shape == v.shape:
-                new_model_state[k] = v
+                new_model_state[k] = new_model_state[k].cuda() * (1 - weight_inheritance_alpha) + v * weight_inheritance_alpha
 
 
 def finalize_model(layer_collection):
