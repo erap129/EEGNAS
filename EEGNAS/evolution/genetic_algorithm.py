@@ -232,6 +232,7 @@ class EEGNAS_evolution:
         stats['unique_layers'] = len(self.genome_set)
         stats['average_age'] = np.mean([sample['age'] for sample in weighted_population])
         stats['mutation_rate'] = self.mutation_rate
+        stats['weight_inheritance_alpha'] = np.mean([sample['weight_inheritance_alpha'] for sample in weighted_population])
         for layer_type in [DropoutLayer, ActivationLayer, ConvLayer, IdentityLayer, BatchNormLayer, PoolingLayer]:
             stats['%s_count' % layer_type.__name__] = \
                 NAS_utils.count_layer_type_in_pop([pop['model'] for pop in weighted_population], layer_type)

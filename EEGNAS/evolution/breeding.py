@@ -117,7 +117,7 @@ def breed_layers(mutation_rate, first_individual, second_individual, first_model
         mutation_method = random.choice(global_vars.get('mutation_method'))
     else:
         mutation_method = global_vars.get('mutation_method')
-    getattr(this_module, mutation_method)(second_model, mutation_rate)
+    getattr(this_module, mutation_method)(second_individual, mutation_rate)
     new_model = new_model_from_structure_pytorch(second_model, applyFix=True)
     if save_weights:
         finalized_new_model = finalize_model(new_model)
@@ -160,14 +160,15 @@ def breed_layers_modules(first_model, second_model, first_model_state=None, seco
         return None, None, None
 
 
-def mutate_weight_inheritance_alpha(model, mutation_rate):
+def mutate_weight_inheritance_alpha(individual, mutation_rate):
     if random.random() < mutation_rate:
-        model['weight_inheritance_alpha'] += random.uniform(-1, 1) * 0.1
-        model['weight_inheritance_alpha'] = min(model['weight_inheritance_alpha'], 1)
-        model['weight_inheritance_alpha'] = max(model['weight_inheritance_alpha'], 0)
+        individual['weight_inheritance_alpha'] += random.uniform(-1, 1) * 0.1
+        individual['weight_inheritance_alpha'] = min(individual['weight_inheritance_alpha'], 1)
+        individual['weight_inheritance_alpha'] = max(individual['weight_inheritance_alpha'], 0)
 
 
-def mutate_models(model, mutation_rate):
+def mutate_models(individual, mutation_rate):
+    model = individual['model']
     if random.random() < mutation_rate:
         while True:
             rand_layer = random.randint(0, len(model) - 1)
@@ -176,7 +177,8 @@ def mutate_models(model, mutation_rate):
                 break
 
 
-def mutate_layers(model, mutation_rate):
+def mutate_layers(individual, mutation_rate):
+    model = individual['model']
     for layer_index in range(len(model)):
         if random.random() < mutation_rate:
             mutate_layer(model, layer_index)
