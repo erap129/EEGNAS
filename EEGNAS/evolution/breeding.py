@@ -169,8 +169,8 @@ def mutate_weight_inheritance_alpha(individual, mutation_rate):
         else:
             for idx in range(len(individual['weight_inheritance_alpha'])):
                 individual['weight_inheritance_alpha'][idx] += random.uniform(-1, 1) * 0.1
-                individual['weight_inheritance_alpha'][idx] = min(individual['weight_inheritance_alpha'], 1)
-                individual['weight_inheritance_alpha'][idx] = max(individual['weight_inheritance_alpha'], 0)
+                individual['weight_inheritance_alpha'][idx] = min(individual['weight_inheritance_alpha'][idx], 1)
+                individual['weight_inheritance_alpha'][idx] = max(individual['weight_inheritance_alpha'][idx], 0)
 
 
 def mutate_models(individual, mutation_rate):
