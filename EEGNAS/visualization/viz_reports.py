@@ -5,6 +5,7 @@ from copy import deepcopy
 import shap
 import gc
 import torch
+import matplotlib
 from braindecode.torch_ext.util import np_to_var
 from captum.insights import AttributionVisualizer
 from captum.insights.features import ImageFeature
@@ -12,7 +13,6 @@ from matplotlib.colors import LogNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from sklearn.preprocessing import MinMaxScaler
-
 from EEGNAS import global_vars
 from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance, GradientShap
 from captum.attr import visualization as viz
@@ -470,32 +470,35 @@ class gradientshap_explainer:
 
 
 def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_name, segment, viz_method):
-    f, axes = plt.subplots(len(features), figsize=(20, 10))
+    matplotlib.rcParams['axes.linewidth'] = 1.5
+    f, axes = plt.subplots(len(features), figsize=(20, 5), sharex='col', sharey='row', constrained_layout=True)
     for idx, ax in enumerate(axes):
-        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.5,
-                       vmax=1)
-        ax.set_title(f'prediction for: {label_by_idx(idx, dataset_name)}')
+        # im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.5,
+        #                vmax=1)
+        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto')
+        # ax.set_title(f'prediction for: {label_by_idx(idx, dataset_name)}')
         ax.set_yticks([i for i in range(features[0].shape[0])])
         # ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
         ax.set_xticks(list(range(features[0].shape[1]))[::3])
         ax.set_xticklabels([(i + start_hour) % 24 for i in range(features[0].shape[1])][::2])
         input_height_arr = list(range(features[0].shape[1]))
-        ax2 = ax.twiny()
-        ax2.set_xlim(1, int(len(input_height_arr) / 24))
-        num_days = len(list(range(int(features[0].shape[1] / 24))))
-        ax2.set_xticks(list(range(int(features[0].shape[1] / 24))))
-        ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(features[0].shape[1] / 24))])
+        if idx == 0:
+            ax2 = ax.twiny()
+            ax2.set_xlim(1, int(len(input_height_arr) / 24))
+            num_days = len(list(range(int(features[0].shape[1] / 24))))
+            ax2.set_xticks(list(range(int(features[0].shape[1] / 24))))
+            ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(features[0].shape[1] / 24))])
         ax.tick_params(axis='x', which='major', labelsize=8)
         ax.tick_params(axis='y', which='major', labelsize=6)
         ax.set_xlabel('hour of day')
-        ax.set_ylabel('handover')
-    f.subplots_adjust(right=0.8, hspace=1.2)
+        ax.set_ylabel(f'{label_by_idx(idx, dataset_name)[5:]}\nhandover')
+    f.subplots_adjust(right=0.8, hspace=0)
     cbar_ax = f.add_axes([0.83, 0.15, 0.02, 0.7])
     cbar = f.colorbar(im, cax=cbar_ax)
     cbar.ax.set_title(f'{viz_method} values', fontsize=12)
-    plt.suptitle(
-        f'{viz_method} values for dataset: {dataset_name}, segment: {segment}\n'
-        f'channel order: {[eeg_label_by_idx(i, dataset_name) for i in range(features[0].shape[0])]}\n', fontsize=10)
+    # plt.suptitle(
+    #     f'{viz_method} values for dataset: {dataset_name}, segment: {segment}\n'
+    #     f'channel order: {[eeg_label_by_idx(i, dataset_name) for i in range(features[0].shape[0])]}\n', fontsize=10)
     shap_img_file = f'{folder_name}/{dataset_name}_{segment}_{viz_method}.png'
     plt.savefig(shap_img_file, dpi=300)
     plt.clf()
@@ -551,33 +554,6 @@ def feature_importance_report(model, dataset, folder_name):
     for segment in ['test']:
         img_file = plot_feature_importance_netflow(folder_name, feature_mean[segment], global_vars.get('start_hour'),
                                         global_vars.get('dataset'), segment, global_vars.get('explainer'))
-        # f, axes = plt.subplots(global_vars.get('n_classes'), figsize=(20,10))
-        # for idx, ax in enumerate(axes):
-        #     im = ax.imshow(feature_mean[segment][idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=vmin, vmax=vmax)
-        #     ax.set_title(f'class: {label_by_idx(idx)}')
-        #     ax.set_yticks([i for i in range(global_vars.get('eeg_chans'))])
-        #     ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
-        #     if global_vars.get('dataset') == 'netflow_asflow':
-        #         ax.set_xticks(list(range(global_vars.get('input_height')))[::2])
-        #         ax.set_xticklabels([(i+global_vars.get('start_hour')) % 24 for i in range(global_vars.get('input_height'))][::2])
-        #         input_height_arr = list(range(global_vars.get('input_height')))
-        #         ax2 = ax.twiny()
-        #         ax2.set_xlim(1, int(len(input_height_arr) / 24))
-        #         num_days = len(list(range(int(global_vars.get('input_height') / 24))))
-        #         ax2.set_xticks(list(range(int(global_vars.get('input_height') / 24))))
-        #         ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(global_vars.get('input_height') / 24))])
-        #     ax.tick_params(axis='both', which='major', labelsize=5)
-        # f.subplots_adjust(right=0.8, hspace=0.8)
-        # cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
-        # f.colorbar(im, cax=cbar_ax)
-        # plt.suptitle(f'{global_vars.get("explainer")} values for dataset: {global_vars.get("dataset")}, segment: {segment}\n'
-        #              f'channel order: {[eeg_label_by_idx(i) for i in range(global_vars.get("eeg_chans"))]}\n'
-        #              f'Model - {global_vars.get("model_alias")}\n'
-        #              f'Samples used - {int(len(dataset[segment].X) * global_vars.get("explainer_sampling_rate"))}', fontsize=10)
-        # shap_img_file = f'temp/{get_next_temp_image_name("temp")}.png'
-        # shap_imgs.append(shap_img_file)
-        # plt.savefig(shap_img_file, dpi=300)
-        # plt.clf()
         shap_imgs.append(img_file)
     story = []
     for im in shap_imgs:

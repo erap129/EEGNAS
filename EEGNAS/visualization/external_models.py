@@ -1,6 +1,7 @@
 from torch import nn
 import torch
 import numpy as np
+import torch.nn.functional as F
 
 # Here we define our model as a class
 class MultivariateLSTM(nn.Module):

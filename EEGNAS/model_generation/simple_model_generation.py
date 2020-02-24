@@ -183,6 +183,8 @@ def random_model(n_layers):
 def add_layer_to_state(new_model_state, layer, index, old_model_state, weight_inheritance_alpha):
     if global_vars.get('override_weight_inheritance_alpha'):
         weight_inheritance_alpha = global_vars.get('override_weight_inheritance_alpha')
+    elif global_vars.get('weight_inheritance_alpha') == 'layer':
+        weight_inheritance_alpha = weight_inheritance_alpha[index]
     if type(layer).__name__ in ['BatchNormLayer', 'ConvLayer', 'PoolingLayer']:
         for k, v in old_model_state.items():
             if '%s_%d' % (type(layer).__name__, index) in k and \

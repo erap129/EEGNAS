@@ -5,6 +5,7 @@ from EEGNAS import global_vars
 class Layer:
     def __init__(self, name=None):
         self.name = name
+        self.w_i_alpha = random.random()
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__

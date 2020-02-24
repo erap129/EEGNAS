@@ -162,9 +162,15 @@ def breed_layers_modules(first_model, second_model, first_model_state=None, seco
 
 def mutate_weight_inheritance_alpha(individual, mutation_rate):
     if random.random() < mutation_rate:
-        individual['weight_inheritance_alpha'] += random.uniform(-1, 1) * 0.1
-        individual['weight_inheritance_alpha'] = min(individual['weight_inheritance_alpha'], 1)
-        individual['weight_inheritance_alpha'] = max(individual['weight_inheritance_alpha'], 0)
+        if global_vars.get('weight_inheritance_alpha') == 'model':
+            individual['weight_inheritance_alpha'] += random.uniform(-1, 1) * 0.1
+            individual['weight_inheritance_alpha'] = min(individual['weight_inheritance_alpha'], 1)
+            individual['weight_inheritance_alpha'] = max(individual['weight_inheritance_alpha'], 0)
+        else:
+            for idx in range(len(individual['weight_inheritance_alpha'])):
+                individual['weight_inheritance_alpha'][idx] += random.uniform(-1, 1) * 0.1
+                individual['weight_inheritance_alpha'][idx] = min(individual['weight_inheritance_alpha'], 1)
+                individual['weight_inheritance_alpha'][idx] = max(individual['weight_inheritance_alpha'], 0)
 
 
 def mutate_models(individual, mutation_rate):
