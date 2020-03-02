@@ -472,15 +472,17 @@ class gradientshap_explainer:
 def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_name, segment, viz_method):
     matplotlib.rcParams['axes.linewidth'] = 1.5
     f, axes = plt.subplots(len(features), figsize=(20, 5), sharex='col', sharey='row', constrained_layout=True)
+    features = features / np.max(np.abs(features))
     for idx, ax in enumerate(axes):
-        # im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.5,
-        #                vmax=1)
-        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto')
+        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.5,
+                       vmax=0.5)
+        # im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto')
         # ax.set_title(f'prediction for: {label_by_idx(idx, dataset_name)}')
-        ax.set_yticks([i for i in range(features[0].shape[0])])
+        ax.set_yticks([i for i in list(range(features[0].shape[0]))])
+        ax.set_yticklabels([i+1 for i in range(features[0].shape[0])])
         # ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
         ax.set_xticks(list(range(features[0].shape[1]))[::3])
-        ax.set_xticklabels([(i + start_hour) % 24 for i in range(features[0].shape[1])][::2])
+        ax.set_xticklabels([(i + start_hour) % 24 for i in range(features[0].shape[1])][::3])
         input_height_arr = list(range(features[0].shape[1]))
         if idx == 0:
             ax2 = ax.twiny()
@@ -491,7 +493,11 @@ def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_n
         ax.tick_params(axis='x', which='major', labelsize=8)
         ax.tick_params(axis='y', which='major', labelsize=6)
         ax.set_xlabel('hour of day')
-        ax.set_ylabel(f'{label_by_idx(idx, dataset_name)[5:]}\nhandover')
+        ax.set_ylabel('handover')
+        secax = ax.secondary_yaxis('right')
+        secax.set_ylabel(label_by_idx(idx, dataset_name)[5:], rotation=270)
+        secax.tick_params(labelsize=0, length=0, width=0)
+
     f.subplots_adjust(right=0.8, hspace=0)
     cbar_ax = f.add_axes([0.83, 0.15, 0.02, 0.7])
     cbar = f.colorbar(im, cax=cbar_ax)
@@ -604,7 +610,7 @@ def shap_gradient_report(model, dataset, folder_name):
     segment_labels = {}
     for segment in ['train', 'test']:
         segment_data = np_to_var(dataset[segment].X[:, :, :, None])
-        selected_examples = np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get('shap_sampling_rate')), replace=False)
+        selected_examples = np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get('explainer_sampling_rate')), replace=False)
         segment_examples[segment] = segment_data[selected_examples]
         segment_labels[segment] = dataset[segment].y[selected_examples]
 
@@ -654,4 +660,4 @@ if __name__ == '__main__':
     for f_idx in range(len(features)):
         features[f_idx] = features[f_idx] - features[f_idx].mean()
         features[f_idx] = features[f_idx] / features[f_idx].max()
-    plot_feature_importance_netflow('/home/user/Documents/eladr/EEGNAS/EEGNAS/visualization/results', features, 17, 'netflow_asflow', 'test', 'deeplift')
+    plot_feature_importance_netflow('/home/user/Documents/eladr/EEGNAS/EEGNAS/visualization/results', features, 15, 'netflow_asflow', 'test', 'deeplift')

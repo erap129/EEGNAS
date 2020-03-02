@@ -1,7 +1,7 @@
 import torch
 
 from torch import nn
-from torch.nn import init
+from torch.nn import init, ModuleList
 
 from EEGNAS import global_vars
 
@@ -38,7 +38,7 @@ class LinearWeightedAvg(nn.Module):
 class BasicEnsemble(nn.Module):
     def __init__(self, models, out_size):
         super(BasicEnsemble, self).__init__()
-        self.models = models
+        self.models = ModuleList(models)
         self.linear = torch.nn.Linear(out_size * len(models), out_size)
 
     def forward(self, X):
@@ -77,7 +77,7 @@ class AveragingEnsemble(nn.Module):
     def __init__(self, models, true_avg=True):
         super(AveragingEnsemble, self).__init__()
         self.avg_layer = LinearWeightedAvg(global_vars.get('n_classes'), len(models), true_avg)
-        self.models = models
+        self.models = ModuleList(models)
         self.softmax = nn.Softmax()
         self.flatten = _squeeze_final_output()
 
