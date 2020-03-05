@@ -116,46 +116,45 @@ if __name__ == '__main__':
         stop_criterion, iterator, loss_function, monitors = get_normal_settings()
         trainer = NN_Trainer(iterator, loss_function, stop_criterion, monitors)
 
-        if global_vars.get('model_alias') != 'Ensemble' or global_vars.get('model_alias') != prev_model_alias:
-            if global_vars.get('model_name') == 'rnn':
-                model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
-                                         global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
-            elif global_vars.get('model_name') == 'MHANet':
-                model = MHANetModel(dataset['train'].X.shape[1], global_vars.get('n_classes'))
-            elif global_vars.get('model_name') == 'LSTNet':
-                model = LSTNetModel(dataset['train'].X.shape[1], global_vars.get('n_classes'))
-            elif 'nsga' in global_vars.get("models_dir"):
-                with open(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}', 'rb') as f:
-                    genotype = pickle.load(f)
-                    genotype = decode(convert(genotype))
-                    model = NetworkCIFAR(24, global_vars.get('steps_ahead'), global_vars.get('max_handovers'), 11, False,
-                                         genotype)
-                    model.droprate = 0.0
-                    model.single_output = True
+        if global_vars.get('model_name') == 'rnn':
+            model = MultivariateLSTM(dataset['train'].X.shape[1], 100, global_vars.get('batch_size'),
+                                     global_vars.get('input_height'), global_vars.get('n_classes'), eegnas=True)
+        elif global_vars.get('model_name') == 'MHANet':
+            model = MHANetModel(dataset['train'].X.shape[1], global_vars.get('n_classes'))
+        elif global_vars.get('model_name') == 'LSTNet':
+            model = LSTNetModel(dataset['train'].X.shape[1], global_vars.get('n_classes'))
+        elif 'nsga' in global_vars.get("models_dir"):
+            with open(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}', 'rb') as f:
+                genotype = pickle.load(f)
+                genotype = decode(convert(genotype))
+                model = NetworkCIFAR(24, global_vars.get('steps_ahead'), global_vars.get('max_handovers'), 11, False,
+                                     genotype)
+                model.droprate = 0.0
+                model.single_output = True
 
-            elif global_vars.get('model_alias') == 'Ensemble':
-                fold_idxs = get_fold_idxs(global_vars.get('as_to_test'))
-                folds_target = get_data_by_balanced_folds \
-                    ([global_vars.get('as_to_test')], fold_idxs)
-                folds = get_data_by_balanced_folds(global_vars.get('autonomous_systems'), fold_idxs)
-                fold_samples = folds[len(list(folds.keys())) - 1]
-                fold_samples_test = folds_target[len(list(folds_target.keys())) - 1]
-                dataset = get_dataset_from_folds(fold_samples)
-                dataset_target = get_dataset_from_folds(fold_samples_test)
-                dataset['test'] = dataset_target['test']
-                filename = get_model_filename_kfold('kfold_models', 1)
-                model = get_pretrained_model(filename)
-                if model is None:
-                    model = get_evaluator(global_vars.get('evaluator'))
-                    train_model_for_netflow(model, dataset, trainer)
-                    torch.save(model, filename)
+        elif global_vars.get('model_alias') == 'Ensemble':
+            fold_idxs = get_fold_idxs(global_vars.get('as_to_test'))
+            folds_target = get_data_by_balanced_folds \
+                ([global_vars.get('as_to_test')], fold_idxs)
+            folds = get_data_by_balanced_folds(global_vars.get('autonomous_systems'), fold_idxs)
+            fold_samples = folds[len(list(folds.keys())) - 1]
+            fold_samples_test = folds_target[len(list(folds_target.keys())) - 1]
+            dataset = get_dataset_from_folds(fold_samples)
+            dataset_target = get_dataset_from_folds(fold_samples_test)
+            dataset['test'] = dataset_target['test']
+            filename = get_model_filename_kfold('kfold_models', global_vars.get('fold_idx'))
+            model = get_pretrained_model(filename)
+            if model is None:
+                model = get_evaluator(global_vars.get('evaluator'))
+                train_model_for_netflow(model, dataset, trainer)
+                torch.save(model, filename)
 
-            else:
-                model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
-            model.cuda()
-            if global_vars.get('finetune_model'):
-                model = trainer.train_model(model, dataset, final_evaluation=True)
-            prev_model_alias = global_vars.get('model_alias')
+        else:
+            model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
+        model.cuda()
+        if global_vars.get('finetune_model'):
+            model = trainer.train_model(model, dataset, final_evaluation=True)
+        prev_model_alias = global_vars.get('model_alias')
 
         if global_vars.get('model_alias') != 'Ensemble':
             concat_train_val_sets(dataset)

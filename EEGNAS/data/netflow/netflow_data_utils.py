@@ -96,6 +96,8 @@ def get_whole_netflow_data(file):
     all_data = all_data.dropna(axis=1, how='any')
     if not global_vars.get('per_handover_prediction'):
         all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
+    if global_vars.get('drop_self'):
+        all_data = all_data.drop(int(own_as_num), axis=1)
     all_data = all_data[np.flatnonzero(df.index.hour == global_vars.get('start_hour'))[0]:]
     return all_data
 

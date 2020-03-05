@@ -14,7 +14,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from sklearn.preprocessing import MinMaxScaler
 from EEGNAS import global_vars
-from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance, GradientShap
+from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance, GradientShap, LayerDeepLift
 from captum.attr import visualization as viz
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
@@ -400,7 +400,7 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
 
 def attribute_image_features(model, algorithm, input, ind, **kwargs):
     model.zero_grad()
-    tensor_attributions = algorithm.attribute(input, target=ind, **kwargs)
+    tensor_attributions = algorithm.attribute(input, target=ind, attribute_to_layer_input=True, **kwargs)
     return tensor_attributions
 
 
@@ -455,6 +455,20 @@ class deeplift_explainer:
                                                      return_convergence_delta=True)[0] for i in
                                                             range(global_vars.get('n_classes'))], axis=0).detach()
 
+
+class layer_deeplift_explainer:
+    def __init__(self, model, layer):
+        model.eval()
+        self.explainer = LayerDeepLift(model, layer)
+        self.model = model
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        return torch.stack([attribute_image_features(self.model, self.explainer, data, i, baselines=data * 0,
+                                                     return_convergence_delta=True)[0][0] for i in
+                                                            range(global_vars.get('n_classes'))], axis=0).detach()
+
+
 class gradientshap_explainer:
     def __init__(self, model, train_data):
         model.eval()
@@ -469,18 +483,19 @@ class gradientshap_explainer:
                                                 range(global_vars.get('n_classes'))], axis=0).detach()
 
 
-def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_name, segment, viz_method):
+def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_name, segment, viz_method, title=None):
     matplotlib.rcParams['axes.linewidth'] = 1.5
     f, axes = plt.subplots(len(features), figsize=(20, 5), sharex='col', sharey='row', constrained_layout=True)
-    features = features / np.max(np.abs(features))
+    if global_vars.get('normalize_plots'):
+        features = features / np.max(np.abs(features))
     for idx, ax in enumerate(axes):
-        im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.5,
-                       vmax=0.5)
-        # im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto')
-        # ax.set_title(f'prediction for: {label_by_idx(idx, dataset_name)}')
+        if global_vars.get('normalize_plots'):
+            im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto', vmin=-0.5,
+                           vmax=0.5)
+        else:
+            im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto')
         ax.set_yticks([i for i in list(range(features[0].shape[0]))])
         ax.set_yticklabels([i+1 for i in range(features[0].shape[0])])
-        # ax.set_yticklabels([eeg_label_by_idx(i) for i in range(global_vars.get('eeg_chans'))])
         ax.set_xticks(list(range(features[0].shape[1]))[::3])
         ax.set_xticklabels([(i + start_hour) % 24 for i in range(features[0].shape[1])][::3])
         input_height_arr = list(range(features[0].shape[1]))
@@ -502,10 +517,11 @@ def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_n
     cbar_ax = f.add_axes([0.83, 0.15, 0.02, 0.7])
     cbar = f.colorbar(im, cax=cbar_ax)
     cbar.ax.set_title(f'{viz_method} values', fontsize=12)
-    # plt.suptitle(
-    #     f'{viz_method} values for dataset: {dataset_name}, segment: {segment}\n'
-    #     f'channel order: {[eeg_label_by_idx(i, dataset_name) for i in range(features[0].shape[0])]}\n', fontsize=10)
-    shap_img_file = f'{folder_name}/{dataset_name}_{segment}_{viz_method}.png'
+    if title is not None:
+        plt.suptitle(title)
+        shap_img_file = f'{folder_name}/{dataset_name}_{segment}_{viz_method}_{title}.png'
+    else:
+        shap_img_file = f'{folder_name}/{dataset_name}_{segment}_{viz_method}.png'
     plt.savefig(shap_img_file, dpi=300)
     plt.clf()
     return shap_img_file
@@ -532,7 +548,6 @@ def feature_importance_report(model, dataset, folder_name):
             mod.eval()
     e = globals()[f'{global_vars.get("explainer")}_explainer'](model, train_data)
     shap_imgs = []
-    num_samples = len(dataset['train'].X)
     # for segment in ['train', 'test', 'both']:
     for segment in ['test']:
         if segment == 'both':
@@ -546,9 +561,6 @@ def feature_importance_report(model, dataset, folder_name):
         feature_val = np.array(feature_values).squeeze()
         feature_mean[segment] = np.mean(feature_val, axis=1)
         np.save(f'{folder_name}/{global_vars.get("explainer")}_{segment}.npy', feature_mean[segment])
-        # for idx in range(len(feature_mean[segment])):
-        #     np.savetxt(f'{folder_name}/{global_vars.get("explainer")}_{segment}_{idx+17}.csv',
-        #                feature_mean[segment][idx], delimiter=",")
         feature_value = np.concatenate(feature_mean[segment], axis=0)
         feature_value = (feature_value - np.mean(feature_value)) / np.std(feature_value)
         FEATURE_VALUES[segment] = feature_value
@@ -561,6 +573,65 @@ def feature_importance_report(model, dataset, folder_name):
         img_file = plot_feature_importance_netflow(folder_name, feature_mean[segment], global_vars.get('start_hour'),
                                         global_vars.get('dataset'), segment, global_vars.get('explainer'))
         shap_imgs.append(img_file)
+    story = []
+    for im in shap_imgs:
+        story.append(get_image(im))
+    create_pdf_from_story(report_file_name, story)
+    global_vars.get('sacred_ex').add_artifact(report_file_name)
+    for im in shap_imgs:
+        os.remove(im)
+    gc.collect()
+    return FEATURE_VALUES
+
+
+'''
+Use some explainer to get feature importance for each class
+'''
+def layer_feature_importance_report(model, dataset, folder_name):
+    FEATURE_VALUES = {}
+    feature_mean = {}
+    vmin = np.inf
+    vmax = -np.inf
+    report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("explainer")}.pdf'
+    train_data = np_to_var(dataset['train'].X[:, :, :, None])
+    model.cpu()
+    if 'Ensemble' in type(model).__name__:
+        for mod in model.models:
+            if 'Ensemble' in type(mod).__name__:
+                for inner_mod in mod.models:
+                    inner_mod.cpu()
+                    inner_mod.eval()
+            mod.cpu()
+            mod.eval()
+    for layer in model.models:
+        feature_mean[type(layer).__name__] = {}
+        e = globals()[f'{global_vars.get("explainer")}_explainer'](model, layer)
+        shap_imgs = []
+        for segment in ['test']:
+            if segment == 'both':
+                dataset = unify_dataset(dataset)
+                segment_data = np_to_var(dataset.X[:, :, :, None])
+            else:
+                segment_data = np_to_var(dataset[segment].X[:, :, :, None])
+            print(f'calculating {global_vars.get("explainer")} values for {int(segment_data.shape[0] * global_vars.get("explainer_sampling_rate"))} samples')
+            segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("explainer_sampling_rate")), replace=False)]
+            feature_values = e.get_feature_importance(segment_examples)
+            feature_val = np.array(feature_values).squeeze()
+            feature_mean[type(layer).__name__][segment] = np.mean(feature_val, axis=1)
+            np.save(f'{folder_name}/{global_vars.get("explainer")}_{segment}.npy', feature_mean[type(layer).__name__][segment])
+            feature_value = np.concatenate(feature_mean[type(layer).__name__][segment], axis=0)
+            feature_value = (feature_value - np.mean(feature_value)) / np.std(feature_value)
+            FEATURE_VALUES[segment] = feature_value
+            if feature_mean[type(layer).__name__][segment].min() < vmin:
+                vmin = feature_mean[type(layer).__name__][segment].min()
+            if feature_mean[type(layer).__name__][segment].max() > vmax:
+                vmax = feature_mean[type(layer).__name__][segment].max()
+    for key, val in feature_mean.items():
+        for segment in ['test']:
+            img_file = plot_feature_importance_netflow(folder_name, val[segment], global_vars.get('start_hour'),
+                                        global_vars.get('dataset'), segment, global_vars.get('explainer'),
+                                                       title=f'submodel_{key}')
+            shap_imgs.append(img_file)
     story = []
     for im in shap_imgs:
         story.append(get_image(im))
