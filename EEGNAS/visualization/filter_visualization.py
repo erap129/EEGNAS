@@ -133,6 +133,8 @@ if __name__ == '__main__':
                 model.single_output = True
 
         elif global_vars.get('model_alias') == 'Ensemble':
+            if global_vars.get('as_to_test') == 'same':
+                global_vars.set('as_to_test', global_vars.get('autonomous_systems')[0])
             fold_idxs = get_fold_idxs(global_vars.get('as_to_test'))
             folds_target = get_data_by_balanced_folds \
                 ([global_vars.get('as_to_test')], fold_idxs)

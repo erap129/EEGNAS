@@ -186,11 +186,11 @@ def get_data_by_balanced_folds(ASs, fold_idxs):
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
         dataset = unify_dataset(dataset)
-        start_date, end_date = global_vars.get('date_range').split('-')
-        if len(dataset.X) != abs((datetime.strptime(start_date, "%d.%m.%Y") -
-                                  datetime.strptime(end_date, "%d.%m.%Y")).days) - global_vars.get('input_height') / 24:
-            print(f'dropped AS file: {filename}')
-            continue
+        # start_date, end_date = global_vars.get('date_range').split('-')
+        # if len(dataset.X) != abs((datetime.strptime(start_date, "%d.%m.%Y") -
+        #                           datetime.strptime(end_date, "%d.%m.%Y")).days) - global_vars.get('input_height') / 24:
+        #     print(f'dropped AS file: {filename}')
+        #     continue
         for fold_idx in range(global_vars.get('n_folds')):
             folds[fold_idx]['X_train'].extend(dataset.X[fold_idxs[fold_idx]['train_idxs']])
             folds[fold_idx]['X_test'].extend(dataset.X[fold_idxs[fold_idx]['test_idxs']])

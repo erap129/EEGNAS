@@ -400,7 +400,7 @@ def find_optimal_samples_report(pretrained_model, dataset, folder_name):
 
 def attribute_image_features(model, algorithm, input, ind, **kwargs):
     model.zero_grad()
-    tensor_attributions = algorithm.attribute(input, target=ind, attribute_to_layer_input=True, **kwargs)
+    tensor_attributions = algorithm.attribute(input, target=ind, **kwargs)
     return tensor_attributions
 
 
@@ -465,7 +465,7 @@ class layer_deeplift_explainer:
     def get_feature_importance(self, data):
         data.requires_grad = True
         return torch.stack([attribute_image_features(self.model, self.explainer, data, i, baselines=data * 0,
-                                                     return_convergence_delta=True)[0][0] for i in
+                                                     return_convergence_delta=True,  attribute_to_layer_input=True)[0][0] for i in
                                                             range(global_vars.get('n_classes'))], axis=0).detach()
 
 
@@ -583,6 +583,55 @@ def feature_importance_report(model, dataset, folder_name):
     gc.collect()
     return FEATURE_VALUES
 
+
+def feature_importance_minmax_report(model, dataset, folder_name):
+    FEATURE_VALUES = {}
+    report_file_name = f'{folder_name}/{global_vars.get("report")}_{global_vars.get("explainer")}.pdf'
+    train_data = np_to_var(dataset['train'].X[:, :, :, None])
+    model.cpu()
+    if 'Ensemble' in type(model).__name__:
+        for mod in model.models:
+            if 'Ensemble' in type(mod).__name__:
+                for inner_mod in mod.models:
+                    inner_mod.cpu()
+                    inner_mod.eval()
+            mod.cpu()
+            mod.eval()
+    e = globals()[f'{global_vars.get("explainer")}_explainer'](model, train_data)
+    shap_imgs = []
+    # for segment in ['train', 'test', 'both']:
+    for segment in ['test']:
+        if segment == 'both':
+            dataset = unify_dataset(dataset)
+            segment_data = np_to_var(dataset.X[:, :, :, None])
+        else:
+            segment_data = np_to_var(dataset[segment].X[:, :, :, None])
+        min_example_idx = np.where(dataset[segment].y.max(axis=1) == np.amin(dataset[segment].y.max(axis=1)))[0]
+        max_example_idx = np.where(dataset[segment].y.max(axis=1) == np.amax(dataset[segment].y.max(axis=1)))[0]
+        min_example = segment_data[min_example_idx]
+        max_example = segment_data[max_example_idx]
+        min_feature_values = e.get_feature_importance(min_example)
+        max_feature_values = e.get_feature_importance(max_example)
+        min_feature_val = np.array(min_feature_values).squeeze()
+        max_feature_val = np.array(max_feature_values).squeeze()
+        np.save(f'{folder_name}/{global_vars.get("explainer")}_{segment}_min.npy', min_feature_val)
+        np.save(f'{folder_name}/{global_vars.get("explainer")}_{segment}_max.npy', max_feature_val)
+    for segment in ['test']:
+        min_img_file = plot_feature_importance_netflow(folder_name, min_feature_val, global_vars.get('start_hour'),
+                                        global_vars.get('dataset'), segment, global_vars.get('explainer'), title='min')
+        max_img_file = plot_feature_importance_netflow(folder_name, max_feature_val, global_vars.get('start_hour'),
+                                                   global_vars.get('dataset'), segment, global_vars.get('explainer'), title='max')
+        shap_imgs.append(min_img_file)
+        shap_imgs.append(max_img_file)
+    story = []
+    for im in shap_imgs:
+        story.append(get_image(im))
+    create_pdf_from_story(report_file_name, story)
+    global_vars.get('sacred_ex').add_artifact(report_file_name)
+    for im in shap_imgs:
+        os.remove(im)
+    gc.collect()
+    return FEATURE_VALUES
 
 '''
 Use some explainer to get feature importance for each class
