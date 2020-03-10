@@ -53,6 +53,10 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
         if global_vars.get('problem') == 'classification' and not global_vars.get('highest_handover_overflow'):
             y = turn_netflow_into_classification(X, y,
                                                  get_netflow_threshold(file, global_vars.get('netflow_threshold_std')))
+        if global_vars.get('top_handovers'):
+            importance_rank = get_netflow_importance_rank(file.split('/')[-1].split('_')[0])
+            X = X[importance_rank]
+            X = X[:global_vars.get('top_handovers')]
         all_X.extend(X)
         all_y.extend(y)
     max_handovers = global_vars.get('max_handovers')
@@ -74,6 +78,14 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
            np.stack(all_datetimes_X, axis=0), np.stack(all_datetimes_Y, axis=0)
 
 
+def get_netflow_importance_rank(AS):
+    path = "/home/user/Documents/eladr/netflowinsights/CDN_overflow_prediction/feature_importances/"
+    importances = [f'{path}/f' for f in os.listdir(path) if AS in f]
+    imps = [np.load(importance) for importance in importances]
+    sorted_importance = [np.mean(imp, axis=0).mean(axis=1) for imp in imps]
+    return np.argsort(sorted_importance)
+
+
 def get_whole_netflow_data(file):
     orig_df = pd.read_csv(file)
     own_as_num = os.path.basename(file).split('_')[0]
@@ -93,11 +105,14 @@ def get_whole_netflow_data(file):
         idx += 1
     all_data = pd.concat(dfs, axis=1)
     all_data = all_data.dropna(thresh=len(all_data) - (len(all_data) / 8), axis=1)
-    all_data = all_data.dropna(axis=1, how='any')
     if not global_vars.get('per_handover_prediction'):
         all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
     if global_vars.get('drop_self') and int(own_as_num) in all_data.columns:
         all_data = all_data.drop(int(own_as_num), axis=1)
+    if global_vars.get('interpolate_netflow'):
+        all_data = all_data.interpolate(limit_direction='both')
+    else:
+        all_data = all_data.dropna(axis=1, how='any')
     all_data = all_data[np.flatnonzero(df.index.hour == global_vars.get('start_hour'))[0]:]
     return all_data
 

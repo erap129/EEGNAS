@@ -1,7 +1,7 @@
 from datetime import datetime
 import os
 import pickle
-
+import ast
 import torch
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
 from torch import nn
@@ -186,11 +186,6 @@ def get_data_by_balanced_folds(ASs, fold_idxs):
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
         dataset = unify_dataset(dataset)
-        # start_date, end_date = global_vars.get('date_range').split('-')
-        # if len(dataset.X) != abs((datetime.strptime(start_date, "%d.%m.%Y") -
-        #                           datetime.strptime(end_date, "%d.%m.%Y")).days) - global_vars.get('input_height') / 24:
-        #     print(f'dropped AS file: {filename}')
-        #     continue
         for fold_idx in range(global_vars.get('n_folds')):
             folds[fold_idx]['X_train'].extend(dataset.X[fold_idxs[fold_idx]['train_idxs']])
             folds[fold_idx]['X_test'].extend(dataset.X[fold_idxs[fold_idx]['test_idxs']])
@@ -216,16 +211,26 @@ def get_dataset_from_folds(fold_samples):
 
 
 def get_pretrained_model(filename):
-    if os.path.exists(filename):
-        model = torch.load(filename)
-        print(f'loaded pretrained model: {filename}')
-        return model
+    filename_split = filename.split('_')
+    ass = ast.literal_eval(filename_split[4])
+    del filename_split[4]
+    for file in [f'kfold_models/{f}' for f in os.listdir('kfold_models')]:
+        file_split = file.split('_')
+        curr_ass = ast.literal_eval(file_split[4])
+        del file_split[4]
+        if set(ass) == set(curr_ass) and file_split == filename_split:
+            model = torch.load(file)
+            print(f'loaded {file}')
+            return model
     return None
 
 
 def get_model_filename_kfold(type, fold_idx):
+    interpolation_str = ''
+    if global_vars.get('interpolate_netflow'):
+        interpolation_str = '_interp'
     return f"{type}/{global_vars.get('dataset')}_{global_vars.get('date_range')}_{global_vars.get('autonomous_systems')}" \
             f"_{global_vars.get('per_handover_prediction')}_" \
             f"{global_vars.get('final_max_epochs')}_{global_vars.get('data_augmentation')}_" \
-            f"{global_vars.get('n_folds')}_{fold_idx}_{global_vars.get('iteration')}.th"
+            f"{global_vars.get('n_folds')}_{fold_idx}_{global_vars.get('iteration')}{interpolation_str}.th"
 
