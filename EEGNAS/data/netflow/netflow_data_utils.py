@@ -79,7 +79,8 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
 
 
 def get_netflow_importance_rank(AS):
-    path = "/home/user/Documents/eladr/netflowinsights/CDN_overflow_prediction/feature_importances/interp"
+    # path = "/home/user/Documents/eladr/netflowinsights/CDN_overflow_prediction/feature_importances/interp"
+    path = global_vars.get('netflow_importance_path')
     importances = [f'{path}/{f}' for f in os.listdir(path) if AS in f]
     imps = [np.load(importance) for importance in importances]
     sorted_importance = [np.mean(imp, axis=0).mean(axis=1) for imp in imps]
