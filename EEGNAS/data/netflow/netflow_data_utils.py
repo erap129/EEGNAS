@@ -1,4 +1,5 @@
 import os
+import random
 
 import pywt
 from datetime import datetime
@@ -59,6 +60,11 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
             X = np.pad(X, pad_width=((0, 0), (max_handovers - X.shape[1], 0), (0, 0)), mode='constant')
         elif X.shape[1] > max_handovers:
             X = X[:, :max_handovers, :]
+
+        if global_vars.get('random_ho_permutations'):
+            order = list(range(X.shape[1]))
+            random.shuffle(order)
+            X = X[:, order, :]
 
         if global_vars.get('top_handovers'):
             importance_rank = get_netflow_importance_rank(file.split('/')[-1].split('_')[0])
