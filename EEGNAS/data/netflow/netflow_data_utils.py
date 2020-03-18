@@ -25,7 +25,21 @@ def get_netflow_minmax_scaler(file):
     return scaler
 
 
+def get_handover_locations(files):
+    all_handovers = []
+    for file in files:
+        as_name = file.split('/')[-1].split('_')[0]
+        df = pd.read_csv(file)
+        handovers = df['id'].values.astype(str)
+        handovers = np.where(handovers == '-101', f'{as_name}_-101', handovers)
+        all_handovers.extend(handovers)
+    all_handovers = set(all_handovers)
+    return list(all_handovers)
+
+
 def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
+    if global_vars.get('same_handover_locations'):
+        handover_locs = get_handover_locations(files)
     all_X = []
     all_y = []
     all_datetimes_X = []
@@ -33,10 +47,20 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
     max_handovers = global_vars.get('max_handovers')
     for file in files:
         all_data = get_whole_netflow_data(file)
+        as_name = file.split('/')[-1].split('_')[0]
+        cols = all_data.columns.astype(str)
+        all_data.columns = np.where(cols == '-101', f'{as_name}_-101', cols)
         all_data.fillna(method='ffill', inplace=True)
         all_data.fillna(method='bfill', inplace=True)
         values = all_data.values
-        index= all_data.index
+        index = all_data.index
+        if global_vars.get('same_handover_locations'):
+            new_all_data = all_data.filter([])
+            for handover in handover_locs:
+                new_all_data[handover] = np.zeros(len(new_all_data))
+            for handover in all_data.columns:
+                new_all_data[handover] = all_data[handover]
+                values = new_all_data.values
         if global_vars.get('normalize_netflow_data'):
             scaler = MinMaxScaler()
             scaler.fit(values)
@@ -56,10 +80,11 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
             y = turn_netflow_into_classification(X, y,
                                                  get_netflow_threshold(file, global_vars.get('netflow_threshold_std')))
 
-        if X.shape[1] < max_handovers:
-            X = np.pad(X, pad_width=((0, 0), (max_handovers - X.shape[1], 0), (0, 0)), mode='constant')
-        elif X.shape[1] > max_handovers:
-            X = X[:, :max_handovers, :]
+        if max_handovers is not None:
+            if X.shape[1] < max_handovers:
+                X = np.pad(X, pad_width=((0, 0), (max_handovers - X.shape[1], 0), (0, 0)), mode='constant')
+            elif X.shape[1] > max_handovers:
+                X = X[:, :max_handovers, :]
 
         if global_vars.get('random_ho_permutations'):
             order = list(range(X.shape[1]))

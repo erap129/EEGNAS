@@ -115,7 +115,9 @@ def eeg_label_by_idx(idx, dataset=None):
     labels = {'BCI_IV_2b': ['C3', 'Cz', 'C4'],
               'BCI_IV_2a': ['Fz','FC3','FC1','FCz','FC2','FC4','C5','C3','C1','Cz','C2','C4','C6','CP3','CP1','CPz','CP2','CP4','P1','Pz','P2','POz'],
               'TUH': ['A1', 'A2', 'C3', 'C4', 'CZ', 'F3', 'F4', 'F7', 'F8', 'FP1', 'FP2', 'FZ', 'O1', 'O2', 'P3', 'P4', 'PZ', 'T3', 'T4', 'T5', 'T6'],
-              'netflow_asflow': ['-101', '6461', '20940', '33891', '2914', '6762', '3257', '1299', '3356', '1273', '6453']}
+              # 'netflow_asflow': ['-101', '6461', '20940', '33891', '2914', '6762', '3257', '1299', '3356', '1273', '6453']}
+                'netflow_asflow': list(range(1, 100))}
+
     return labels[dataset][idx]
 
 

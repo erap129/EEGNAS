@@ -485,7 +485,11 @@ class gradientshap_explainer:
 
 def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_name, segment, viz_method, title=None):
     matplotlib.rcParams['axes.linewidth'] = 1.5
-    f, axes = plt.subplots(len(features), figsize=(20, 5), sharex='col', sharey='row', constrained_layout=True)
+    if global_vars.get('dataset') == 'netflow_asflow':
+        fig_height = 5
+    else:
+        fig_height = 10
+    f, axes = plt.subplots(len(features), figsize=(20, fig_height), sharex='col', sharey='row', constrained_layout=True)
     if global_vars.get('normalize_plots'):
         features = features / np.max(np.abs(features))
     for idx, ax in enumerate(axes):
@@ -494,12 +498,17 @@ def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_n
                            vmax=0.5)
         else:
             im = ax.imshow(features[idx], cmap='seismic', interpolation='nearest', aspect='auto')
-        ax.set_yticks([i for i in list(range(features[0].shape[0]))])
-        ax.set_yticklabels([i+1 for i in range(features[0].shape[0])])
-        ax.set_xticks(list(range(features[0].shape[1]))[::3])
-        ax.set_xticklabels([(i + start_hour) % 24 for i in range(features[0].shape[1])][::3])
+        ytick_range = list(range(features[0].shape[0]))
+        ax.set_yticks(ytick_range)
+        ax.set_yticklabels([eeg_label_by_idx(x) for x in ytick_range])
+        if global_vars.get('dataset') == 'netflow_asflow':
+            ax.set_xticks(list(range(features[0].shape[1]))[::3])
+            ax.set_xticklabels([(i + start_hour) % 24 for i in range(features[0].shape[1])][::3])
+        else:
+            ax.set_xticks(list(range(features[0].shape[1]))[::global_vars.get('frequency')])
+            ax.set_xticklabels(list(range(len(list(range(features[0].shape[1]))[::global_vars.get('frequency')]))))
         input_height_arr = list(range(features[0].shape[1]))
-        if idx == 0:
+        if idx == 0 and global_vars.get('dataset') == 'netflow_asflow':
             ax2 = ax.twiny()
             ax2.set_xlim(1, int(len(input_height_arr) / 24))
             num_days = len(list(range(int(features[0].shape[1] / 24))))
@@ -507,10 +516,17 @@ def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_n
             ax2.set_xticklabels([f'{num_days - i} Days' for i in range(int(features[0].shape[1] / 24))])
         ax.tick_params(axis='x', which='major', labelsize=8)
         ax.tick_params(axis='y', which='major', labelsize=6)
-        ax.set_xlabel('hour of day')
-        ax.set_ylabel('handover')
+        if global_vars.get('dataset') == 'netflow_asflow':
+            ax.set_xlabel('hour of day')
+            ax.set_ylabel('handover')
+        else:
+            ax.set_xlabel('seconds')
+            ax.set_ylabel('electrode')
         secax = ax.secondary_yaxis('right')
-        secax.set_ylabel(label_by_idx(idx, dataset_name)[5:], rotation=270)
+        if global_vars.get('dataset') == 'netflow_asflow':
+            secax.set_ylabel(label_by_idx(idx, dataset_name)[5:], rotation=270)
+        else:
+            secax.set_ylabel(label_by_idx(idx, dataset_name), rotation=270)
         secax.tick_params(labelsize=0, length=0, width=0)
 
     f.subplots_adjust(right=0.8, hspace=0)
@@ -525,6 +541,14 @@ def plot_feature_importance_netflow(folder_name, features, start_hour, dataset_n
     plt.savefig(shap_img_file, dpi=300)
     plt.clf()
     return shap_img_file
+
+
+def save_feature_importances(folder_name, feature_importances):
+    exp_id = folder_name.split('_')[0]
+    imp_fold_name = f'{exp_id}_importances'
+    if not os.path.exists(imp_fold_name):
+        os.makedirs(imp_fold_name)
+    np.save(f'{imp_fold_name}/{global_vars.get("as_to_test")}_{global_vars.get("fold_idx")}.npy', feature_importances)
 
 
 '''
@@ -548,7 +572,6 @@ def feature_importance_report(model, dataset, folder_name):
             mod.eval()
     e = globals()[f'{global_vars.get("explainer")}_explainer'](model, train_data)
     shap_imgs = []
-    # for segment in ['train', 'test', 'both']:
     for segment in ['test']:
         if segment == 'both':
             dataset = unify_dataset(dataset)
@@ -560,7 +583,10 @@ def feature_importance_report(model, dataset, folder_name):
         feature_values = e.get_feature_importance(segment_examples)
         feature_val = np.array(feature_values).squeeze()
         feature_mean[segment] = np.mean(feature_val, axis=1)
-        np.save(f'{folder_name}/{global_vars.get("explainer")}_{segment}.npy', feature_mean[segment])
+        if global_vars.get('dataset') == 'netflow_asflow':
+            save_feature_importances(folder_name, feature_mean[segment])
+        else:
+            np.save(f'{folder_name}/{global_vars.get("explainer")}_{segment}.npy', feature_mean[segment])
         feature_value = np.concatenate(feature_mean[segment], axis=0)
         feature_value = (feature_value - np.mean(feature_value)) / np.std(feature_value)
         FEATURE_VALUES[segment] = feature_value
@@ -568,7 +594,6 @@ def feature_importance_report(model, dataset, folder_name):
             vmin = feature_mean[segment].min()
         if feature_mean[segment].max() > vmax:
             vmax = feature_mean[segment].max()
-    # for segment in ['train', 'test', 'both']:
     for segment in ['test']:
         img_file = plot_feature_importance_netflow(folder_name, feature_mean[segment], global_vars.get('start_hour'),
                                         global_vars.get('dataset'), segment, global_vars.get('explainer'))

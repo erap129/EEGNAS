@@ -680,8 +680,8 @@ if __name__ == '__main__':
         global_vars.set('dataset', dataset)
 
         if dataset == 'netflow_asflow':
-            global_vars.set('autonomous_systems', [20940, 16509, 15169])
-            global_vars.set('date_range', "1.7.2017-1.10.2019")
+            global_vars.set('autonomous_systems', [20940, 16509, 6185, 15133, 32934, 15169, 22822, 2906, 32590, 202818, 3356])
+            global_vars.set('date_range', "1.7.2017-25.12.2019")
             global_vars.set('as_to_test', 20940)
             global_vars.set('start_hour', 15)
             global_vars.set('input_height', 240)
@@ -693,17 +693,23 @@ if __name__ == '__main__':
             global_vars.set('per_handover_prediction', True)
             global_vars.set('max_handovers', 11)
 
-        set_params_by_dataset('configurations/dataset_params.ini')
-        file_paths = [f"{os.path.dirname(os.path.abspath(__file__))}/data/netflow/{ats}_" \
-                      f"{global_vars.get('date_range')}.csv" for ats in global_vars.get('autonomous_systems')]
-        for AS_name, file_path in zip(global_vars.get('autonomous_systems'), file_paths):
-            all_data = get_whole_netflow_data(file_path)
-            all_data.to_csv(f'data/export_data/{global_vars.get("dataset")}/raw/{AS_name}.csv')
+            global_vars.set('interpolate_netflow', True)
+            global_vars.set('subjects_to_check', [1])
+            global_vars.set('netflow_importance_path', '/home/user/Documents/eladr/netflowinsights/CDN_overflow_prediction/feature_importances/regular')
 
 
-        # dataset = get_dataset('all')
-        # concat_train_val_sets(dataset)
-        # export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}_per_handover', transpose_time=False, unify=False)
+        # set_params_by_dataset('configurations/dataset_params.ini')
+        # file_paths = [f"{os.path.dirname(os.path.abspath(__file__))}/data/netflow/{ats}_" \
+        #               f"{global_vars.get('date_range')}.csv" for ats in global_vars.get('autonomous_systems')]
+        # for AS_name, file_path in zip(global_vars.get('autonomous_systems'), file_paths):
+        #     all_data = get_whole_netflow_data(file_path)
+        #     all_data.to_csv(f'data/export_data/{global_vars.get("dataset")}/raw/{AS_name}.csv')
+
+        for top_handovers in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
+            global_vars.set('top_handovers', top_handovers)
+            dataset = get_dataset('all')
+            concat_train_val_sets(dataset)
+            export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}_{top_handovers}_ho', transpose_time=False, unify=False)
 
 
 
