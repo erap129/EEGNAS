@@ -428,7 +428,8 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
     file_paths = [f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}netflow{subfolder_str}/{ats}_" \
                   f"{global_vars.get('date_range')}.csv" for ats in global_vars.get('autonomous_systems')]
     X, y, _, _ = preprocess_netflow_data(file_paths, global_vars.get('input_height'), global_vars.get('steps_ahead'),
-                                         global_vars.get('jumps'), global_vars.get('prediction_buffer'))
+                                         global_vars.get('jumps'), global_vars.get('prediction_buffer'),
+                                         global_vars.get('netflow_handover_locations'))
     global_vars.set('eeg_chans', X.shape[1])
     if global_vars.get('problem') != 'classification':
         global_vars.set('n_classes', global_vars.get('steps_ahead'))

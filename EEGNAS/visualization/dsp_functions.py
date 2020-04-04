@@ -37,3 +37,9 @@ def get_fft(signal, frequency):
     freqs = np.fft.fftfreq(len(signal), 1 / frequency)
     freq_idx = np.argmax(freqs >= nyquist)
     return freqs[:freq_idx], abs(np.fft.fft(signal)[:freq_idx])
+
+
+def filter_dataset(dataset, filt, low_freq, high_freq, frequency):
+    for key in dataset.keys():
+        dataset[key].X = filt(dataset[key].X, low_freq, high_freq, frequency).astype(np.float32)
+

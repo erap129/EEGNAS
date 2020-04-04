@@ -24,7 +24,7 @@ from EEGNAS.utilities.config_utils import set_default_config, update_global_vars
     get_multiple_values
 from EEGNAS.utilities.misc import concat_train_val_sets, get_exp_id
 import logging
-from EEGNAS.visualization.dsp_functions import butter_bandstop_filter, butter_bandpass_filter
+from EEGNAS.visualization.dsp_functions import butter_bandstop_filter, butter_bandpass_filter, filter_dataset
 import torch
 from braindecode.torch_ext.util import np_to_var
 from EEGNAS import global_vars
@@ -91,7 +91,6 @@ if __name__ == '__main__':
     global_vars.set('cuda', True)
     exp_id = get_exp_id('results')
     multiple_values = get_multiple_values(configurations)
-    prev_dataset = None
     prev_model_alias = None
     for index, configuration in enumerate(configurations):
         update_global_vars_from_config_dict(configuration)
@@ -110,7 +109,6 @@ if __name__ == '__main__':
         subject_id = global_vars.get('subject_id')
         if global_vars.get('model_alias') != 'Ensemble':
             dataset = get_dataset(subject_id)
-            prev_dataset = global_vars.get('dataset')
         exp_name = f"{exp_id}_{index+1}_{global_vars.get('report')}_{global_vars.get('dataset')}"
         exp_name = add_params_to_name(exp_name, multiple_values)
         stop_criterion, iterator, loss_function, monitors = get_normal_settings()
@@ -155,6 +153,9 @@ if __name__ == '__main__':
             model = torch.load(f'../models/{global_vars.get("models_dir")}/{global_vars.get("model_name")}')
         model.cuda()
         if global_vars.get('finetune_model'):
+            if global_vars.get('band_filter'):
+                frequency = global_vars.get('filter_frequency')
+                filter_dataset(dataset, global_vars.get('band_filter'), frequency-4, frequency+4, global_vars.get('frequency'))
             model = trainer.train_model(model, dataset, final_evaluation=True)
         prev_model_alias = global_vars.get('model_alias')
 

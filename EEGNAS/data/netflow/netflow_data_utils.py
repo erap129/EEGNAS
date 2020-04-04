@@ -37,9 +37,7 @@ def get_handover_locations(files):
     return list(all_handovers)
 
 
-def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
-    if global_vars.get('same_handover_locations'):
-        handover_locs = get_handover_locations(files)
+def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_locs=None):
     all_X = []
     all_y = []
     all_datetimes_X = []
@@ -54,13 +52,16 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer):
         all_data.fillna(method='bfill', inplace=True)
         values = all_data.values
         index = all_data.index
-        if global_vars.get('same_handover_locations'):
-            new_all_data = all_data.filter([])
-            for handover in handover_locs:
-                new_all_data[handover] = np.zeros(len(new_all_data))
-            for handover in all_data.columns:
-                new_all_data[handover] = all_data[handover]
-                values = new_all_data.values
+        if handover_locs is not None:
+            new_all_data_handovers = len(handover_locs)
+            if not global_vars.get('per_handover_prediction'):
+                new_all_data_handovers += 1
+            new_all_data = np.zeros((len(all_data), new_all_data_handovers))
+            for handover in [col for col in all_data.columns if col != 'sum']:
+                new_all_data[:, handover_locs.index(handover)] = all_data[handover]
+            if not global_vars.get('per_handover_prediction'):
+                new_all_data[:, new_all_data.shape[1] - 1] = all_data['sum']
+            values = new_all_data
         if global_vars.get('normalize_netflow_data'):
             scaler = MinMaxScaler()
             scaler.fit(values)

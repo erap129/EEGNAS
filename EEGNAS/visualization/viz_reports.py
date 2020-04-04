@@ -2,6 +2,8 @@ import os
 import random
 from collections import OrderedDict
 from copy import deepcopy
+
+import mne
 import shap
 import gc
 import torch
@@ -19,6 +21,7 @@ from captum.attr import visualization as viz
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
 from EEGNAS.utilities.NN_utils import get_intermediate_layer_value, get_class_distribution
+from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
 from EEGNAS.utilities.data_utils import get_dummy_input, prepare_data_for_NN, tensor_to_eeglab
 from EEGNAS.utilities.misc import unify_dataset, concat_train_val_sets, eeg_label_by_idx, write_dict
 from EEGNAS.utilities.monitors import get_eval_function
@@ -551,6 +554,23 @@ def save_feature_importances(folder_name, feature_importances):
     np.save(f'{imp_fold_name}/{global_vars.get("as_to_test")}_{global_vars.get("fold_idx")}.npy', feature_importances)
 
 
+def plot_topo_feature_importance(folder_name, features):
+    tmin = 0
+    info = mne.create_info(
+        ch_names=[eeg_label_by_idx(idx) for idx in range(global_vars.get('eeg_chans'))],
+        ch_types=['eeg' for i in range(global_vars.get('eeg_chans'))],
+        sfreq=global_vars.get('frequency')
+    )
+
+    for feat_idx, eeg_class in enumerate(features):
+        evoked_array = mne.EvokedArray(eeg_class, info, tmin)
+        evoked_array.set_montage('standard_1020')
+        fig = evoked_array.plot_topomap(ch_type='eeg', time_unit='s', colorbar=False, show_names=True, times=np.arange(0, 4, 0.3))
+        fig.suptitle(label_by_idx(feat_idx))
+        fig.savefig(f'{folder_name}/mne_plot_{label_by_idx(feat_idx)}.png')
+        print(evoked_array)
+
+
 '''
 Use some explainer to get feature importance for each class
 '''
@@ -597,6 +617,7 @@ def feature_importance_report(model, dataset, folder_name):
     for segment in ['test']:
         img_file = plot_feature_importance_netflow(folder_name, feature_mean[segment], global_vars.get('start_hour'),
                                         global_vars.get('dataset'), segment, global_vars.get('explainer'))
+        plot_topo_feature_importance(folder_name, feature_mean[segment])
         shap_imgs.append(img_file)
     story = []
     for im in shap_imgs:
@@ -800,9 +821,14 @@ def shap_gradient_report(model, dataset, folder_name):
 
 
 if __name__ == '__main__':
-    features = np.load('results/140_1_feature_importance_netflow_asflow_as_to_test_20940/deeplift_test.npy')
-    # features = np.load('results/145_1_feature_importance_netflow_asflow_repetition_1_as_to_test_20940_explainer_deeplift/deeplift_test.npy')
-    for f_idx in range(len(features)):
-        features[f_idx] = features[f_idx] - features[f_idx].mean()
-        features[f_idx] = features[f_idx] / features[f_idx].max()
-    plot_feature_importance_netflow('/home/user/Documents/eladr/EEGNAS/EEGNAS/visualization/results', features, 15, 'netflow_asflow', 'test', 'deeplift')
+    # features = np.load('results/140_1_feature_importance_netflow_asflow_as_to_test_20940/deeplift_test.npy')
+    # for f_idx in range(len(features)):
+    #     features[f_idx] = features[f_idx] - features[f_idx].mean()
+    #     features[f_idx] = features[f_idx] / features[f_idx].max()
+    # plot_feature_importance_netflow('/home/user/Documents/eladr/EEGNAS/EEGNAS/visualization/results', features, 15, 'netflow_asflow', 'test', 'deeplift')
+    features = np.load('results/210_1_feature_importance_BCI_IV_2a/deeplift_test.npy')
+    set_default_config('../configurations/config.ini')
+    global_vars.set('dataset', 'BCI_IV_2a')
+    set_params_by_dataset('../configurations/dataset_params.ini')
+    global_vars.set('frequency', 250)
+    plot_topo_feature_importance('/home/user/Documents/eladr/EEGNAS/EEGNAS/visualization/results', features)
