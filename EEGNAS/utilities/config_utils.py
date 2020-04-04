@@ -79,6 +79,8 @@ def set_params_by_dataset(params_config_path):
     config_dict = config_to_dict(params_config_path)
     if global_vars.get('dataset') in config_dict.keys():
         key = global_vars.get('dataset')
+    elif global_vars.get('problem') == 'regression':
+        key = 'default_regression'
     else:
         key = 'default'
     for param_name in config_dict[key]:

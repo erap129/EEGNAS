@@ -10,7 +10,7 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from EEGNAS.data.TUH.TUH_loader import DiagnosisSet, create_preproc_functions, TrainValidSplitter
 from EEGNAS.data.netflow.netflow_data_utils import preprocess_netflow_data, turn_netflow_into_classification, \
     get_time_freq, \
-    turn_dataset_to_timefreq, get_whole_netflow_data
+    turn_dataset_to_timefreq, get_whole_netflow_data, get_handover_locations
 from EEGNAS.utilities.config_utils import set_default_config, set_params_by_dataset
 from EEGNAS.utilities.data_utils import split_sequence, noise_input, split_parallel_sequences, export_data_to_file, \
     EEG_to_TF_mne, EEG_to_TF_matlab, sktime_to_numpy, set_global_vars_by_sktime, set_global_vars_by_dataset
@@ -427,6 +427,8 @@ def get_netflow_asflow_train_val_test(data_folder, shuffle=False):
         subfolder_str = ''
     file_paths = [f"{os.path.dirname(os.path.abspath(__file__))}/{data_folder}netflow{subfolder_str}/{ats}_" \
                   f"{global_vars.get('date_range')}.csv" for ats in global_vars.get('autonomous_systems')]
+    if global_vars.get('same_handover_locations'):
+        global_vars.set('netflow_handover_locations', get_handover_locations(file_paths))
     X, y, _, _ = preprocess_netflow_data(file_paths, global_vars.get('input_height'), global_vars.get('steps_ahead'),
                                          global_vars.get('jumps'), global_vars.get('prediction_buffer'),
                                          global_vars.get('netflow_handover_locations'))
@@ -554,15 +556,18 @@ def get_MTS_benchmark_train_val_test(data_folder):
 
 
 def get_data_from_npy(data_folder):
-    X_train = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/X_train.npy')
-    X_test = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/X_test.npy')
-    y_train = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/y_train.npy')
-    y_test = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset_dir")}/y_test.npy')
+    X_train = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset")}/X_train.npy')
+    X_test = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset")}/X_test.npy')
+    y_train = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset")}/y_train.npy')
+    y_test = np.load(f'{os.path.dirname(os.path.abspath(__file__))}/{data_folder}{global_vars.get("dataset")}/y_test.npy')
     global_vars.set('eeg_chans', X_train.shape[1])
     global_vars.set('input_height', X_train.shape[2])
     if X_train.ndim > 3:
         global_vars.set('input_width', X_train.shape[3])
-    global_vars.set('n_classes', len(np.unique(y_train)))
+    if global_vars.get('problem') == 'regression':
+        global_vars.set('n_classes', y_train.shape[1])
+    else:
+        global_vars.set('n_classes', len(np.unique(y_train)))
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=global_vars.get('valid_set_fraction'))
     train_set, valid_set, test_set = makeDummySignalTargets(X_train, y_train, X_val, y_val, X_test, y_test)
     return train_set, valid_set, test_set
@@ -692,11 +697,11 @@ if __name__ == '__main__':
             global_vars.set('max_handovers', 11)
             global_vars.set('normalize_netflow_data', True)
             global_vars.set('per_handover_prediction', True)
-            global_vars.set('max_handovers', 11)
+            global_vars.set('max_handovers', 43)
 
-            global_vars.set('interpolate_netflow', True)
+            # global_vars.set('interpolate_netflow', True)
             global_vars.set('subjects_to_check', [1])
-            global_vars.set('netflow_importance_path', '/home/user/Documents/eladr/netflowinsights/CDN_overflow_prediction/feature_importances/regular')
+            # global_vars.set('netflow_importance_path', '/home/user/Documents/eladr/netflowinsights/CDN_overflow_prediction/feature_importances/regular')
 
 
         # set_params_by_dataset('configurations/dataset_params.ini')
@@ -706,11 +711,12 @@ if __name__ == '__main__':
         #     all_data = get_whole_netflow_data(file_path)
         #     all_data.to_csv(f'data/export_data/{global_vars.get("dataset")}/raw/{AS_name}.csv')
 
-        for top_handovers in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
-            global_vars.set('top_handovers', top_handovers)
-            dataset = get_dataset('all')
-            concat_train_val_sets(dataset)
-            export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}_{top_handovers}_ho', transpose_time=False, unify=False)
+        file_paths = [f"data/netflow/{ats}_" \
+                          f"{global_vars.get('date_range')}.csv" for ats in global_vars.get('autonomous_systems')]
+        global_vars.set('netflow_handover_locations', get_handover_locations(file_paths))
+        dataset = get_dataset('all')
+        concat_train_val_sets(dataset)
+        export_data_to_file(dataset, 'numpy', f'data/export_data/{global_vars.get("dataset")}_samelocs_2', transpose_time=False, unify=False)
 
 
 
