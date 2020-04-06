@@ -50,6 +50,14 @@ def filter_eegnas_population_files(filename):
         res = res and 'per_handover' in filename
     else:
         res = res and 'per_handover' not in filename
+    if global_vars.get('top_handovers'):
+        res = res and f'top{global_vars.get("top_handovers")}' in filename
+    else:
+        res = res and 'top' not in filename
+    if global_vars.get('same_handover_locations'):
+        res = res and 'samelocs' in filename
+    else:
+        res = res and 'samelocs' not in filename
     res = res and f'input_height_{global_vars.get("input_height")}' in filename
     return res
 
@@ -108,8 +116,12 @@ class MultivariateParallelMultistepLSTM(nn.Module):
 
 
 def get_evaluator(evaluator_type):
+    if global_vars.get('top_handovers'):
+        channels = global_vars.get('top_handovers')
+    else:
+        channels = global_vars.get('max_handovers')
     if global_vars.get('per_handover_prediction'):
-        output_size = global_vars.get('steps_ahead') * global_vars.get('max_handovers')
+        output_size = global_vars.get('steps_ahead') * channels
     else:
         output_size = global_vars.get('steps_ahead')
     if type(evaluator_type) == list:
@@ -130,34 +142,69 @@ def get_evaluator(evaluator_type):
             for mod in model.models:
                 reset_model_weights(mod)
             model.cpu()
+        else:
+            model = torch.load(
+                f'../EEGNAS/EEGNAS/models/{global_vars.get("models_dir")}/{global_vars.get("model_file_name")}')
+            reset_model_weights(model)
+            model.cpu()
+            load_values_from_config(f'../EEGNAS/EEGNAS/models/{global_vars.get("models_dir")}'
+                                    f'/config_{global_vars.get("models_dir")}.ini',
+                                    ['input_height', 'start_hour', 'start_point', 'date_range', 'prediction_buffer',
+                                     'steps_ahead', 'jumps', 'normalize_netflow_data', 'per_handover_prediction'])
         return model
     elif evaluator_type == 'nsga':
         if global_vars.get('per_handover_prediction'):
             genotype = NetflowMultiHandover
-            model = NetworkCIFAR(24, output_size, global_vars.get('max_handovers'), 11, False, genotype)
+            model = NetworkCIFAR(24, output_size, channels, 11, False, genotype)
         else:
-            with open('nsga_models/best_genome_normalized.pkl', 'rb') as f:
+            nsga_file = 'nsga_models/best_genome_normalized.pkl'
+            if global_vars.get('top_handovers'):
+                nsga_file = f'{nsga_file[:-4]}_top{global_vars.get("top_handovers")}.pkl'
+            if global_vars.get('same_handover_locations'):
+                nsga_file = f'{nsga_file[:-4]}_samelocs.pkl'
+            with open(nsga_file, 'rb') as f:
                 genotype = pickle.load(f)
                 genotype = decode(convert(genotype))
-                model = NetworkCIFAR(24, global_vars.get('steps_ahead'), global_vars.get('max_handovers'), 11, False, genotype)
+                model = NetworkCIFAR(24, global_vars.get('steps_ahead'), channels, 11, False, genotype)
         model.droprate = 0.0
         model.single_output = True
         return model
     elif evaluator_type == 'rnn':
-        if global_vars.get('per_handover_prediction'):
-            model = MultivariateParallelMultistepLSTM(global_vars.get('max_handovers'), 100, global_vars.get('batch_size'),
+        if global_vars.get('highest_handover_overflow'):
+            model = LSTMMulticlassClassification(channels, 100, global_vars.get('batch_size'),
+                                              global_vars.get('input_height'), num_layers=global_vars.get('lstm_layers'), eegnas=True)
+        elif global_vars.get('per_handover_prediction'):
+            model = MultivariateParallelMultistepLSTM(channels, 100, global_vars.get('batch_size'),
                                               global_vars.get('input_height'), num_layers=global_vars.get('lstm_layers'),
                                                       eegnas=True)
 
         else:
-            model = MultivariateLSTM(global_vars.get('max_handovers'), 100, global_vars.get('batch_size'),
+            model = MultivariateLSTM(global_vars.get('eeg_chans'), 100, global_vars.get('batch_size'),
                                  global_vars.get('input_height'), global_vars.get('steps_ahead'), num_layers=global_vars.get('lstm_layers'), eegnas=True)
         model.cpu()
         return model
     elif evaluator_type == 'LSTNet':
-        model = LSTNetModel(global_vars.get('max_handovers'), output_size, window=global_vars.get('input_height'))
+        model = LSTNetModel(global_vars.get('eeg_chans'), output_size, window=global_vars.get('input_height'))
         model.cpu()
         return model
+    elif evaluator_type == 'MHANet':
+        model = MHANetModel(channels, output_size)
+        model.cpu()
+        return model
+    elif evaluator_type == 'WaveNet':
+        model = WaveNet(input_channels=channels, output_channels=1, horizon=global_vars.get('steps_ahead'))
+        model.cpu()
+        return model
+    elif evaluator_type == 'xgboost':
+        model = MultiOutputRegressor(XGBRegressor(base_score=0.5, booster='gbtree', colsample_bylevel=1,
+            colsample_bytree=1, gamma=0, learning_rate=0.1, max_delta_step=0,
+            max_depth=3, min_child_weight=1, missing=None, n_estimators=1000,
+            n_jobs=1, nthread=None, objective='reg:linear', random_state=0,
+            reg_alpha=0, reg_lambda=1, scale_pos_weight=1, seed=None,
+            silent=True, subsample=1, tree_method='gpu_hist', gpu_id=0))
+        return model
+    elif evaluator_type == 'autokeras':
+        return ak.ImageRegressor(max_trials=3)
 
 
 def get_fold_idxs(AS):
