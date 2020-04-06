@@ -226,11 +226,24 @@ def get_pretrained_model(filename):
 
 
 def get_model_filename_kfold(type, fold_idx):
-    interpolation_str = ''
+    as_str, samelocs_str, evaluator_str, seed_str, handover_str, interpolation_str = '', '', '', '', '', ''
     if global_vars.get('interpolate_netflow'):
         interpolation_str = '_interp'
-    return f"{type}/{global_vars.get('dataset')}_{global_vars.get('date_range')}_{global_vars.get('autonomous_systems')}" \
+    if global_vars.get('top_handovers'):
+        handover_str = f'_top{global_vars.get("top_handovers")}'
+    if global_vars.get('random_ho_permutations') and global_vars.get('permidx'):
+        seed_str = f'_permidx_{global_vars.get("permidx")}'
+    if set(global_vars.get('evaluator')) != set(["cnn", "rnn", "LSTNet", "nsga"]):
+        evaluator_str = f'_{"_".join(global_vars.get("evaluator"))}'
+    if global_vars.get('same_handover_locations'):
+        samelocs_str = '_samelocs'
+    if global_vars.get('netflow_subfolder') == 'top_99':
+        as_str = f'top{len(global_vars.get("autonomous_systems"))}'
+    else:
+        as_str = global_vars.get('autonomous_systems')
+    return f"{type}/{global_vars.get('dataset')}_{global_vars.get('date_range')}_{as_str}" \
             f"_{global_vars.get('per_handover_prediction')}_" \
             f"{global_vars.get('final_max_epochs')}_{global_vars.get('data_augmentation')}_" \
-            f"{global_vars.get('n_folds')}_{fold_idx}_{global_vars.get('iteration')}{interpolation_str}.th"
+            f"{global_vars.get('n_folds')}_{fold_idx}_{global_vars.get('iteration')}{interpolation_str}" \
+            f"{handover_str}{seed_str}{evaluator_str}{samelocs_str}.th"
 
