@@ -34,7 +34,7 @@ def get_handover_locations(files):
         handovers = np.where(handovers == '-101', f'{as_name}_-101', handovers)
         all_handovers.extend(handovers)
     all_handovers = set(all_handovers)
-    return list(all_handovers)
+    return sorted(list(all_handovers))
 
 
 def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_locs=None):
@@ -52,7 +52,7 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_lo
         all_data.fillna(method='bfill', inplace=True)
         values = all_data.values
         index = all_data.index
-        if handover_locs and handover_locs is not None:
+        if handover_locs is not None:
             new_all_data_handovers = len(handover_locs)
             if not global_vars.get('per_handover_prediction'):
                 new_all_data_handovers += 1
