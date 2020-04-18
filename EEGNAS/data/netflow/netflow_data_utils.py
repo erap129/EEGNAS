@@ -81,7 +81,7 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_lo
             y = turn_netflow_into_classification(X, y,
                                                  get_netflow_threshold(file, global_vars.get('netflow_threshold_std')))
 
-        if max_handovers is not None:
+        if max_handovers and max_handovers is not None:
             if X.shape[1] < max_handovers:
                 X = np.pad(X, pad_width=((0, 0), (max_handovers - X.shape[1], 0), (0, 0)), mode='constant')
             elif X.shape[1] > max_handovers:
@@ -99,7 +99,7 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_lo
         all_X.extend(X)
         all_y.extend(y)
 
-    if global_vars.get('per_handover_prediction'):
+    if max_handovers and max_handovers is not None and global_vars.get('per_handover_prediction'):
         for idx in range(len(all_y)):
             if all_y[idx].shape[0] < max_handovers * global_vars.get('steps_ahead'):
                 all_y[idx] = np.pad(all_y[idx], pad_width=((max_handovers * global_vars.get('steps_ahead') - all_y[idx].shape[0], 0)),

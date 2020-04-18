@@ -58,6 +58,8 @@ def filter_eegnas_population_files(filename):
         res = res and 'samelocs' in filename
     else:
         res = res and 'samelocs' not in filename
+    if global_vars.get('current_fold_idx') is not None:
+        res = res and f'fold{global_vars.get("current_fold_idx")}' in filename
     res = res and f'input_height_{global_vars.get("input_height")}' in filename
     return res
 
@@ -115,7 +117,7 @@ class MultivariateParallelMultistepLSTM(nn.Module):
         return y_hat.tolist()
 
 
-def get_evaluator(evaluator_type):
+def get_evaluator(evaluator_type, fold_idx=None):
     if global_vars.get('top_handovers'):
         channels = global_vars.get('top_handovers')
     else:
@@ -125,7 +127,7 @@ def get_evaluator(evaluator_type):
     else:
         output_size = global_vars.get('steps_ahead')
     if type(evaluator_type) == list:
-        models = [get_evaluator(ev) for ev in global_vars.get('evaluator')]
+        models = [get_evaluator(ev, fold_idx) for ev in global_vars.get('evaluator')]
         if not global_vars.get('true_ensemble_avg'):
             model = BasicEnsemble(models, output_size)
         else:
@@ -135,12 +137,14 @@ def get_evaluator(evaluator_type):
     if evaluator_type == 'cnn':
         if global_vars.get('cnn_ensemble'):
             all_population_files = os.listdir('eegnas_models')
+            global_vars.set('current_fold_idx', fold_idx)
             pop_files = list(filter(filter_eegnas_population_files, all_population_files))
             assert len(pop_files) == 1
             pop_file = pop_files[0]
             model = create_ensemble_from_population_file(f'eegnas_models/{pop_file}', 5)
-            for mod in model.models:
-                reset_model_weights(mod)
+            if not global_vars.get('skip_cnn_training'):
+                for mod in model.models:
+                    reset_model_weights(mod)
             model.cpu()
         else:
             model = torch.load(
@@ -153,19 +157,19 @@ def get_evaluator(evaluator_type):
                                      'steps_ahead', 'jumps', 'normalize_netflow_data', 'per_handover_prediction'])
         return model
     elif evaluator_type == 'nsga':
+        nsga_file = 'nsga_models/best_genome_normalized.pkl'
+        if global_vars.get('top_handovers'):
+            nsga_file = f'{nsga_file[:-4]}_top{global_vars.get("top_handovers")}.pkl'
         if global_vars.get('per_handover_prediction'):
-            genotype = NetflowMultiHandover
-            model = NetworkCIFAR(24, output_size, channels, 11, False, genotype)
-        else:
-            nsga_file = 'nsga_models/best_genome_normalized.pkl'
-            if global_vars.get('top_handovers'):
-                nsga_file = f'{nsga_file[:-4]}_top{global_vars.get("top_handovers")}.pkl'
-            if global_vars.get('same_handover_locations'):
-                nsga_file = f'{nsga_file[:-4]}_samelocs.pkl'
-            with open(nsga_file, 'rb') as f:
-                genotype = pickle.load(f)
-                genotype = decode(convert(genotype))
-                model = NetworkCIFAR(24, global_vars.get('steps_ahead'), channels, 11, False, genotype)
+            nsga_file = f'{nsga_file[:-4]}_samelocs.pkl'
+        if global_vars.get('same_handover_locations'):
+            nsga_file = f'{nsga_file[:-4]}_per_handover.pkl'
+        if fold_idx is not None:
+            nsga_file = f'{nsga_file[:-4]}_fold{fold_idx}.pkl'
+        with open(nsga_file, 'rb') as f:
+            genotype = pickle.load(f)
+            genotype = decode(convert(genotype))
+            model = NetworkCIFAR(24, global_vars.get('steps_ahead'), channels, 11, False, genotype)
         model.droprate = 0.0
         model.single_output = True
         return model
@@ -179,12 +183,12 @@ def get_evaluator(evaluator_type):
                                                       eegnas=True)
 
         else:
-            model = MultivariateLSTM(global_vars.get('eeg_chans'), 100, global_vars.get('batch_size'),
+            model = MultivariateLSTM(channels, 100, global_vars.get('batch_size'),
                                  global_vars.get('input_height'), global_vars.get('steps_ahead'), num_layers=global_vars.get('lstm_layers'), eegnas=True)
         model.cpu()
         return model
     elif evaluator_type == 'LSTNet':
-        model = LSTNetModel(global_vars.get('eeg_chans'), output_size, window=global_vars.get('input_height'))
+        model = LSTNetModel(channels, output_size, window=global_vars.get('input_height'))
         model.cpu()
         return model
     elif evaluator_type == 'MHANet':
@@ -273,7 +277,7 @@ def get_pretrained_model(filename):
 
 
 def get_model_filename_kfold(type, fold_idx):
-    as_str, samelocs_str, evaluator_str, seed_str, handover_str, interpolation_str = '', '', '', '', '', ''
+    unique_test_str, drop_others_str, top_pni_str, test_handover_str, as_str, samelocs_str, evaluator_str, seed_str, handover_str, interpolation_str = '', '', '', '', '', '', '', '', '', ''
     if global_vars.get('interpolate_netflow'):
         interpolation_str = '_interp'
     if global_vars.get('top_handovers'):
@@ -284,13 +288,23 @@ def get_model_filename_kfold(type, fold_idx):
         evaluator_str = f'_{"_".join(global_vars.get("evaluator"))}'
     if global_vars.get('same_handover_locations'):
         samelocs_str = '_samelocs'
+        if global_vars.get('test_handover_locs'):
+            test_handover_str = '_testlocs'
     if global_vars.get('netflow_subfolder') == 'top_99':
         as_str = f'top{len(global_vars.get("autonomous_systems"))}'
     else:
         as_str = global_vars.get('autonomous_systems')
+    if global_vars.get('top_pni'):
+        top_pni_str = '_top_pni'
+    if not global_vars.get('netflow_drop_others'):
+        drop_others_str = '_others'
+    if global_vars.get('unique_test_model'):
+        unique_test_str = f'_unq_{global_vars.get("as_to_test")}'
+
     return f"{type}/{global_vars.get('dataset')}_{global_vars.get('date_range')}_{as_str}" \
             f"_{global_vars.get('per_handover_prediction')}_" \
             f"{global_vars.get('final_max_epochs')}_{global_vars.get('data_augmentation')}_" \
             f"{global_vars.get('n_folds')}_{fold_idx}_{global_vars.get('iteration')}{interpolation_str}" \
-            f"{handover_str}{seed_str}{evaluator_str}{samelocs_str}.th"
+            f"{handover_str}{seed_str}{evaluator_str}{samelocs_str}{test_handover_str}{top_pni_str}{drop_others_str}{unique_test_str}.th"
+
 
