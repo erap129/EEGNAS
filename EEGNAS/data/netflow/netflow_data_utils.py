@@ -58,7 +58,8 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_lo
                 new_all_data_handovers += 1
             new_all_data = np.zeros((len(all_data), new_all_data_handovers))
             for handover in [col for col in all_data.columns if col != 'sum']:
-                new_all_data[:, handover_locs.index(handover)] = all_data[handover]
+                if handover in handover_locs:
+                    new_all_data[:, handover_locs.index(handover)] = all_data[handover]
             if not global_vars.get('per_handover_prediction'):
                 new_all_data[:, new_all_data.shape[1] - 1] = all_data['sum']
             values = new_all_data
