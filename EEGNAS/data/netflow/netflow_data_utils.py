@@ -22,7 +22,7 @@ def get_netflow_minmax_scaler(file):
     values = all_data.values
     scaler = MinMaxScaler()
     scaler.fit(values)
-    return scaler
+    return scaler, list(all_data.columns)
 
 
 def get_handover_locations(files):
@@ -231,10 +231,3 @@ def get_moving_threshold(y_real, num_std):
     std = y_real.std()
     y_real = np.pad(y_real, (N // 2, N - 1 - N // 2), mode='edge')
     return moving_average(y_real, n=N) + (num_std * std)
-
-
-
-
-
-
-
