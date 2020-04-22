@@ -63,10 +63,13 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_lo
             if not global_vars.get('per_handover_prediction'):
                 new_all_data[:, new_all_data.shape[1] - 1] = all_data['sum']
             values = new_all_data
+        # mock_sample_list, mock_y = split_parallel_sequences(values, n_before, n_ahead, jumps, buffer)
+        # mock_values = values
         if global_vars.get('normalize_netflow_data'):
             scaler = MinMaxScaler()
             scaler.fit(values)
             values = scaler.transform(values)
+        # mock_original_values = scaler.inverse_transform(values)
         sample_list, y = split_parallel_sequences(values, n_before, n_ahead, jumps, buffer)
         datetimes_X, datetimes_Y = split_sequence(index, n_before, n_ahead, jumps, buffer)
         all_datetimes_X.extend(datetimes_X)
@@ -139,21 +142,23 @@ def get_whole_netflow_data(file):
         idx += 1
     all_data = pd.concat(dfs, axis=1)
     all_data = all_data.dropna(thresh=len(all_data) - (len(all_data) / 8), axis=1)
-    if not global_vars.get('per_handover_prediction'):
-        all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
     if global_vars.get('drop_self') and int(own_as_num) in all_data.columns:
         all_data = all_data.drop(int(own_as_num), axis=1)
     if global_vars.get('interpolate_netflow'):
         all_data = all_data.interpolate(limit_direction='both')
     else:
         all_data = all_data.dropna(axis=1, how='any')
+    if global_vars.get('netflow_drop_others'):
+        all_data = all_data.drop(-101, axis=1, errors='ignore')
+    all_data['sum'] = all_data.drop(labels=int(own_as_num), axis=1, errors='ignore').sum(axis=1)
     all_data = all_data[np.flatnonzero(df.index.hour == global_vars.get('start_hour'))[0]:]
     return all_data
 
 
 def get_netflow_threshold(file, stds, handover='sum'):
     df = get_whole_netflow_data(file)
-    values = df[handover].values.reshape(-1, 1)
+    values = df[handover].values
+    values = values.reshape(-1, 1)
     if global_vars.get('normalize_netflow_data'):
         scaler = MinMaxScaler()
         scaler.fit(values)
