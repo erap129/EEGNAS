@@ -164,7 +164,7 @@ def get_netflow_threshold(file, stds, handover='sum'):
         scaler.fit(values)
         values = scaler.transform(values)
     if stds == 'auto':
-        for std in [3, 2, 1, 0.5]:
+        for std in reversed(np.arange(0.1, 3.1, 0.1)):
             relevant_df = df.iloc[2234:]
             relevant_df = relevant_df[np.logical_and(17 <= relevant_df.index.hour, relevant_df.index.hour <= 21)]
             relevant_values = relevant_df[handover].values.reshape(-1, 1)
@@ -174,7 +174,7 @@ def get_netflow_threshold(file, stds, handover='sum'):
             num_over = np.count_nonzero(relevant_values > thresh_to_test)
             num_under = np.count_nonzero(relevant_values <= thresh_to_test)
             overflow_ratio = num_over / (num_over + num_under)
-            if 0.07 <= overflow_ratio:
+            if 0.05 <= overflow_ratio:
                 stds = std
                 break
     return values.mean() + values.std() * stds, stds
