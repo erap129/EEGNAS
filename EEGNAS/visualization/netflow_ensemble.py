@@ -20,6 +20,7 @@ from nsga_net.models.micro_models import NetworkCIFAR
 from nsga_net.models.micro_genotypes import NetflowMultiHandover
 from nsga_net.search.micro_encoding import convert, decode
 
+
 def train_model_for_netflow(model, dataset, trainer):
     print(f'start training model: {type(model).__name__}')
     if 'Ensemble' in type(model).__name__:
@@ -58,6 +59,10 @@ def filter_eegnas_population_files(filename):
         res = res and 'samelocs' in filename
     else:
         res = res and 'samelocs' not in filename
+    if global_vars.get('handovers'):
+        res = res and 'handovers' in filename
+    else:
+        res = res and 'handovers' not in filename
     if global_vars.get('current_fold_idx') is not None:
         res = res and f'fold{global_vars.get("current_fold_idx")}' in filename
     res = res and f'input_height_{global_vars.get("input_height")}' in filename
@@ -120,8 +125,10 @@ class MultivariateParallelMultistepLSTM(nn.Module):
 def get_evaluator(evaluator_type, fold_idx=None):
     if global_vars.get('top_handovers'):
         channels = global_vars.get('top_handovers')
-    else:
+    elif global_vars.get('max_handovers'):
         channels = global_vars.get('max_handovers')
+    elif global_vars.get('handovers'):
+        channels = len(global_vars.get('handovers'))
     if global_vars.get('per_handover_prediction'):
         output_size = global_vars.get('steps_ahead') * channels
     else:
@@ -161,15 +168,17 @@ def get_evaluator(evaluator_type, fold_idx=None):
         if global_vars.get('top_handovers'):
             nsga_file = f'{nsga_file[:-4]}_top{global_vars.get("top_handovers")}.pkl'
         if global_vars.get('per_handover_prediction'):
-            nsga_file = f'{nsga_file[:-4]}_samelocs.pkl'
-        if global_vars.get('same_handover_locations'):
             nsga_file = f'{nsga_file[:-4]}_per_handover.pkl'
+        if global_vars.get('same_handover_locations'):
+            nsga_file = f'{nsga_file[:-4]}_samelocs.pkl'
+        if global_vars.get('handovers'):
+            nsga_file = f'{nsga_file[:-4]}_handovers.pkl'
         if fold_idx is not None:
             nsga_file = f'{nsga_file[:-4]}_fold{fold_idx}.pkl'
         with open(nsga_file, 'rb') as f:
             genotype = pickle.load(f)
             genotype = decode(convert(genotype))
-            model = NetworkCIFAR(24, global_vars.get('steps_ahead'), channels, 11, False, genotype)
+            model = NetworkCIFAR(24, output_size, channels, 11, False, genotype)
         model.droprate = 0.0
         model.single_output = True
         return model
@@ -229,7 +238,7 @@ def get_fold_idxs(AS):
     return fold_idxs
 
 
-def get_data_by_balanced_folds(ASs, fold_idxs):
+def get_data_by_balanced_folds(ASs, fold_idxs, required_num_samples=None):
     prev_autonomous_systems = global_vars.get('autonomous_systems')
     folds = {i: {'X_train': [], 'X_test': [], 'y_train': [], 'y_test': []} for i in range(global_vars.get('n_folds'))}
     for AS in ASs:
@@ -237,16 +246,27 @@ def get_data_by_balanced_folds(ASs, fold_idxs):
         dataset = get_dataset('all')
         concat_train_val_sets(dataset)
         dataset = unify_dataset(dataset)
-        for fold_idx in range(global_vars.get('n_folds')):
-            folds[fold_idx]['X_train'].extend(dataset.X[fold_idxs[fold_idx]['train_idxs']])
-            folds[fold_idx]['X_test'].extend(dataset.X[fold_idxs[fold_idx]['test_idxs']])
-            folds[fold_idx]['y_train'].extend(dataset.y[fold_idxs[fold_idx]['train_idxs']])
-            folds[fold_idx]['y_test'].extend(dataset.y[fold_idxs[fold_idx]['test_idxs']])
+        if np.count_nonzero(dataset.X) == 0:
+            print(f'dropped AS {AS} - no common handovers')
+            continue
+        try:
+            if required_num_samples is not None:
+                assert len(dataset.X) == required_num_samples
+            for fold_idx in range(global_vars.get('n_folds')):
+                folds[fold_idx]['X_train'].extend(dataset.X[fold_idxs[fold_idx]['train_idxs']])
+                folds[fold_idx]['X_test'].extend(dataset.X[fold_idxs[fold_idx]['test_idxs']])
+                folds[fold_idx]['y_train'].extend(dataset.y[fold_idxs[fold_idx]['train_idxs']])
+                folds[fold_idx]['y_test'].extend(dataset.y[fold_idxs[fold_idx]['test_idxs']])
+        except IndexError:
+            print(f'dropped AS {AS}')
+        except AssertionError:
+            print(f'dropped AS {AS}')
     for key in folds.keys():
         for inner_key in folds[key].keys():
             folds[key][inner_key] = np.stack(folds[key][inner_key], axis=0)
     global_vars.set('autonomous_systems', prev_autonomous_systems)
     return folds
+
 
 
 def get_dataset_from_folds(fold_samples):
@@ -285,7 +305,10 @@ def get_model_filename_kfold(type, fold_idx):
     if global_vars.get('random_ho_permutations') and global_vars.get('permidx'):
         seed_str = f'_permidx_{global_vars.get("permidx")}'
     if set(global_vars.get('evaluator')) != set(["cnn", "rnn", "LSTNet", "nsga"]):
-        evaluator_str = f'_{"_".join(global_vars.get("evaluator"))}'
+        if isinstance(global_vars.get('evaluator'), list):
+            evaluator_str = f'_{"_".join(global_vars.get("evaluator"))}'
+        else:
+            evaluator_str = global_vars.get('evaluator')
     if global_vars.get('same_handover_locations'):
         samelocs_str = '_samelocs'
         if global_vars.get('test_handover_locs'):
@@ -306,5 +329,4 @@ def get_model_filename_kfold(type, fold_idx):
             f"{global_vars.get('final_max_epochs')}_{global_vars.get('data_augmentation')}_" \
             f"{global_vars.get('n_folds')}_{fold_idx}_{global_vars.get('iteration')}{interpolation_str}" \
             f"{handover_str}{seed_str}{evaluator_str}{samelocs_str}{test_handover_str}{top_pni_str}{drop_others_str}{unique_test_str}.th"
-
 

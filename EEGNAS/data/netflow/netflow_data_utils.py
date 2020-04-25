@@ -82,8 +82,8 @@ def preprocess_netflow_data(files, n_before, n_ahead, jumps, buffer, handover_lo
             X = sample_list.swapaxes(1, 2)[:, :num_handovers]
             y = y.swapaxes(1, 2)[:, num_handovers]
         if global_vars.get('problem') == 'classification' and not global_vars.get('highest_handover_overflow'):
-            y = turn_netflow_into_classification(X, y,
-                                                 get_netflow_threshold(file, global_vars.get('netflow_threshold_std')))
+            thresh, _ = get_netflow_threshold(file, global_vars.get('netflow_threshold_std'))
+            y = turn_netflow_into_classification(X, y, thresh)
 
         if max_handovers and max_handovers is not None:
             if X.shape[1] < max_handovers:
@@ -163,7 +163,21 @@ def get_netflow_threshold(file, stds, handover='sum'):
         scaler = MinMaxScaler()
         scaler.fit(values)
         values = scaler.transform(values)
-    return values.mean() + values.std() * stds
+    if stds == 'auto':
+        for std in [3, 2, 1, 0.5]:
+            relevant_df = df.iloc[2234:]
+            relevant_df = relevant_df[np.logical_and(17 <= relevant_df.index.hour, relevant_df.index.hour <= 21)]
+            relevant_values = relevant_df[handover].values.reshape(-1, 1)
+            relevant_values = relevant_values.reshape(-1, 5).max(axis=1)
+            relevant_values = scaler.transform(relevant_values.reshape(-1, 1))
+            thresh_to_test = values.mean() + values.std() * std
+            num_over = np.count_nonzero(relevant_values > thresh_to_test)
+            num_under = np.count_nonzero(relevant_values <= thresh_to_test)
+            overflow_ratio = num_over / (num_over + num_under)
+            if 0.07 <= overflow_ratio:
+                stds = std
+                break
+    return values.mean() + values.std() * stds, stds
 
 
 def get_netflow_handovers(file):
