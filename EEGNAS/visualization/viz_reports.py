@@ -617,7 +617,8 @@ def feature_importance_report(model, dataset, folder_name):
     for segment in ['test']:
         img_file = plot_feature_importance_netflow(folder_name, feature_mean[segment], global_vars.get('start_hour'),
                                         global_vars.get('dataset'), segment, global_vars.get('explainer'))
-        plot_topo_feature_importance(folder_name, feature_mean[segment])
+        if global_vars.get('dataset') != 'netflow_asflow':
+            plot_topo_feature_importance(folder_name, feature_mean[segment])
         shap_imgs.append(img_file)
     story = []
     for im in shap_imgs:

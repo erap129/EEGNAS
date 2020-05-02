@@ -164,8 +164,11 @@ def get_netflow_threshold(file, stds, handover='sum'):
         scaler.fit(values)
         values = scaler.transform(values)
     if stds == 'auto':
-        for std in reversed(np.arange(0.1, 3.1, 0.1)):
-            relevant_df = df.iloc[2234:]
+        for std in reversed(np.arange(-3, 3.1, 0.1)):
+            if global_vars.get('k_fold'):
+                relevant_df = df.iloc[2234:]
+            else:
+                relevant_df = df.iloc[20457:]
             relevant_df = relevant_df[np.logical_and(17 <= relevant_df.index.hour, relevant_df.index.hour <= 21)]
             relevant_values = relevant_df[handover].values.reshape(-1, 1)
             relevant_values = relevant_values.reshape(-1, 5).max(axis=1)
@@ -174,10 +177,17 @@ def get_netflow_threshold(file, stds, handover='sum'):
             num_over = np.count_nonzero(relevant_values > thresh_to_test)
             num_under = np.count_nonzero(relevant_values <= thresh_to_test)
             overflow_ratio = num_over / (num_over + num_under)
-            if 0.05 <= overflow_ratio:
+            if 0.07 <= overflow_ratio <= 0.2:
                 stds = std
-                break
-    return values.mean() + values.std() * stds, stds
+                return values.mean() + values.std() * stds, stds
+    for r in reversed(sorted(relevant_values)):
+        num_over = np.count_nonzero(relevant_values > r)
+        num_under = np.count_nonzero(relevant_values <= r)
+        overflow_ratio = num_over / (num_over + num_under)
+        if 0.07 <= overflow_ratio:
+            return r[0], 'custom'
+
+
 
 
 def get_netflow_handovers(file):

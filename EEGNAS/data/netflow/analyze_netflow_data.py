@@ -36,6 +36,20 @@ def get_data_samples(all_as):
     all_data_as.to_csv('analysis_results/all_data_samples.csv')
 
 
+def get_corona_data(all_as):
+    global_vars.set('date_range', "1.7.2017-22.4.2020")
+    global_vars.set('drop_self', True)
+    all_ass_dfs = []
+    for ass in all_as:
+        all_data = get_whole_netflow_data(
+            f'top_10_corona/{ass}_{global_vars.get("date_range")}.csv')
+        all_data_sum = all_data.sum(axis=1)
+        all_ass_dfs.append(all_data_sum)
+    combined_df = pd.concat(all_ass_dfs, axis=1)
+    combined_df.columns = all_as
+    combined_df.iloc[5:].to_csv('combined_corona_data_for_plot.csv')
+
+
 if __name__ == '__main__':
     set_default_config('../../configurations/config.ini')
     global_vars.set('dataset', 'netflow_asflow')
@@ -55,7 +69,7 @@ if __name__ == '__main__':
     all_as = [15169, 20940, 2906, 16509, 32934, 15133, 22822, 202818, 16276, 46489]
     # all_as = [15169, 20940]
 
-    get_data_samples(all_as)
+    get_corona_data(all_as)
 
 
 
