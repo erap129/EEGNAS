@@ -180,14 +180,14 @@ def get_netflow_threshold(file, stds, handover='sum'):
             if 0.07 <= overflow_ratio <= 0.2:
                 stds = std
                 return values.mean() + values.std() * stds, stds
-    for r in reversed(sorted(relevant_values)):
-        num_over = np.count_nonzero(relevant_values > r)
-        num_under = np.count_nonzero(relevant_values <= r)
-        overflow_ratio = num_over / (num_over + num_under)
-        if 0.07 <= overflow_ratio:
-            return r[0], 'custom'
-
-
+        for r in reversed(sorted(relevant_values)):
+            num_over = np.count_nonzero(relevant_values > r)
+            num_under = np.count_nonzero(relevant_values <= r)
+            overflow_ratio = num_over / (num_over + num_under)
+            if 0.07 <= overflow_ratio:
+                return r[0], 'custom'
+    else:
+        return values.mean() + values.std() * stds, stds
 
 
 def get_netflow_handovers(file):

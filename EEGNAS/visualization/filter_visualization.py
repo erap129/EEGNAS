@@ -144,7 +144,7 @@ if __name__ == '__main__':
             dataset['test'] = dataset_target['test']
             filename = get_model_filename_kfold('kfold_models', global_vars.get('fold_idx'))
             model = get_pretrained_model(filename)
-            if model is None:
+            if model is None or global_vars.get('overwrite_models'):
                 model = get_evaluator(global_vars.get('evaluator'), global_vars.get('fold_idx'))
                 train_model_for_netflow(model, dataset, trainer)
                 torch.save(model, filename)

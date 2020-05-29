@@ -16,7 +16,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reportlab.platypus import Paragraph
 from sklearn.preprocessing import MinMaxScaler
 from EEGNAS import global_vars
-from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance, GradientShap, LayerDeepLift
+from captum.attr import Saliency, IntegratedGradients, DeepLift, NoiseTunnel, NeuronConductance, GradientShap, \
+    LayerDeepLift, FeatureAblation, Deconvolution
 from captum.attr import visualization as viz
 from EEGNAS.utilities.NAS_utils import evaluate_single_model
 from EEGNAS.data_preprocessing import get_dataset
@@ -407,6 +408,48 @@ def attribute_image_features(model, algorithm, input, ind, **kwargs):
     return tensor_attributions
 
 
+class deconvolution_explainer:
+    def __init__(self, model, train_data):
+        model.eval()
+        self.explainer = Deconvolution(model)
+        self.model = model
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        return torch.stack([attribute_image_features(self.model, self.explainer, data, ind=i)[0] for i in
+                                                            range(global_vars.get('n_classes'))], axis=0).detach()
+
+        # return attribute_image_features(self.model, self.explainer, data, ind=tuple(range(global_vars.get('n_classes')-1))).detach()
+
+
+class featureablation_explainer:
+    def __init__(self, model, train_data):
+        model.eval()
+        self.explainer = FeatureAblation(model)
+        self.model = model
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        return torch.stack([attribute_image_features(self.model, self.explainer, data, i, baselines=data * 0,
+                                                     return_convergence_delta=True)[0] for i in
+                                                            range(global_vars.get('n_classes'))], axis=0).detach()
+
+
+class noisetunnel_ig_explainer:
+    def __init__(self, model, train_data):
+        model.eval()
+        self.explainer = NoiseTunnel(IntegratedGradients(model))
+        self.model = model
+        global_vars.set('explainer_sampling_rate', 0.1)
+
+    def get_feature_importance(self, data):
+        data.requires_grad = True
+        return torch.stack([attribute_image_features(self.model, self.explainer, data, i, baselines=data * 0,
+                                                     return_convergence_delta=True)[0] for i in
+                                                            range(global_vars.get('n_classes'))], axis=0).detach()
+
+
+
 class shap_deep_explainer:
     def __init__(self, model, train_data):
         self.explainer = shap.DeepExplainer(model, train_data[
@@ -435,10 +478,7 @@ class integrated_gradients_explainer:
         self.explainer = IntegratedGradients(model)
         self.model = model
 
-        if global_vars.get('model_alias') == 'nsga':
-            global_vars.set('explainer_sampling_rate', 0.03)
-        elif global_vars.get('model_alias') == 'rnn':
-            global_vars.set('explainer_sampling_rate', 0.1)
+        global_vars.set('explainer_sampling_rate', 0.1)
 
     def get_feature_importance(self, data):
         data.requires_grad = True
@@ -551,7 +591,7 @@ def save_feature_importances(folder_name, feature_importances):
     imp_fold_name = f'{exp_id}_importances'
     if not os.path.exists(imp_fold_name):
         os.makedirs(imp_fold_name)
-    np.save(f'{imp_fold_name}/{global_vars.get("as_to_test")}_{global_vars.get("fold_idx")}.npy', feature_importances)
+    np.save(f'{imp_fold_name}/{global_vars.get("as_to_test")}_{global_vars.get("explainer")}_{global_vars.get("fold_idx")}_{global_vars.get("final_max_epochs")}_epochs.npy', feature_importances)
 
 
 def plot_topo_feature_importance(folder_name, features):
@@ -602,7 +642,10 @@ def feature_importance_report(model, dataset, folder_name):
         segment_examples = segment_data[np.random.choice(segment_data.shape[0], int(segment_data.shape[0] * global_vars.get("explainer_sampling_rate")), replace=False)]
         feature_values = e.get_feature_importance(segment_examples)
         feature_val = np.array(feature_values).squeeze()
-        feature_mean[segment] = np.mean(feature_val, axis=1)
+        if feature_val.ndim == 4:
+            feature_mean[segment] = np.mean(feature_val, axis=1)
+        else:
+            feature_mean[segment] = feature_val
         if global_vars.get('dataset') == 'netflow_asflow':
             save_feature_importances(folder_name, feature_mean[segment])
         else:

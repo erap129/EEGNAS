@@ -27,7 +27,7 @@ def get_data_samples(all_as):
     for ass in all_as:
         global_vars.set('autonomous_systems', [ass])
         dataset = get_dataset('all')
-        all_as_data.append(dataset['train'].X[0].swapaxes(0, 1))
+        all_as_data.append(dataset['train'].X.mean(axis=0).swapaxes(0, 1))
     all_as_data_stacked = np.concatenate(all_as_data, axis=0)
     all_as_df = pd.DataFrame(data=all_as_data_stacked, columns=global_vars.get('netflow_handover_locations'))
     all_as_df['AS'] = [ass for ass in all_as for i in range(240)]
@@ -36,18 +36,28 @@ def get_data_samples(all_as):
     all_data_as.to_csv('analysis_results/all_data_samples.csv')
 
 
+def get_all_data(ass):
+    df = get_whole_netflow_data(f'{os.path.dirname(os.path.abspath(__file__))}/top_10/{ass}_1.7.2017-31.12.2019.csv')
+    df.to_csv(f'AS_{ass}_all_data.csv')
+
+
 def get_corona_data(all_as):
-    global_vars.set('date_range', "1.7.2017-22.4.2020")
-    global_vars.set('drop_self', True)
-    all_ass_dfs = []
+    global_vars.set('date_range', "1.7.2017-8.5.2020")
+    all_ass_dfs_with_self = []
+    all_ass_dfs_no_self = []
     for ass in all_as:
         all_data = get_whole_netflow_data(
             f'top_10_corona/{ass}_{global_vars.get("date_range")}.csv')
-        all_data_sum = all_data.sum(axis=1)
-        all_ass_dfs.append(all_data_sum)
-    combined_df = pd.concat(all_ass_dfs, axis=1)
-    combined_df.columns = all_as
-    combined_df.iloc[5:].to_csv('combined_corona_data_for_plot.csv')
+        all_data_with_self = all_data.drop('sum', axis=1).sum(axis=1)
+        all_data_no_self = all_data.drop(['sum', ass], axis=1).sum(axis=1)
+        all_ass_dfs_with_self.append(all_data_with_self)
+        all_ass_dfs_no_self.append(all_data_no_self)
+    combined_df_with_self = pd.concat(all_ass_dfs_with_self, axis=1)
+    combined_df_no_self = pd.concat(all_ass_dfs_no_self, axis=1)
+    combined_df_with_self.columns = all_as
+    combined_df_no_self.columns = all_as
+    combined_df_with_self.iloc[5:].to_csv('corona_data_with_self.csv')
+    combined_df_no_self.iloc[5:].to_csv('corona_data_no_self.csv')
 
 
 if __name__ == '__main__':
@@ -70,29 +80,5 @@ if __name__ == '__main__':
     # all_as = [15169, 20940]
 
     get_corona_data(all_as)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # df.plot()
-    # plt.show()
-    #
-    #
-    # dataset = get_dataset('all')
-    # dataset = unify_dataset(dataset)
-    # for threshold in range(0, 100000, 1000):
-    #     num_overflows = count_overflows_in_data(dataset, threshold)
-    #     num_overflows_15_19 = count_overflows_in_data(dataset, threshold, 15, 24)
-    #     print(f'num overflows for threshold {threshold}: {num_overflows}/{len(dataset.y)}')
-    #     print(f'num overflows for threshold {threshold} between 15:00 and 19:00: {num_overflows_15_19}/{len(dataset.y)}')
+    # get_all_data(20940)
+    # get_data_samples(all_as)

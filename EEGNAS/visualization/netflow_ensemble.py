@@ -23,7 +23,11 @@ from nsga_net.search.micro_encoding import convert, decode
 
 def train_model_for_netflow(model, dataset, trainer):
     print(f'start training model: {type(model).__name__}')
-    if 'Ensemble' in type(model).__name__:
+    if 'MultiOutputRegressor' == type(model).__name__:
+        train_sklearn_for_netflow(model, dataset)
+    elif 'ImageRegressor' == type(model).__name__:
+        train_autokeras_for_netflow(model, dataset)
+    elif 'Ensemble' in type(model).__name__:
         for mod in model.models:
             mod.cuda()
             mod.train()
@@ -40,6 +44,9 @@ def train_model_for_netflow(model, dataset, trainer):
             criterion = torch.nn.MSELoss(size_average=False)
             MTS_train(model, data, criterion, optim, 100, 128)
         else:
+            if type(model).__name__ == 'Sequential' and global_vars.get('skip_cnn_training'):
+                print('skipping CNN training')
+                return
             trainer.train_model(model, dataset, final_evaluation=True)
 
 
@@ -63,8 +70,15 @@ def filter_eegnas_population_files(filename):
         res = res and 'handovers' in filename
     else:
         res = res and 'handovers' not in filename
-    if global_vars.get('current_fold_idx') is not None:
+    if (global_vars.get('current_fold_idx') or str(global_vars.get('current_fold_idx')) == '0') and\
+            global_vars.get('current_fold_idx') is not None:
         res = res and f'fold{global_vars.get("current_fold_idx")}' in filename
+    if global_vars.get('netflow_subfolder') and 'corona' in global_vars.get('netflow_subfolder'):
+        res = res and 'corona' in filename
+    else:
+        res = res and 'corona' not in filename
+    if global_vars.get('eegnas_inheritance_type'):
+        res = res and global_vars.get('eegnas_inheritance_type') in filename
     res = res and f'input_height_{global_vars.get("input_height")}' in filename
     return res
 
@@ -297,7 +311,7 @@ def get_pretrained_model(filename):
 
 
 def get_model_filename_kfold(type, fold_idx):
-    unique_test_str, drop_others_str, top_pni_str, test_handover_str, as_str, samelocs_str, evaluator_str, seed_str, handover_str, interpolation_str = '', '', '', '', '', '', '', '', '', ''
+    skip_cnn_str, unique_test_str, drop_others_str, top_pni_str, test_handover_str, as_str, samelocs_str, evaluator_str, seed_str, handover_str, interpolation_str = '', '', '', '', '', '', '', '', '', '', ''
     if global_vars.get('interpolate_netflow'):
         interpolation_str = '_interp'
     if global_vars.get('top_handovers'):
@@ -323,10 +337,12 @@ def get_model_filename_kfold(type, fold_idx):
         drop_others_str = '_others'
     if global_vars.get('unique_test_model'):
         unique_test_str = f'_unq_{global_vars.get("as_to_test")}'
+    if not global_vars.get('skip_cnn_training') and 'cnn' in list(global_vars.get('evaluator')):
+        skip_cnn_str = '_noskipcnn'
 
     return f"{type}/{global_vars.get('dataset')}_{global_vars.get('date_range')}_{as_str}" \
             f"_{global_vars.get('per_handover_prediction')}_" \
             f"{global_vars.get('final_max_epochs')}_{global_vars.get('data_augmentation')}_" \
             f"{global_vars.get('n_folds')}_{fold_idx}_{global_vars.get('iteration')}{interpolation_str}" \
-            f"{handover_str}{seed_str}{evaluator_str}{samelocs_str}{test_handover_str}{top_pni_str}{drop_others_str}{unique_test_str}.th"
+            f"{handover_str}{seed_str}{evaluator_str}{samelocs_str}{test_handover_str}{top_pni_str}{drop_others_str}{unique_test_str}{skip_cnn_str}.th"
 
